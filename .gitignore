@@ -1,0 +1,5 @@
+.pio/
+build/
+output/
+*.png.tmp
+secrets.h
