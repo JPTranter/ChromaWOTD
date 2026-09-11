@@ -7,7 +7,7 @@
 | Item | State |
 |---|---|
 | Repo scaffold | ✅ done |
-| Firmware builds | ✅ `pio run -e s3` SUCCESS (RAM 5.6%, Flash 7.6%) |
+| Firmware builds | ✅ `pio run -e s3` SUCCESS with Seeed GFX (BWRY panel, combo 512) |
 | Display bring-up | ❌ Phase 1 |
 | Clock / weather | ❌ Phase 2–3 |
 
