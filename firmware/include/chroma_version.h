@@ -1,2 +1,3 @@
 #pragma once
-#define CHROMACLOCK_VERSION "0.1.0"
+#define CHROMAWOTD_VERSION "0.1.0"
+

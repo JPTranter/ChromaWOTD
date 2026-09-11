@@ -1,4 +1,4 @@
-// ChromaClock — 2.9" quad-colour ePaper clock + weather
+// CHROMAWOTD — 2.9" quad-colour ePaper clock + weather
 // Seeed EE05 (XIAO ESP32-S3 Plus) + 2.9" BWRY ePaper (JD79661).
 //
 // Seeed GFX EPaper API (inherited lessons still apply: colour ePaper updates
@@ -19,29 +19,32 @@ EPaper epaper;
 #error "EPAPER_ENABLE not set - check BOARD_SCREEN_COMBO in driver.h"
 #endif
 
+#include "verse_display.h"
+
 void setup() {
     Serial.begin(115200);
     delay(2000);
-    Serial.printf("ChromaClock %s boot\n", CHROMACLOCK_VERSION);
+    Serial.printf("CHROMAWOTD %s boot\n", CHROMAWOTD_VERSION);
 
     epaper.begin();
+    epaper.setRotation(1);
     epaper.fillScreen(TFT_WHITE);
-    epaper.update();
 
-    // Bring-up smoke test: one band per colour.
-    // 128x296 panel, portrait; draw 4 horizontal bands then rotate usage later.
-    for (int y = 0; y < 296; y++) {
-        uint32_t c = TFT_WHITE;
-        if (y < 74)      c = TFT_BLACK;
-        else if (y < 148) c = TFT_RED;
-        else if (y < 222) c = TFT_YELLOW;
-        for (int x = 0; x < 128; x++) epaper.drawPixel(x, y, c);
-    }
+    VerseData v = {
+        "Fri, Sep 12",
+        "Trust in the Lord with all your heart, and do not lean on your own understanding. In all your ways acknowledge him, and he will make straight your paths.",
+        "he will make straight your paths",
+        "Proverbs 3:5-6"
+    };
+    WeatherData w = { 27.0f, "Partly cloudy", "Rain likely after 4 PM", 3 };
+
+    drawLayoutLandscape(v, w);
     epaper.update();
-    Serial.println("4-colour test pattern pushed");
+    Serial.println("CHROMAWOTD landscape layout pushed to display");
     epaper.sleep();
 }
 
 void loop() {
     delay(1000);
 }
+

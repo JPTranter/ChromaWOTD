@@ -1,5 +1,11 @@
 .pio/
 build/
+**/build/
 output/
+**/output/*.png
 *.png.tmp
 secrets.h
+.vscode/
+*.log
+*.pdf
+docs/hardware/datasheets/*.pdf

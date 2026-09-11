@@ -1,4 +1,4 @@
-# ChromaClock — Project Plan
+# CHROMAWOTD — Project Plan
 
 ## Concept
 
@@ -14,38 +14,63 @@ carry meaning (alerts, rain, heat), not decoration.
 
 ## Phases
 
-### Phase 0 — Scaffold (current)
+### Phase 0 — Scaffold (complete)
 - [x] Repo structure, PlatformIO env for XIAO ESP32-S3
-- [ ] First successful `pio run -e s3` build
+- [x] First successful `pio run -e s3` build
 
-### Phase 1 — Display bring-up
-- [ ] Verify EE05 pin mapping (CS/DC/RST/BUSY) against the EE05 schematic
-- [ ] Drive the panel with GxEPD2's JD79661 4-colour class
-      (`GxEPD2_4C<GxEPD2_290_Z13c, ...>` — confirm exact class for JD79661)
-- [ ] Full refresh test pattern in all 4 colours (~25 s expected)
-- [ ] Measure a real full-refresh time and a partial-refresh attempt
+### Phase 1 — Display bring-up & Layout Prototype (complete)
+- [x] Verify EE05 pin mapping and use official Seeed GFX `BOARD_SCREEN_COMBO 512`
+- [x] Full refresh test pattern in all 4 colours (~25 s confirmed)
+- [x] Hardware verification: discovered JD79661 does not support partial refresh
+- [x] Architectural pivot: infrequent glanceable layout (Daily Verse + Weather)
+- [x] Dual-target layout engine (`verse_display.cpp` / `.h`)
+- [x] Host test harness & mock canvas generating PNG screenshots (portrait & landscape)
 
-### Phase 2 — Clock core
-- [ ] NTP time sync over WiFi (SNTP), timezone handling
-- [ ] Clock face layout using colour hierarchy
-- [ ] Update cadence: ePaper refresh is slow; target minute-cadence partial or
-      hourly full refresh — measure ghosting like eClock's §48
+### Phase 2 — Setup Wizard, Hardware Buttons & State Persistence
+- [ ] **First-Boot Setup Screen**: Display on-screen instructions guide (SSID, AP IP address `192.168.4.1`, setup steps).
+- [ ] **Captive Portal Wi-Fi Wizard**: SoftAP mode + web configuration portal for SSID/password, timezone, location, and preferred content mode.
+- [ ] **Factory Reset**: Long-press button hold (10 seconds) detection to wipe NVS credentials and reboot into setup wizard.
+- [ ] **Dual-Button Hardware Interaction & Deep Sleep Wake**:
+  - `ext1` multi-button deep sleep wake mask (EE05 D0/GPIO1 + BOOT/GPIO0 or external D1/GPIO2).
+  - Mode Switch: Toggle theme (Light vs Inverted/Dark) or orientation.
+  - Refresh / Content Toggle: Force immediate re-sync and toggle between Verse of the Day and Word of the Day.
+  - Lockout during active ~25s screen sweep to ignore switch bounce/spam.
+- [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
+  - Wi-Fi credentials, timezone POSIX string, latitude/longitude.
+  - Active display layout & content mode.
+  - Cached last successful verse, word, and weather data with timestamp.
 
-### Phase 3 — Weather
-- [ ] WiFi + Open-Meteo (no API key) fetch, ArduinoJson parse
-- [ ] Colour coding: red = rain/alert, yellow = temperature bands
-- [ ] Failure states (no WiFi / no data) rendered honestly
+### Phase 3 — Weather, Dual Content Sources & Sync Indicators
+- [ ] **Syncing & Status Feedback**:
+  - Hardware user LED (`LED_BUILTIN` / GPIO 21) active pulse during Wi-Fi connection and API fetch (avoiding unneeded 25s screen updates).
+  - Diagnostic LED blink cadences on connection failure.
+  - Graceful failure state: if Wi-Fi / API times out, render cached data with prominent red error banner (`⚠ OFFLINE: [Reason]`).
+  - Exponential / 15-minute retry backoff on network failure before re-entering sleep.
+- [ ] **NTP Synchronization**: SNTP sync on wake, POSIX timezone adjustment with automatic DST handling.
+- [ ] **Weather Pipeline**: Open-Meteo REST fetch, ArduinoJson parsing, weather code to BWRY icon mapping, alert detection.
+- [ ] **Content Pipelines**:
+  - Verse of the Day pipeline (daily scripture + highlight extraction).
+  - Vocabulary Word of the Day pipeline (Wordnik / Merriam-Webster feed).
 
-### Phase 4 — Polish
-- [ ] Config portal or hard-coded creds decision
-- [ ] Enclosure sketch (panel outline 79 × 36.7 × 1.2 mm is identical to eClock's
-      GDEY029T94 — reuse `eClock/docs/reference/enclosure-specs.md` measurements)
-- [ ] Release tagging workflow mirroring eClock's tag-triggered release.yml
+### Phase 4 — Daily Wake Schedule & Power Optimization
+- [ ] **Time-Based Wake Schedule**:
+  - Deep sleep scheduled wakeups: Morning (06:30), Midday (12:30), Evening (18:00), and Night low-power sleep (23:00 - 06:30).
+  - RTC drift correction against NTP.
+- [ ] **Battery Monitoring & Low-Battery Cutoff**:
+  - Analog voltage sampling via divider on RTC ADC pin.
+  - Low battery warning icon in header (at < 15% / ~3.55V).
+  - Critical cutoff screen (< 3.3V): Display persistent "LOW BATTERY — PLEASE RECHARGE" screen and enter infinite deep sleep with display power gated off.
+- [ ] **Enclosure sketch**: Reuse 79 × 36.7 mm panel cutout dimensions from eClock (500mAh LiPo flat pouch fit).
+- [ ] **Release Tagging & CI**: Tag-triggered binary builds.
 
-## Known unknowns
 
-- Exact GxEPD2 class for the JD79661 2.9" quad-colour panel (likely
-  `GxEPD2_290_Z13c`); verify in Phase 1.
-- EE05 pin mapping on ESP32-S3 variant.
-- Partial-refresh support quality on 4-colour panels (many only do full refresh
-  or slow partials).
+## Known unknowns (Resolved)
+
+- **Display driver**: Resolved. Seeed GFX (`BOARD_SCREEN_COMBO 512`) provides exact pin
+  mappings and timing for the EE05 + 2.9" BWRY JD79661 panel.
+- **EE05 pin mapping**: Resolved. SCLK 7(D8), MOSI 9(D10), CS 44(D7), DC 10(D16), BUSY 4(D3),
+  RST 38(D11), ENABLE 43(D6).
+- **Partial-refresh support**: Resolved. The JD79661 4-colour panel does NOT support
+  partial refresh. Every refresh is a full ~25-second multi-pass sweep. System design
+  updates 2–4 times per day rather than every minute.
+
