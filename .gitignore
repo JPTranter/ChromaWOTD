@@ -9,3 +9,5 @@ secrets.h
 *.log
 *.pdf
 docs/hardware/datasheets/*.pdf
+firmware/build_s3.log
+firmware/*.log
