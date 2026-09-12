@@ -19,7 +19,28 @@
 #endif
 #include <ArduinoJson.h>
 
+// Secrets are gitignored, so a fresh clone (and CI) has only secrets.h.example.
+// Probe for the real file with __has_include and fall back to the example, which
+// carries the same macro NAMES as commented-out placeholders — so the build
+// always succeeds and the #ifndef defaults below fill in safe values.
+#if __has_include("secrets.h")
 #include "secrets.h"
+#elif __has_include("secrets.h.example")
+#include "secrets.h.example"
+#endif
+
+#ifndef WIFI_SSID
+// No credentials configured (fresh clone / CI). The firmware must still BUILD —
+// cc_wifiConnect() returns early when WIFI_SSID is absent and the device takes
+// its offline path, so placeholder values here are never used to connect.
+#define WIFI_SSID ""
+#define WIFI_PASSPHRASE ""
+#endif
+#ifndef CHROMAWOTD_LATITUDE
+#define CHROMAWOTD_LATITUDE  -33.8688
+#define CHROMAWOTD_LONGITUDE 151.2093
+#define CHROMAWOTD_TIMEZONE  "Australia/Sydney"
+#endif
 
 // Root CAs the device trusts. Extracted from the live TLS chains (2026-09-12):
 //   - Amazon Root CA 1            -> www.biblegateway.com (leaf + Amazon RSA 2048 M04)

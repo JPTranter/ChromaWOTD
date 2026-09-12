@@ -73,8 +73,11 @@ jobs:
 
     - name: Setup clang-format
       run: |
-        sudo apt-get update
-        sudo apt-get install -y clang-format
+        # Pin the exact version via PyPI rather than apt: the runner's
+        # clang-format differed from the local one and reported violations in code
+        # that was already formatted, so the gate was not reproducible. 23.1.1 is
+        # also what the project is formatted with locally.
+        pip install clang-format==23.1.1
 
     - name: Check C++ formatting
       run: |
