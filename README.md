@@ -278,8 +278,8 @@ python tools/verify_all.py --skip-firmware   # fast host-only loop
 python tools/verify_all.py --fix        # resync docs/images after an intentional layout change
 ```
 
-Exit code is non-zero on any failure. Four stages run in order: firmware build, host tests,
-render ledger, and layout alignment. The render ledger md5-compares
+Exit code is non-zero on any failure. Five stages run in order: firmware build, host tests,
+the device-font host tests, the render ledger, and layout alignment. The render ledger md5-compares
 `firmware/test/output/*.png` against `docs/images/*.png` and reports missing, stale or
 orphan files, so the archived renders can never silently drift from the code. The alignment
 stage (`tools/measure_layout.py --check`) measures the rendered PNGs and asserts the panel's

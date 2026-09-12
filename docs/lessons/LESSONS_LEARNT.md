@@ -692,8 +692,8 @@ cannot distinguish a 1 px bearing from a rounding error; the pixel scan can.
 **Tooling (added because this scan was written by hand three times):**
 - `tools/measure_layout.py` — reports and asserts the geometry invariants above
   (header-level, rule extent, body margin, caption margin, caption-below-rule) on
-  any render, and is wired into `verify_all.py` as **stage 4/4**, so an alignment
-  regression now fails the one-command check. It skips cleanly if Pillow is absent
+  any render, and is wired into `verify_all.py` as the alignment stage (5/5), so an
+  alignment regression now fails the one-command check. It skips cleanly if Pillow is absent
   (not a hard project dependency).
 - `tools/bench_watch.py` — the bench observer: `--presence` polls the serial port
   without opening it (the only trustworthy wake/sleep trace, see §34), and
@@ -768,8 +768,9 @@ text selects 6pt. Render archived as
 
 **Context.** Adding `-DCHROMAWOTD_DEVICE_FONTS=ON` (`firmware/test/CMakeLists.txt`) to run the
 host suite on the shipped proportional font path immediately failed two layout invariants that
-had passed for months. Both were **test calibration**, not product defects — but only a render
-proved it, and the distinction matters:
+had been passing since they were written — i.e. never once exercised against the shipped font.
+Both were **test calibration**, not product defects — but only a render proved it, and the
+distinction matters:
 
 1. `WeatherAlert.TruncatedAlertStaysInsideColumn` and
    `VerseOverflow.LandscapeMarksOverflowAndKeepsDividerIntact` looked for the `...` overflow
@@ -787,8 +788,9 @@ proved it, and the distinction matters:
 - **Never hardcode a glyph's ink shape or a font-dependent coordinate in an invariant.** Detect
   the marker/feature by a property that survives the font (a run length, an isolation test, a
   colour predicate over a region) and assert the RELATION (rule below the temperature, above the
-  alert text), not one pixel's address. This is the second time a single-pixel probe has passed
-  for the wrong reason (`§36` is the first).
+  alert text), not one pixel's address. This is the third time a pixel-probe habit has had to be
+  corrected: `§22` (probes asserting background pixels, so clipping and spill passed), `§36`
+  (alignment judged on the pen origin instead of the ink), now `§39`.
 - **A dot detector needs isolation on all four sides.** Requiring clean pixels above/below admits
   the END of any baseline-terminating stroke: the bottom of `s`/`u`/`n` presents a last pixel
   that is dot-shaped with clean above/below, and at Roboto's 3 px advance it lands exactly 3 px
