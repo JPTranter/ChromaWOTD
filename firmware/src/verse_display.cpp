@@ -678,9 +678,10 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     const int colW = 66;
     const int half = 28;
 
+    // FORECAST header aligned with the yellow header box's bottom rule (y=13).
     int fcWidth = dev_measureText("FORECAST", 1);
-    dev_drawString(cx - fcWidth / 2, 6, "FORECAST", CC_BLACK, 1);
-    dev_drawFastHLine(cx - half, 17, 2 * half, CC_BLACK);
+    dev_drawString(cx - fcWidth / 2, 4, "FORECAST", CC_BLACK, 1);
+    dev_drawFastHLine(cx - half, 13, 2 * half, CC_BLACK);   // aligns with header bottom (headerH-1)
 
     char tbuf[16];
     snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
@@ -771,20 +772,20 @@ void drawLayout(const VerseData& v, const WeatherData& w) {
 
     // 1. Header (Yellow band)
     dev_fillRect(0, 0, splitX, headerH, CC_YELLOW);
-    dev_drawString(6, 3, "Verse of the Day", CC_BLACK, 1);
+    dev_drawString(6, 2, "Verse of the Day", CC_BLACK, 1);   // lifted 1px
     if (v.date) {
-        dev_drawStringRight(splitX - 6, 3, v.date, CC_BLACK, 1);
+        dev_drawStringRight(splitX - 6, 2, v.date, CC_BLACK, 1);   // lifted 1px
     }
     dev_drawFastHLine(0, headerH - 1, splitX, CC_BLACK);
 
-    // 2. Verse body (White background)
+    // 2. Verse body (White background) — box margins halved (8 -> 4)
     dev_fillRect(0, headerH, splitX, 128 - headerH, CC_WHITE);
-    drawVerseBlock(8, headerH + 8, splitX - 16, 82, v);
+    drawVerseBlock(4, headerH + 4, splitX - 8, 82, v);
 
-    // 3. Reference line (Red)
+    // 3. Reference line (Red) — moved 5px lower
     if (v.reference) {
-        dev_drawFastHLine(10, 104, splitX - 20, CC_RED);
-        dev_drawStringRight(splitX - 8, 110, v.reference, CC_RED, 1);
+        dev_drawFastHLine(10, 109, splitX - 20, CC_RED);
+        dev_drawStringRight(splitX - 8, 115, v.reference, CC_RED, 1);
     }
 
     // 4. Vertical divider

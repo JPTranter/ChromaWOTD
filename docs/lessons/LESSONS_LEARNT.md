@@ -400,3 +400,18 @@ splitX) so it always sits centred as the ratio changes.
 - Renders archived: `docs/images/history/layout_landscape_autosize_med.png`
   (medium, 6pt), `..._autosize_4lengths.png` (short/med/long/extralong),
   `..._autosize_boundary55.png` (proves the 6pt->5.5pt step-down).
+
+## 29. Final layout polish (approved)
+
+Fine-grained offsets tuned on-device (see render
+`docs/images/history/layout_landscape_layout_tweaks.png`):
+- Header title + date drawn at y=2 (was 3) — lifted 1px in the yellow band.
+- `FORECAST` label at y=4 and its rule at y=13 — the rule now sits on the same
+  line as the yellow header box's bottom rule (`headerH-1`), so the two read as
+  one continuous horizontal line across the vertical divider.
+- Verse body box margins halved: `drawVerseBlock(4, headerH+4, splitX-8, ...)`
+  (was `(8, headerH+8, splitX-16, ...)`) — ~4px padding instead of ~8px.
+- Reference line + text moved 5px lower: red rule y=104->109, reference string
+  y=110->115. (Sufficient clearance above the 128px panel edge; no clipping.)
+- Verbatim note: these are the exact coordinates baked into `drawLayout()` /
+  `drawLandscapeWeatherColumn()` — keep them in sync if the split/header change.
