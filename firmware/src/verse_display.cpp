@@ -48,23 +48,23 @@ typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; u
 #include "fonts/FreeSans6pt7b.h"   // needs GFXglyph/GFXfont visible
 #endif
 
-// Baseline shift for the GFX font. The layout passes y as the glyph TOP (the
-// 5x7 convention, where all glyphs sit in rows 0..6 and the caller's y is the
-// top edge). A proportional GFX font draws with y interpreted as the BASELINE,
-// and its capitals sit cap-ascent px above it -- so without a shift the whole
-// line rides upward by roughly a cap height. This returns the amount to add to
-// the draw y so the visual top of the text lands where the caller intended.
-static int cc_baselineShift(int size) {
+// Font ascent (glyph_ab in TFT_eSPI): largest distance from baseline up to a
+// glyph top. TFT_eSPI's drawString() with a free font does poY += glyph_ab
+// internally, then draws each glyph at (baseline + yOffset) -- so y passed to
+// drawString() is the glyph TOP and caps land exactly at y. The host mock below
+// replicates that exactly so the preview matches the device pixel-for-pixel.
+static int cc_glyphAscent(int size) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    // cap top = min glyph yOffset (most negative). Shift baseline down by that
-    // magnitude so caps sit flush where the layout's top-anchor expects.
-    int minYo = 0;
+    int ab = 0;
     const GFXfont* f = &FreeSans6pt7b;
     for (int c = f->first; c <= f->last; c++) {
         const GFXglyph* g = &f->glyph[c - f->first];
-        if (g->width && g->height && g->yOffset < minYo) minYo = g->yOffset;
+        if (g->width && g->height) {
+            int a = -g->yOffset;             // this glyph's ascent
+            if (a > ab) ab = a;
+        }
     }
-    return -minYo * size;
+    return ab * size;
 #else
     return 0;
 #endif
@@ -208,7 +208,7 @@ static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) 
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
     int cursorX = x;
-    int base = y + cc_baselineShift(size);   // layout y is TOP; GFX wants baseline
+    int base = y + cc_glyphAscent(size);   // replicate TFT_eSPI poY += glyph_ab
     const unsigned char* p = (const unsigned char*)str;
     while (*p) {
         unsigned char glyph = 0;
@@ -270,7 +270,7 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
     epaper.setTextColor(toDeviceColor(c));
     epaper.setTextSize(size);
     epaper.setFreeFont(&FreeSans6pt7b);
-    epaper.drawString(str, x, y + cc_baselineShift(size));   // y is TOP; add baseline shift
+    epaper.drawString(str, x, y);   // TFT_eSPI adds glyph_ab internally; y = glyph TOP
     return;
 #else
     epaper.setTextSize(size);
