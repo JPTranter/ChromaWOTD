@@ -880,3 +880,53 @@ returned exit code 1, blocking the commit. Then the file was removed.
   because the rewrite touches firmware source: `verify_all.py` came back ALL GREEN after it.
 
 (2026-09-13)
+
+
+## 42. CI had never run — publishing it exposed four pre-existing breakages (RESOLVED)
+
+**Context.** The repo was pushed to `github.com/JPTranter/ChromaWOTD` on 2026-09-13. Until then
+there was no remote, so `.github/workflows/ci.yml` (committed 2026-09-12) had **never executed**.
+The first run failed in every job except the newly added secret scan. None of the failures were
+caused by publishing; publishing is what made them visible. All four are now fixed and CI is green.
+
+1. **The firmware could not build from a fresh clone.** `net_impl_esp32.cpp` did an unguarded
+   `#include "secrets.h"`, but that file is gitignored, so a clean checkout has only
+   `secrets.h.example` and the build died with `secrets.h: No such file or directory`. The file
+   already intended to degrade gracefully (`cc_wifiConnect()` returns early when `WIFI_SSID` is
+   absent) but the include made that unreachable, and `CHROMAWOTD_LATITUDE/LONGITUDE/TIMEZONE`
+   had no defaults. Fix: `__has_include("secrets.h")`, falling back to the example, plus
+   `#ifndef` defaults. This is the most serious of the four — it means no new contributor could
+   ever have built the project either.
+2. **`.clang-format` used pre-v18 lowercase enum values** (`AlignEscapedNewlines: left`,
+   `AlignOperands: right`, `AlwaysBreakAfterReturnType: none`, `AlwaysBreakTemplateDeclarations:
+   yes`, `BreakConstructorInitializers: beforeColon`, `PointerAlignment: left`). Current
+   clang-format rejects these outright, so the whole config failed to parse and the lint job
+   errored before checking any source. Sweep them individually rather than fixing one per run —
+   a loop over each key against `clang-format --dry-run` finds all of them at once.
+3. **The lint gate was not reproducible.** The runner used apt's clang-format, a different version
+   from the local one, and reported violations in code that was already formatted. Pin the
+   formatter (`pip install clang-format==23.1.1`) so CI and local agree.
+4. **`weather_icon_sheet.png` was a ledger orphan.** It is produced only by
+   `tools/weather_icon_sheet.py`, is referenced by no documentation, and that tool's own docstring
+   says its output belongs *outside* the `docs/images` ledger — but an earlier "refresh ledger"
+   commit swept it in. No test can regenerate it, so the ledger was right to flag it (it would
+   silently rot). Moved to `docs/images/history/`.
+
+**Rules.**
+- **A CI workflow that has never run is not evidence of anything.** Treat the first real run as a
+  test of the workflow itself, and fix what it finds rather than assuming the config was correct
+  because it was committed.
+- **Anything a test asserts must be reproducible from a clean checkout with no untracked files.**
+  `secrets.h` is the exception that proves it: if CI cannot build without a file, the project
+  cannot be built by anyone but the author.
+- **Pin tool versions that a check depends on.** A formatter/linter whose version floats will
+  disagree between environments and the gate becomes noise.
+- **Scope file lists with `:(glob)` pathspecs, not shell globs.** Two separate traps: a shell
+  glob `firmware/src/*.h` matches the gitignored `secrets.h` (so local and CI disagree, and
+  clang-format prints real credentials to the terminal — which happened), while git's pathspec
+  `*` matches across `/`, so `'firmware/src/*.cpp'` recurses into subdirectories and drags in the
+  auto-generated font tables. `git ls-files ':(glob)firmware/src/*.cpp'` gives the intended scope.
+- **Keep generated/tool-only artifacts out of the ledger** (`docs/images` root). The ledger's
+  md5 equality check is only meaningful for renders a test produces.
+
+(2026-09-13)
