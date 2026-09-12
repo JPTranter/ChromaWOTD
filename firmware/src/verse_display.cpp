@@ -38,6 +38,12 @@ static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out);
 #endif
 typedef struct { uint32_t bitmapOffset; uint8_t width, height, xAdvance; int8_t xOffset, yOffset; } GFXglyph;
 typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; uint8_t yAdvance; } GFXfont;
+#else
+// Device: GFXglyph/GFXfont/PROGMEM come from TFT_eSPI.h -> gfxfont.h. Include it
+// here (early) so the font header below and the metrics helpers can use them.
+// verse_display.cpp is its own TU; main.cpp's include of TFT_eSPI.cpp does not
+// carry over. Board macros are supplied as global build_flags.
+#include "TFT_eSPI.h"
 #endif
 #include "fonts/FreeSans6pt7b.h"   // needs GFXglyph/GFXfont visible
 #endif
