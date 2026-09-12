@@ -284,12 +284,60 @@ correct for negatives. Sweep any remaining prose/example that suggests the trunc
 
 ---
 
-## 10. Suggested priority order
+## 10. Implementation order & priority
 
-1. **S1, S3, DOC4** — security posture + architecture/security doc *before* Phase 3 network code.
-2. **D1–D3** — split the monolith, unify the theme model, extract the zone helpers (this
-   un-blocks most of the rest).
-3. **D5, R3, H2** — delete dead/duplicate code (canvas UTF-8, legacy aliases, board_pins.h).
-4. **DOC1, DOC2, DOC3, T1, T2** — LICENSE, CONTRIBUTING + clang-format, CI, and the missing
-   tests (this is the "professional firmware looks like" layer).
-5. **Everything else** at leisure.
+Not every finding matters at the same moment. The ordering below is driven by one
+question — *what un-blocks the most later work, and what must land before the next
+product phase?* — rather than by raw severity. Phases are self-contained enough to
+commit independently, and each lists the findings it clears.
+
+**Hard gate (before any Phase 3 network code ships):**
+- **S1, S3, DOC4** — the TLS-validation policy, the credential-handling policy, and an
+  `docs/ARCHITECTURE.md` capturing the data flow, refresh/power sequence and security
+  model. These are the three things that turn the planned HTTPS fetch from a prototype
+  into a defensible design, and they are cheap now and expensive to retrofit after
+  `WiFiClientSecure` calls are already scattered through `main.cpp`.
+
+**Phase A — structural refactor (clears D1, D2, D3, D5, D6; un-blocks most of the rest).**
+1. Define `Theme`/`Orientation`/`WeatherIcon` enums and make `drawLayout()` the single
+   dispatcher (D3, D4) — small, mechanical, removes the hidden "no dark portrait" trap.
+2. Split `verse_display.cpp` along the §3 module map: `text/glyphs`, `text/wrap`,
+   `draw/weather_icon`, `draw/target` + `target_seeed`/`target_canvas`, leaving a thin
+   view layer (D1, D6).
+3. While doing (2), delete the mock canvas's redundant UTF-8 decoder and the legacy
+   `C_*` aliases (D5, R3), and introduce a named-constants block for the layout geometry
+   (D2, R1, R4).
+   *Order within A matters: do the enums first, then the module split, then the cleanup,
+   so each step compiles and `verify_all.py` stays green throughout.*
+
+**Phase B — dead code & hygiene (clears H1, H2, H3, R5, C4).**
+Delete `board_pins.h` and the stray root `output/` dir; settle `driver.h` vs
+`platformio.ini` as a single source of truth; sweep prose that still suggests the
+`(int)(t+0.5f)` truncation idiom.
+
+**Phase C — the "professional firmware" layer (clears DOC1, DOC2, DOC3, DOC5, DOC6, T1, T2).**
+LICENSE + `CONTRIBUTING.md` + `.clang-format`/`.editorconfig` + `secrets.h.example`, a
+GitHub Actions workflow running `verify_all.py --skip-firmware` (and a compile-only
+`pio run -e s3` job), and the missing tests (colour mapping, `cc_lineCapacity` edges,
+weather-icon cases, adversarial UTF-8). This phase is what makes the repo legible to a
+developer who has never met it — do it before opening the code to others.
+
+**Phase D — robustness hardening (clears C1, C2, C3, S2).**
+Length-bounded glyph decoding + the truncated-input test; a decision (and comment) on the
+narrow-column marker degradation; `snprintf`-only rule on remote text. These are all
+small once Phase A's module boundaries exist.
+
+**Phase E — deferred / conscious decisions (clears S5, DOC7, D7).**
+Signed-update posture, the `chroma_version.h` release checklist, and the top-level
+application state machine (state machine is best designed *before* Phase-2 buttons/NVS,
+so pull just that piece forward if Phase 2 starts).
+
+**Relative effort (rough):** A ≈ M (largest single chunk, but mostly mechanical) · C ≈ M ·
+D ≈ S–M · B ≈ S · hard-gate ≈ S. Suggested sequencing: hard-gate → A → B → C → D, with E
+scheduled against the corresponding product phase.
+
+Rationale for not simply going top-to-bottom by severity: S2 and C1–C3 are real but are
+latent *today* (NUL-terminated inputs, narrow-but-not-tiny columns); they become cheap and
+testable only after the Phase-A boundaries put the decoder and wrappers in their own
+modules. Paying down the monolith first is what makes the correctness fixes small instead
+of another edit inside a 735-line file.
