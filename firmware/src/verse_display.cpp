@@ -382,7 +382,7 @@ static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int 
 }
 #endif
 
-static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
+static void drawWeatherIcon(int cx, int cy, int size, WeatherIcon iconType) {
     int r = size / 3;
     if (r < 3) r = 3;
 
@@ -390,7 +390,7 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
     uint32_t cloudFill    = CC_WHITE;
 
     switch (iconType) {
-        case 0: { // Sun
+        case WeatherIcon::Sun: { // Sun
             dev_fillCircle(cx, cy, r, CC_YELLOW);
             dev_drawCircle(cx, cy, r, CC_YELLOW);
             // 8 Rays
@@ -408,7 +408,7 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
             dev_drawLine(cx + d1, cy + d1, cx + d2, cy + d2, CC_YELLOW);
             break;
         }
-        case 1: { // Cloud
+        case WeatherIcon::Cloud: { // Cloud
             dev_fillCircle(cx - size / 4, cy + size / 10, size / 5, cloudFill);
             dev_drawCircle(cx - size / 4, cy + size / 10, size / 5, cloudOutline);
             dev_fillCircle(cx + size / 5, cy + size / 10, size / 6, cloudFill);
@@ -419,7 +419,7 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
             dev_drawFastHLine(cx - size / 3, cy + size / 4, (size * 2) / 3, cloudOutline);
             break;
         }
-        case 2: { // Rain
+        case WeatherIcon::Rain: { // Rain
             // cyShift and the drop x-offset must scale with size so the glyph stays
             // proportional when the icon is reflowed larger (see drawLandscapeWeatherColumn).
             int cyShift = cy - size / 6;   // == cy-4 at size 24
@@ -440,7 +440,7 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
             dev_drawLine(cx + dx, dropTop, cx + dx - 3, dropBot, CC_RED);
             break;
         }
-        case 3: // Partly cloudy
+        case WeatherIcon::PartlyCloudy: // Partly cloudy
         default: {
             // Sun peeking behind cloud (stub rays scale with size so the glyph
             // stays proportional on the larger reflowed icon)

@@ -22,7 +22,7 @@ static VerseData sampleVerse() {
 }
 
 static WeatherData sampleWeather() {
-    return { 24.5f, "Partly cloudy", nullptr, 3 };
+    return { 24.5f, "Partly cloudy", nullptr, WeatherIcon::PartlyCloudy };
 }
 
 TEST(LayoutLandscape, Divider_PngDump_And_RightMargin) {

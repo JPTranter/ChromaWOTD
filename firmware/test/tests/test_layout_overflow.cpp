@@ -69,10 +69,10 @@ static const char* kLongVerse =
 // ------------------------------------------------------- temp rounding -----
 
 TEST(Temperature, NegativeTempsRoundAwayFromZero) {
-    WeatherData a = { -0.6f, "Cold", nullptr, 1 };
-    WeatherData b = { -1.0f, "Cold", nullptr, 1 };
-    WeatherData c = { -0.4f, "Cold", nullptr, 1 };
-    WeatherData d = {  0.0f, "Cold", nullptr, 1 };
+    WeatherData a = { -0.6f, "Cold", nullptr, WeatherIcon::Cloud };
+    WeatherData b = { -1.0f, "Cold", nullptr, WeatherIcon::Cloud };
+    WeatherData c = { -0.4f, "Cold", nullptr, WeatherIcon::Cloud };
+    WeatherData d = {  0.0f, "Cold", nullptr, WeatherIcon::Cloud };
 
     g_canvas.init(296, 128);
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), a);
@@ -95,11 +95,11 @@ TEST(Temperature, NegativeTempsRoundAwayFromZero) {
 
 TEST(Temperature, PositiveTempsStillRoundUp) {
     g_canvas.init(296, 128);
-    drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), WeatherData{ 24.5f, "Mild", nullptr, 1 });
+    drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), WeatherData{ 24.5f, "Mild", nullptr, WeatherIcon::PartlyCloudy });
     std::string r245 = canvasHash();
 
     g_canvas.init(296, 128);
-    drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), WeatherData{ 25.0f, "Mild", nullptr, 1 });
+    drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), WeatherData{ 25.0f, "Mild", nullptr, WeatherIcon::PartlyCloudy });
     EXPECT_EQ(r245, canvasHash());
 }
 
@@ -107,7 +107,7 @@ TEST(Temperature, PositiveTempsStillRoundUp) {
 
 TEST(VerseOverflow, LandscapeMarksOverflowAndKeepsDividerIntact) {
     g_canvas.init(296, 128);
-    drawLayout(verse(kLongVerse, nullptr, "Proverbs 3:5-6"), WeatherData{ 24.5f, "Partly cloudy", nullptr, 3 });
+    drawLayout(verse(kLongVerse, nullptr, "Proverbs 3:5-6"), WeatherData{ 24.5f, "Partly cloudy", nullptr, WeatherIcon::PartlyCloudy });
 
     // Verse region is x 4..218 (splitX=226, minus the 8px wall). The marker must
     // appear inside that region.
@@ -123,7 +123,7 @@ TEST(VerseOverflow, LandscapeMarksOverflowAndKeepsDividerIntact) {
 
 TEST(VerseOverflow, FittingVerseHasNoMarker) {
     g_canvas.init(296, 128);
-    drawLayout(verse("Trust in the Lord with all your heart.", nullptr, "Proverbs 3:5"), WeatherData{ 27.0f, "Sunny", nullptr, 0 });
+    drawLayout(verse("Trust in the Lord with all your heart.", nullptr, "Proverbs 3:5"), WeatherData{ 27.0f, "Sunny", nullptr, WeatherIcon::Sun });
 
     EXPECT_FALSE(hasOverflowMarker(8, 20, 196, 127))
         << "a verse that fits must not be marked as truncated";
@@ -133,7 +133,7 @@ TEST(WeatherAlert, TruncatedAlertStaysInsideColumn) {
     g_canvas.init(296, 128);
     WeatherData w = { 22.0f, "Heavy rain",
                       "Dense fog and black ice expected overnight in low lying areas, exercise caution on untreated roads and bridges",
-                      2 };
+                      WeatherIcon::Rain };
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), w);
 
     // Alert is pinned to the bottom of the weather column (centrex 261, colW 66);
@@ -158,11 +158,11 @@ TEST(Highlight, FoundFlagReportsMatchHonestly) {
 
 TEST(Highlight, CaseInsensitiveFallbackStillAccentsRed) {
     g_canvas.init(296, 128);
-    drawLayout(verse("Trust in the Lord with all your heart.", "THE LORD", "Prov 3:5"), WeatherData{ 20.0f, "Clear", nullptr, 0 });
+    drawLayout(verse("Trust in the Lord with all your heart.", "THE LORD", "Prov 3:5"), WeatherData{ 20.0f, "Clear", nullptr, WeatherIcon::Sun });
     int redWithHighlight = colorCount(4, 18, 218, 100, CC_RED);
 
     g_canvas.init(296, 128);
-    drawLayout(verse("Trust in the Lord with all your heart.", nullptr, "Prov 3:5"), WeatherData{ 20.0f, "Clear", nullptr, 0 });
+    drawLayout(verse("Trust in the Lord with all your heart.", nullptr, "Prov 3:5"), WeatherData{ 20.0f, "Clear", nullptr, WeatherIcon::Sun });
     int redWithout = colorCount(4, 18, 218, 100, CC_RED);
 
     EXPECT_GT(redWithHighlight, redWithout)
@@ -172,7 +172,7 @@ TEST(Highlight, CaseInsensitiveFallbackStillAccentsRed) {
 TEST(Highlight, MissingHighlightLeavesBodyUnaccented) {
     g_canvas.init(296, 128);
     drawLayout(verse("Trust in the Lord with all your heart.", "a phrase not present", "Prov 3:5"),
-               WeatherData{ 20.0f, "Clear", nullptr, 0 });
+               WeatherData{ 20.0f, "Clear", nullptr, WeatherIcon::Sun });
 
     EXPECT_EQ(colorCount(8, 26, 196, 102, CC_RED), 0)
         << "body text must not be accented when the phrase is absent";
@@ -189,11 +189,11 @@ TEST(Unicode, TypographicGlyphsRenderAsAsciiEquivalents) {
         "God's spirit moved. ! it was good.";
 
     g_canvas.init(296, 128);
-    drawLayout(verse(typographic, nullptr, "Gen 1:3"), WeatherData{ 21.0f, "Clear", nullptr, 0 });
+    drawLayout(verse(typographic, nullptr, "Gen 1:3"), WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
     std::string typographicHash = canvasHash();
 
     g_canvas.init(296, 128);
-    drawLayout(verse(asciiEquivalent, nullptr, "Gen 1:3"), WeatherData{ 21.0f, "Clear", nullptr, 0 });
+    drawLayout(verse(asciiEquivalent, nullptr, "Gen 1:3"), WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
     EXPECT_EQ(typographicHash, canvasHash())
         << "typographic UTF-8 must be normalised to ASCII before drawing";
 }
@@ -201,7 +201,7 @@ TEST(Unicode, TypographicGlyphsRenderAsAsciiEquivalents) {
 TEST(Unicode, NonBreakingSpaceDoesNotBreakLayout) {
     g_canvas.init(296, 128);
     drawLayout(verse("Lord\u00C2\u00A0of\u00C2\u00A0hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
-               WeatherData{ 21.0f, "Clear", nullptr, 0 });
+               WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
 
     // Divider at x=226 must stay black (no verse text crosses into weather column).
     EXPECT_TRUE(rectAllColor(226, 0, 226, 127, CC_BLACK))

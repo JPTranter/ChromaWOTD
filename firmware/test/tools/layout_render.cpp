@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
     WeatherData w{ a.temp,
                    a.haveCondition ? a.condition.c_str() : nullptr,
                    a.haveAlert ? a.alert.c_str() : nullptr,
-                   a.icon };
+                   static_cast<WeatherIcon>(a.icon) };
 
     g_canvas.init(296, 128);
     drawLayout(v, w);

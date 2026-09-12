@@ -35,7 +35,7 @@ void setup() {
         "he will make straight your paths",
         "Proverbs 3:5-6"
     };
-    WeatherData w = { 27.0f, "Partly cloudy", "Rain likely after 4 PM", 3 };
+    WeatherData w = { 27.0f, "Partly cloudy", "Rain likely after 4 PM", WeatherIcon::PartlyCloudy };
 
     if (!verseHighlightFound(v)) {
         Serial.println("WARN: highlight phrase not found in verse - no red accent drawn");

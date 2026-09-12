@@ -14,7 +14,7 @@ static VerseData sampleVerse() {
 
 TEST(LayoutAlert, LandscapeWithAlert) {
     g_canvas.init(296, 128);
-    WeatherData w = { 22.0f, "Heavy rain", "Rain after 4 PM", 2 };
+    WeatherData w = { 22.0f, "Heavy rain", "Rain after 4 PM", WeatherIcon::Rain };
     drawLayout(sampleVerse(), w);
 
     // Red right edge of the column, above the alert, stays white canvas (no spill).
