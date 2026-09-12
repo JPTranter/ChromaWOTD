@@ -159,11 +159,11 @@ TEST(Highlight, FoundFlagReportsMatchHonestly) {
 TEST(Highlight, CaseInsensitiveFallbackStillAccentsRed) {
     g_canvas.init(296, 128);
     drawLayout(verse("Trust in the Lord with all your heart.", "THE LORD", "Prov 3:5"), WeatherData{ 20.0f, "Clear", nullptr, 0 });
-    int redWithHighlight = colorCount(8, 26, 196, 102, CC_RED);
+    int redWithHighlight = colorCount(4, 18, 218, 100, CC_RED);
 
     g_canvas.init(296, 128);
     drawLayout(verse("Trust in the Lord with all your heart.", nullptr, "Prov 3:5"), WeatherData{ 20.0f, "Clear", nullptr, 0 });
-    int redWithout = colorCount(8, 26, 196, 102, CC_RED);
+    int redWithout = colorCount(4, 18, 218, 100, CC_RED);
 
     EXPECT_GT(redWithHighlight, redWithout)
         << "case-mismatched highlight must still be painted in red";
