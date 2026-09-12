@@ -37,11 +37,13 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 - [ ] **First-Boot Setup Screen**: Display on-screen instructions guide (SSID, AP IP address `192.168.4.1`, setup steps).
 - [ ] **Captive Portal Wi-Fi Wizard**: SoftAP mode + web configuration portal for SSID/password, timezone, location, and preferred content mode.
 - [ ] **Factory Reset**: Long-press button hold (10 seconds) detection to wipe NVS credentials and reboot into setup wizard.
-- [x] **Button Hardware Interaction & Deep Sleep Wake** (Phase 5, 2026-09-12):
-  - [x] `ext1` multi-button deep sleep wake mask — **BUTTON1/2/3 = GPIO2/3/5** (D1/D2/D4),
-        active-low. (Corrected: D0/GPIO1 is `BAT_ADC`, not a button, and GPIO0 is the
-        XIAO BOOT strap — the earlier guess was wrong. See LESSONS §33.)
-  - [x] All three buttons run a full immediate re-sync + refresh (same path as a timer wake).
+- [ ] **Button Hardware Interaction & Deep Sleep Wake** (Phase 5, 2026-09-12 — **BLOCKED**):
+  - [ ] `ext1` multi-button deep sleep wake mask — BUTTON1/2/3 = GPIO2/3/5 per the EE05
+        schematic (**D0/GPIO1 is `BAT_ADC`, not a button** — the earlier guess was wrong).
+        Arming `ext1` currently causes a deep-sleep wake storm, so it is gated behind
+        `-DCHROMAWOTD_BUTTON_WAKE` (off by default). See LESSONS §34 for the diagnostic plan.
+  - [ ] The wake path itself is implemented (a button press would run the same
+        Sync→Render→Sleep cycle as a timer wake); only the pad behaviour is unverified.
   - [x] Content mode is time-based, not toggled: Verse 00:00–11:59, Word 12:00–23:59.
   - [ ] Lockout during active ~25s screen sweep to ignore switch bounce/spam.
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
