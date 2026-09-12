@@ -109,12 +109,15 @@ TEST(VerseOverflow, LandscapeMarksOverflowAndKeepsDividerIntact) {
     g_canvas.init(296, 128);
     drawLayout(verse(kLongVerse, nullptr, "Proverbs 3:5-6"), WeatherData{ 24.5f, "Partly cloudy", nullptr, 3 });
 
-    // Verse block is x 8..196, y 26..102: the marker must appear inside it.
-    EXPECT_TRUE(hasOverflowMarker(8, 20, 196, 127))
+    // Verse region is x 4..218 (splitX=226, minus the 8px wall). The marker must
+    // appear inside that region.
+    EXPECT_TRUE(hasOverflowMarker(8, 16, 218, 126))
         << "long verse must be visibly marked as truncated";
-    // Nothing may spill across the divider column.
-    EXPECT_TRUE(rectAllColor(205, 0, 205, 127, CC_BLACK))
-        << "verse text crossed the divider column";
+    // The divider is at x=226; the weather-column FORECAST rule starts at x=233,
+    // so the gutter x=227..232 must stay blank — prove no verse text crosses the
+    // divider into the weather column.
+    EXPECT_TRUE(rectAllColor(227, 0, 232, 127, CC_WHITE))
+        << "verse text crossed the divider into the weather-column gutter";
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_overflow_landscape.png"));
 }
@@ -134,12 +137,14 @@ TEST(WeatherAlert, TruncatedAlertStaysInsideColumn) {
                       2 };
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), w);
 
-    // Alert is pinned to the bottom (3-line block at y 98..125); marker must sit there.
-    EXPECT_TRUE(hasOverflowMarker(218, 90, 284, 127))
+    // Alert is pinned to the bottom of the weather column (centrex 261, colW 66);
+    // the marker must appear within that column (x 228..294).
+    EXPECT_TRUE(hasOverflowMarker(228, 90, 294, 126))
         << "over-long alert must be marked as truncated";
-    // Nothing spills into the right margin (column text max x = 284).
-    EXPECT_TRUE(rectAllColor(285, 0, 287, 127, CC_WHITE))
-        << "alert text spilled past the right edge of the column";
+    // Nothing may spill off the panel's right edge: x 295 is the last content-free
+    // column (wrapped alert text is centred in the 66px weather column, <=x 294).
+    EXPECT_TRUE(rectAllColor(295, 0, 295, 127, CC_WHITE))
+        << "alert text spilled past the right edge of the panel";
 }
 
 // ------------------------------------------------------- highlight rules ---

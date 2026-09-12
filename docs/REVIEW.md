@@ -16,7 +16,7 @@ Severity: **P0** security/correctness that must be fixed before shipping network
 
 ## Check-off status (2026-09-12, against HEAD `c7a9584`)
 
-Each finding re-tested against the current tree. `tools/verify_all.py` green at HEAD.
+Each finding re-tested against the current tree. `tools/verify_all.py` do<soup>ar short at HEAD
 
 | ID | Severity | Status | Notes |
 |----|----------|--------|-------|

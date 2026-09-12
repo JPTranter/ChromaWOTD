@@ -4,6 +4,14 @@
 #include "verse_display.h"
 #include <gtest/gtest.h>
 
+// Layout constants, kept in one place so this test tracks the real geometry:
+//   splitX (divider)            = 226   (see drawLayout in verse_display.cpp)
+//   weather column centre        = (226 + 1 + 296) / 2 = 261
+//   weather column half width    = 28    (FORECAST rule spans 233..289)
+//   wrapped alert col width      = 66    (centered text may reach ~x=294)
+static const int kDividerX     = 226;
+static const int kRightMarginX = 295;     // the last column any content may touch
+
 static VerseData sampleVerse() {
     return {
         "Fri, Sep 12",
@@ -17,19 +25,24 @@ static WeatherData sampleWeather() {
     return { 24.5f, "Partly cloudy", nullptr, 3 };
 }
 
-TEST(LayoutLandscape, DividerAndPngDump) {
+TEST(LayoutLandscape, Divider_PngDump_And_RightMargin) {
     g_canvas.init(296, 128);
     drawLayout(sampleVerse(), sampleWeather());
 
-    // Header band at (2, 2) must be yellow
+    // Header band at (2, 2) must be yellow.
     EXPECT_EQ(g_canvas.getPixel(2, 2), CC_YELLOW);
 
-    // Vertical divider line at x = 205
-    EXPECT_EQ(g_canvas.getPixel(205, 50), CC_BLACK);
+    // The vertical divider is a solid black column at x = 226, full height.
+    for (int y = 0; y < 128; y++) {
+        EXPECT_EQ(g_canvas.getPixel(kDivider, y), CC_BLACK)
+            << "divider column x=" << kDivider << " must be black at y=" << y;
+    }
 
-    // Weather column at (250, 100) must be white background
-    EXPECT_EQ(g_canvas.getPixel(250, 100), CC_WHITE);
+    // Nothing may reach the panel's right edge (no content spills past x 294).
+    for (int y = 0; y < 128; y += 8) {
+        EXPECT_EQ(g_canvas.getPixel(kRightColumnX, y), CC_WHITE)
+            << "right edge pixel at x=" << kRightColumnX << ", y=" << y << " must stay white";
+    }
 
-    // Dump PNG
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_landscape.png"));
 }
