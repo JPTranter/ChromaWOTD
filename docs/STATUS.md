@@ -1,6 +1,6 @@
 # CHROMAWOTD — Status
 
-**Updated:** 2026-09-12
+**Updated:** 2026-09-13
 **Phase:** 1 — Display bring-up & Layout Prototype (complete)
 **Firmware version:** 0.1.0
 
@@ -28,6 +28,8 @@
 | Weather policy & outlook | ✅ Daytime (< 18:00) shows today's expected maximum + condition under **FORECAST**; evening (18:00–23:59) shows tomorrow's expected maximum + condition under **TOMORROW** |
 | Dual buttons & WOTD toggle | ✅ superseded — content is time-based, all three buttons sync (no manual toggle) |
 | Weather icon mapping | ⚠️ **known limitation, accepted** — only WMO ≥ 80 get the Rain icon; Drizzle (51-57) and Rain (61-67) fall through to the plain Cloud icon. Text label is correct; decided 2026-09-12 to leave as-is (see LESSONS §35) |
+| Verse font auto-size | ✅ Ladder (`Roboto 6pt → 5.5pt → 5pt`, largest that fits the block) extracted to `cc_pickVerseFont()`/`cc_verseFontSize()`; block geometry now lives once in `verse_display.h` (`kVerseMaxW`/`kVerseMaxH`). Live 2026-09-13 VOTD (Phil 4:4) verified selecting **6pt** (see LESSONS §38) |
+| Auto-size local coverage | ✅ `test_verse_autosize` — CMake compiles this target **with** `-DCHROMAWOTD_FONT_FREESANS=1`, closing a blind spot where every other host target exercised only the non-FreeSans path. 7/7 suites pass; `verify_all.py` ALL GREEN |
 
 ## Next steps
 

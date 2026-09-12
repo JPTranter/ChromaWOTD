@@ -722,3 +722,43 @@ The policy now consistently presents daily forecast expectations:
 
 (2026-09-13)
 
+
+
+## 38. The verse font auto-size ladder was never compiled by the host suite (RESOLVED)
+
+**Symptom.** Looking at a today's-message render, the verse body appeared in the
+smaller body font even though the verse is short. The device build has
+`-DCHROMAWOTD_FONT_FREESANS=1` in `platformio.ini`, so the auto-size ladder
+(`Roboto 6pt -> 5.5pt -> 5pt`, largest that fits) *is* active on the panel.
+
+**Root cause of the local blind spot.** Every host target in
+`firmware/test/CMakeLists.txt` defined only `CHROMAWOTD_HOST=1`. The ladder lives
+under `#ifdef CHROMAWOTD_FONT_FREESANS`, so ctest, `layout_render`,
+`regenerate_screenshots.py` and the whole `docs/images/` ledger exercised the
+**non-FreeSans** path only — the one code path the panel actually runs had zero
+local coverage, and the committed renders are 5x7 bitmap font, not the shipped
+proportional font. A green `verify_all.py` therefore said nothing about it.
+
+**Fix.** Extract the selection into `cc_pickVerseFont()` / `cc_verseFontSize()`
+(`verse_display.h` exposes the enum, the ladder stays static), move
+`kVerseMaxW`/`kVerseMaxH` into the header as the single source of truth shared by
+`drawLayout()` and the tests, and add a `test_verse_autosize` target that CMake
+compiles **with** `CHROMAWOTD_FONT_FREESANS=1` so the ladder is covered.
+
+**Refactor trap (the actual bug found).** The wrap-count measurement routes
+through `cc_advance()`, which reads the global `g_bodyFont`. The original loop
+assigned `g_bodyFont = candidates[i]` *before* measuring, which is load-bearing:
+measuring every candidate while one font is active makes the line count
+font-independent and collapses the ladder (a 193-char verse then wrongly selected
+6pt). Any extraction must keep setting the candidate as the active body font for
+its own measurement, and restore the previous font afterwards. Assert the
+*monotonic* property (longer text never picks a larger font) plus a verified
+concrete case per rung, not just the happy path.
+
+**Verified.** Live 2026-09-13 VOTD (`"Rejoice in the Lord always. I will say it
+again: Rejoice!"`, Philippians 4:4, NIV) selects **6pt**; 191-char Psalm 23
+excerpt selects 5.5pt; a 316-char Galatians excerpt bottoms out at 5pt; empty
+text selects 6pt. Render archived as
+`docs/images/history/layout_landscape_verse_autosize_6pt_rejoice.png`.
+
+(2026-09-13)
