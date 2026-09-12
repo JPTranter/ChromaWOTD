@@ -3,9 +3,11 @@
 
 Runs, in order:
   1. firmware build  — `pio run -e s3` (optionally from a clean tree with --clean)
-  2. host tests      — cmake configure/build + ctest
-  3. render ledger   — md5 comparison of firmware/test/output against docs/images
-  4. alignment        — measures caption/rule/margin invariants in the archived renders
+  2. host tests      — cmake configure/build + ctest (5x7 fallback font path)
+  3. device-font tests — the same suite with -DCHROMAWOTD_DEVICE_FONTS=ON, which is
+                         the font path the firmware actually ships (LESSONS 38/39)
+  4. render ledger   — md5 comparison of firmware/test/output against docs/images
+  5. alignment       — measures caption/rule/margin invariants in the archived renders
 
 Exit code is non-zero if any step fails, so this is CI-safe. `--fix` re-syncs the
 archived renders (same as tools/regenerate_screenshots.py) instead of only reporting.
@@ -59,13 +61,22 @@ def run(cmd, cwd=ROOT):
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 
+def pio_cmd():
+    """PlatformIO invocation. `pio` is not always on PATH (on this Windows host it
+    is installed as a module in C:\\Python314), so fall back to `python -m platformio`."""
+    if shutil.which("pio"):
+        return ["pio"]
+    return [sys.executable, "-m", "platformio"]
+
+
 def build_firmware(clean):
-    step("1/4 firmware build")
+    step("1/5 firmware build")
+    pio = pio_cmd()
     if clean:
-        print("$ pio run -e s3 -t clean")
-        run(["pio", "run", "-e", "s3", "-t", "clean"], cwd=FIRMWARE)
-    print("$ pio run -e s3")
-    result = run(["pio", "run", "-e", "s3"], cwd=FIRMWARE)
+        print("$ " + " ".join(pio + ["run", "-e", "s3", "-t", "clean"]))
+        run(pio + ["run", "-e", "s3", "-t", "clean"], cwd=FIRMWARE)
+    print("$ " + " ".join(pio + ["run", "-e", "s3"]))
+    result = run(pio + ["run", "-e", "s3"], cwd=FIRMWARE)
     output = result.stdout + result.stderr
 
     for line in output.splitlines():
@@ -87,7 +98,7 @@ def build_firmware(clean):
 
 
 def run_host_tests():
-    step("2/4 host layout tests")
+    step("2/5 host layout tests (5x7 fallback font path)")
     if not os.path.exists(os.path.join(BUILD_DIR, "CMakeCache.txt")):
         print("$ cmake -S firmware/test -B firmware/test/build -G Ninja")
         if run(["cmake", "-S", TEST_DIR, "-B", BUILD_DIR, "-G", "Ninja"]).returncode != 0:
@@ -108,8 +119,55 @@ def run_host_tests():
     return ok
 
 
+def run_device_font_tests():
+    """Run the layout suite again on the DEVICE font path.
+
+    The firmware ships -DCHROMAWOTD_FONT_FREESANS=1, but the default host build
+    compiles the fallback 5x7 path, so without this stage the proportional glyph,
+    degree, measurement and auto-size code the panel actually executes has no
+    coverage (LESSONS 38/39). CMake keeps this in its own build dir -- and the
+    stage runs BEFORE the canonical suite's final ctest, because the layout tests
+    write to fixed paths under firmware/test/output/ and would otherwise overwrite
+    the 5x7 renders the ledger then compares against docs/images.
+    """
+    step("3/5 host layout tests (DEVICE font path, CHROMAWOTD_DEVICE_FONTS=ON)")
+    build = os.path.join(TEST_DIR, "build-device")
+    if not os.path.exists(os.path.join(build, "CMakeCache.txt")):
+        print("$ cmake -S firmware/test -B firmware/test/build-device -G Ninja -DCHROMAWOTD_DEVICE_FONTS=ON")
+        if run(["cmake", "-S", TEST_DIR, "-B", build, "-G", "Ninja",
+                "-DCHROMAWOTD_DEVICE_FONTS=ON"]).returncode != 0:
+            print("  FAIL: cmake configure (device fonts)")
+            return False
+    if run(["cmake", "--build", build]).returncode != 0:
+        print("  FAIL: cmake build (device fonts)")
+        return False
+
+    result = run(["ctest", "--test-dir", build, "--output-on-failure"])
+    tail = [l for l in result.stdout.splitlines() if "tests passed" in l or "Failed" in l]
+    for line in tail:
+        print(f"  {line.strip()}")
+    ok = result.returncode == 0
+    print(f"  {'PASS' if ok else 'FAIL'}: ctest (device fonts)")
+    if not ok:
+        print(result.stdout)
+    return ok
+
+
+def restore_canonical_renders():
+    """Re-run the canonical suite so firmware/test/output/ holds the 5x7 renders.
+
+    The device-font stage above overwrites the layout PNGs (its tests write to the
+    same fixed output/ paths), so without this the ledger would compare a 5x7
+    baseline against device-font output and report every render as stale.
+    """
+    result = run(["ctest", "--test-dir", BUILD_DIR])
+    ok = result.returncode == 0
+    print(f"  {'PASS' if ok else 'FAIL'}: canonical renders restored")
+    return ok
+
+
 def check_alignment():
-    step("4/4 layout alignment (tools/measure_layout.py --check)")
+    step("5/5 layout alignment (tools/measure_layout.py --check)")
     result = run([sys.executable, os.path.join(ROOT, "tools", "measure_layout.py"),
                   "--check", "--all"])
     output = result.stdout + result.stderr
@@ -129,7 +187,7 @@ def check_alignment():
 
 
 def check_ledger(fix):
-    step("3/4 render ledger (firmware/test/output vs docs/images)")
+    step("4/5 render ledger (firmware/test/output vs docs/images)")
     if not os.path.isdir(OUTPUT_DIR):
         print("  FAIL: no renders found - run the tests first")
         return False
@@ -182,6 +240,11 @@ def main():
         results["firmware"] = ok
     if not args.skip_tests:
         results["tests"] = run_host_tests()
+        results["tests_device_fonts"] = run_device_font_tests()
+        # The device-font stage overwrites output/*.png, so restore the canonical
+        # renders BEFORE the ledger compares them and before the alignment stage
+        # measures docs/images (which the ledger has just vouched for).
+        results["canonical_renders"] = restore_canonical_renders()
         results["renders"] = check_ledger(args.fix)
         results["alignment"] = check_alignment()
 
