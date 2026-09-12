@@ -764,34 +764,43 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
 }
 
 void drawLayout(const VerseData& v, const WeatherData& w) {
-    // Verse area was 205px (10% larger requested => ~226); weather col takes the
-    // rest. The weather cx is derived so the column always centers in its region.
-    const int splitX = 226;      // was 205: verse ~10% wider
-    const int weatherCx = (splitX + 1 + 296) / 2;   // center of remaining column
-    const int headerH = 14;      // was 20; smaller 5pt body needs less header height
+    // Layout constants — single source of truth for geometry.
+    // These replace the magic numbers scattered throughout drawLayout() and
+    // drawLandscapeWeatherColumn(). Each constant has a one-line rationale.
+    static constexpr int kPanelW = 296;
+    static constexpr int kPanelH = 128;
+    static constexpr int kSplitX = 226;       // divider x: verse ~10% wider than original 205
+    static constexpr int kHeaderH = 14;       // was 20; smaller 5pt body needs less header height
+    static constexpr int kWeatherCx = (kSplitX + 1 + kPanelW) / 2;  // center of weather column
+    static constexpr int kVerseMargin = 4;    // verse block left margin
+    static constexpr int kVerseMaxW = kSplitX - 2 * kVerseMargin;   // verse block width
+    static constexpr int kVerseMaxH = 82;     // verse block height (fits 5 lines at 5.5pt)
+    static constexpr int kReferenceY = 109;   // reference line y-position
+    static constexpr int kWeatherColW = 66;   // weather column width (66px fits FORECAST + 3-line alert)
+    static constexpr int kWeatherColHalf = 28; // half of kWeatherColW (for FORECAST rule)
 
     // 1. Header (Yellow band)
-    dev_fillRect(0, 0, splitX, headerH, CC_YELLOW);
+    dev_fillRect(0, 0, kSplitX, kHeaderH, CC_YELLOW);
     dev_drawString(6, 2, "Verse of the Day", CC_BLACK, 1);   // lifted 1px
     if (v.date) {
-        dev_drawStringRight(splitX - 6, 2, v.date, CC_BLACK, 1);   // lifted 1px
+        dev_drawStringRight(kSplitX - 6, 2, v.date, CC_BLACK, 1);   // lifted 1px
     }
-    dev_drawFastHLine(0, headerH - 1, splitX, CC_BLACK);
+    dev_drawFastHLine(0, kHeaderH - 1, kSplitX, CC_BLACK);
 
     // 2. Verse body (White background) — box margins halved (8 -> 4)
-    dev_fillRect(0, headerH, splitX, 128 - headerH, CC_WHITE);
-    drawVerseBlock(4, headerH + 4, splitX - 8, 82, v);
+    dev_fillRect(0, kHeaderH, kSplitX, kPanelH - kHeaderH, CC_WHITE);
+    drawVerseBlock(kVerseMargin, kHeaderH + kVerseMargin, kVerseMaxW, kVerseMaxH, v);
 
     // 3. Reference line (Red) — moved 5px lower
     if (v.reference) {
-        dev_drawFastHLine(10, 109, splitX - 20, CC_RED);
-        dev_drawStringRight(splitX - 8, 115, v.reference, CC_RED, 1);
+        dev_drawFastHLine(10, kReferenceY, kSplitX - 20, CC_RED);
+        dev_drawStringRight(kSplitX - 8, kReferenceY + 6, v.reference, CC_RED, 1);
     }
 
     // 4. Vertical divider
-    dev_drawFastVLine(splitX, 0, 128, CC_BLACK);
+    dev_drawFastVLine(kSplitX, 0, kPanelH, CC_BLACK);
 
     // 5. Right-hand weather column (alert pinned to bottom)
-    dev_fillRect(splitX + 1, 0, 296 - splitX - 1, 128, CC_WHITE);
-    drawLandscapeWeatherColumn(weatherCx, w);
+    dev_fillRect(kSplitX + 1, 0, kPanelW - kSplitX - 1, kPanelH, CC_WHITE);
+    drawLandscapeWeatherColumn(kWeatherCx, w);
 }
