@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+# fontconvert.py — faithful reimplementation of Adafruit_GFX fontconvert
+# (TrueType -> Adafruit GFX .h). Uses freetype-py (same FreeType engine).
+#
+# Usage: python tools/font_convert.py <FreeSans.ttf> <size> <first> <last> <fontName> > out.h
+#
+# Matches Adafruit's fontconvert.c: DPI=141, FT_Set_Char_Size(size<<6), mono
+# raster, advance = advance.x>>6, xOffset=bitmap_left, yOffset=1-bitmap_top,
+# row-major MSB-first byte packing padded to a byte boundary per glyph.
+# freetype-py's mono buffer is unreliable here, so we load each glyph normally
+# (gray) and threshold at >=128 to reproduce the mono bitmap.
+import sys, freetype
+
+DPI = 141
+
+def mono_bytes(gray, pitch, rows, width):
+    """Convert a gray 8-bit bitmap to the packed mono bytes fontconvert emits.
+    row-major, MSB-first within each byte; glyph padded to a byte boundary."""
+    out = bytearray()
+    bit = 0x80
+    cur = 0
+    for y in range(rows):
+        row_base = y * pitch
+        for x in range(width):
+            if gray[row_base + x] >= 128:
+                cur |= bit
+            bit >>= 1
+            if bit == 0:
+                out.append(cur); cur = 0; bit = 0x80
+    if bit != 0x80:      # pad to byte boundary (fontconvert does this)
+        out.append(cur)
+    return out
+
+def main():
+    ttf, size, first, last, fontName = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
+    fontName = ''.join('_' if (ch.isspace() or (not ch.isalnum() and ch != '_')) else ch for ch in fontName)
+    fontName = fontName.replace('-', '_')
+
+    face = freetype.Face(ttf)
+    face.set_char_size(size << 6, 0, DPI, 0)
+    yAdvance = face.size.height >> 6 if face.size else size
+
+    glyphs = []
+    bitmapOffset = 0
+    bitmap_bytes = bytearray()
+
+    for code in range(first, last + 1):
+        if not face.get_char_index(code):
+            # Present (space etc. may still load). Try anyway.
+            pass
+        try:
+            face.load_char(code)
+        except Exception:
+            continue
+        slot = face.glyph
+        bmp = slot.bitmap
+        w, rows, pitch = bmp.width, bmp.rows, bmp.pitch
+        if w and rows:
+            gray = list(bmp.buffer)   # safe: gray mode gives a python list
+            b = mono_bytes(gray, pitch, rows, w)
+        else:
+            b = bytearray()
+        xAdvance = slot.advance.x >> 6
+        xo = slot.bitmap_left
+        yo = 1 - slot.bitmap_top
+        glyphs.append((bitmapOffset, w, rows, xAdvance, xo, yo, b))
+        bitmap_bytes.extend(b)
+        bitmapOffset += (w * rows + 7) // 8
+
+    base = fontName + str(size) + 'pt7b'
+    print(f"const uint8_t {base}Bitmaps[] PROGMEM = {{")
+    line = "  "; col = 0
+    for i, byte in enumerate(bitmap_bytes):
+        line += f"0x{byte:02X}, "
+        col += 1
+        if col >= 12:
+            print(line.rstrip()); line = "  "; col = 0
+    if line.strip(): print(line.rstrip())
+    print("};")
+    print()
+    print(f"const GFXglyph {base}Glyphs[] PROGMEM = {{")
+    for bo, w, h, xa, xo, yo, b in glyphs:
+        print(f"  {{ {bo:4d}, {w:3d}, {h:3d}, {xa:3d}, {xo:4d}, {yo:4d} }},")
+    print("};")
+    print()
+    print(f"const GFXfont {base} PROGMEM = {{")
+    print(f"  (uint8_t  *){base}Bitmaps,")
+    print(f"  (GFXglyph *){base}Glyphs,")
+    print(f"  0x{first:02X}, 0x{last:02X}, {yAdvance});")
+    print(f"// Approx. {bitmapOffset + (last - first + 1) * 7 + 7} bytes")
+
+if __name__ == '__main__':
+    main()
