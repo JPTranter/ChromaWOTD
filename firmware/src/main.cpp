@@ -74,7 +74,8 @@ static void syncTask(void* /*arg*/) {
         g_offlineReason = "no wifi";
         Serial.println("sync: wifi FAILED (check secrets.h / signal)");
     } else {
-        Serial.printf("sync: wifi OK, ip=%s\n", WiFi.localIP().toString().c_str());
+        Serial.printf("sync: wifi OK, host=%s ip=%s\n",
+                      WiFi.getHostname(), WiFi.localIP().toString().c_str());
         configTzTime(kTzPosix, "pool.ntp.org");
 
         // Wait for SNTP so the schedule below has a valid local time. Bounded:

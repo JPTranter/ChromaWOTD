@@ -14,6 +14,9 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#ifdef CHROMAWOTD_MDNS
+#include <ESPmDNS.h>   // only pulled in when mDNS is enabled (heavy component)
+#endif
 #include <ArduinoJson.h>
 
 #include "secrets.h"
@@ -208,6 +211,14 @@ bool cc_fetchVerse(VerseData* v) {
     return true;
 }
 
+// Network identity. The DHCP hostname is what the router's client list shows
+// (option 12); the same name is registered with mDNS so the device also answers
+// to "<name>.local" on the LAN. Override with -DCHROMAWOTD_HOSTNAME=\"foo\".
+// (mDNS names resolve case-insensitively; keep it a single DNS label, no dots.)
+#ifndef CHROMAWOTD_HOSTNAME
+#define CHROMAWOTD_HOSTNAME "ChromaWOTD"
+#endif
+
 // Wi-Fi connect helper for main.cpp (kept here so network code stays out of the
 // layout monolith). Returns err_t (0 == connected). Connects with a bounded
 // timeout; never logs the passphrase. When the secrets aren't configured (no
@@ -217,13 +228,30 @@ int cc_wifiConnect() {
 #ifndef WIFI_SSID
     return 1;
 #else
+    // Set the hostname BEFORE begin() so it is carried in the DHCP request and
+    // the router can show "ChromaWOTD" instead of the default "espressif".
     WiFi.mode(WIFI_STA);
+    WiFi.setHostname(CHROMAWOTD_HOSTNAME);
     WiFi.begin(WIFI_SSID, WIFI_PASSPHRASE);
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
         delay(200);
     }
-    return (WiFi.status() == WL_CONNECTED) ? 0 : 1;
+    if (WiFi.status() != WL_CONNECTED) return 1;
+
+#ifdef CHROMAWOTD_MDNS
+    // Optional mDNS responder: registers the A record so "<name>.local" resolves
+    // WITHOUT any server running. Measured cost ~24 KB flash / ~2 KB RAM, so it
+    // is cheap — but the DHCP hostname above already makes the router show
+    // "ChromaWOTD", which is all the default build needs. Enable with
+    // -DCHROMAWOTD_MDNS=1 if you also want to reach it by name.
+    if (MDNS.begin(CHROMAWOTD_HOSTNAME)) {
+        Serial.printf("sync: mdns %s.local up\n", CHROMAWOTD_HOSTNAME);
+    } else {
+        Serial.println("sync: WARN mdns begin failed (hostname still set via DHCP)");
+    }
+#endif
+    return 0;
 #endif
 }
 
