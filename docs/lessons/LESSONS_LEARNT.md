@@ -358,3 +358,45 @@ top `y` — the two differ by a cap-height and using `y` mispositions/occludes i
 - Before/after of the muddy->crisp change:
   `docs/images/history/layout_landscape_freesans6_exact_fixture.png` (muddy,
   gray-threshold) vs `..._roboto55_final.png` (mono-hinted).
+
+## 28. Auto-size the verse body; dedicated temperature/alert fonts
+
+The verse text length varies day to day, so a single body size wastes space on
+short verses and overflows on long ones. The body font is now a switchable
+pointer (`g_bodyFont`) that defaults to 5.5pt (the main-UI size) but is set
+per-verse by `drawVerseBlock`:
+
+- It tries 6pt, then 5.5pt, then 5pt — keeping the first whose wrapped line
+  count fits the box (`cc_wrappedLineCount <= cc_lineCapacity`). Short/medium
+  verses resolve to 6pt; a boundary-long one steps to 5.5pt; an extreme one
+  falls to 5pt (and, if even 5pt overflows, truncates with the ellipsis marker
+  as a safe fallback). The original font is restored after the verse draw so
+  the header/condition never inherit a non-default size.
+- The **temperature** uses a dedicated **10pt** RobotoT font at native size
+  (size=1) instead of `setTextSize(2)` on the body font — `setTextSize(2)`
+  pixel-doubles and looks chunky/jaggy; a native dot-sized font is smooth.
+- The **alert** text is forced to **5pt** via `cc_setBodyFont(&Roboto5pt7b)`
+  for the alert block only, then restored.
+
+**Degree sign is font-aware.** It is drawn as a small superscript circle whose
+*top* aligns to the font's cap top (`dev_drawDegree`: `cy = base - glyphAscent
++ r`, `r = glyphAscent/4`, clamped 1..3). A fixed `+2*size` offset from the
+baseline worked for the short body font but sat ~a cap-height low on the taller
+10pt temp font, so the degree looked detached. Shared host+device helper.
+
+**Header reduced.** With the smaller body, the 20px yellow header band read as
+oversized; it's now 14px (`headerH`), and the verse box start moves up with it.
+
+**Verse/weather ratio.** The verse area is ~10% wider (splitX 205 -> 226); the
+weather column centres itself in the remaining region (`weatherCx` derived from
+splitX) so it always sits centred as the ratio changes.
+
+- Body fonts: Roboto 5/5.5/6pt; temp RobotoT 10pt; all mono-hinted
+  (`FT_LOAD_TARGET_MONO|FT_LOAD_RENDER`) via `tools/font_convert.py`.
+- The GFXfont-dependent helpers (`cc_advanceF`, `cc_glyphAscentF`,
+  `cc_measurePxF`, `cc_degreeRadius`, `dev_drawDegree`) and the temp/alert draws
+  are guarded by `#ifdef CHROMAWOTD_FONT_FREESANS` so the default 5x7 build
+  still compiles (it has no `GFXfont` type and no bundled free font).
+- Renders archived: `docs/images/history/layout_landscape_autosize_med.png`
+  (medium, 6pt), `..._autosize_4lengths.png` (short/med/long/extralong),
+  `..._autosize_boundary55.png` (proves the 6pt->5.5pt step-down).
