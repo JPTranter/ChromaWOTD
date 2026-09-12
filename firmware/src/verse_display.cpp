@@ -463,13 +463,20 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
 // condition push down, so the stack fills the column height instead of hugging
 // the top and leaving a band of whitespace at the bottom.
 static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
-    const int colW = 66;
-    const int half = 28;
+    // Column geometry (was magic numbers; named here so a design change is one edit).
+    static constexpr int kColW    = 66;   // wrapped-text width (fits FORECAST + 3-line alert)
+    static constexpr int kHalf    = 28;   // half of the FORECAST/alert rule span
+    static constexpr int kColTop  = 17;   // below the FORECAST rule
+    static constexpr int kColBot  = 126;  // 2 px above the panel bottom
+    static constexpr int kTempH   = 19;   // size-2 temperature block (+1px gap to condition)
+    static constexpr int kGap     = 4;    // gap between temp and condition
+    static constexpr int kIconMin = 24;   // fixed alert-layout icon size / reflow lower clamp
+    static constexpr int kIconMax = 48;   // reflow upper clamp (2x the fixed size)
 
     // FORECAST header aligned with the yellow header box's bottom rule (y=13).
     int fcWidth = dev_measureText("FORECAST", 1);
     dev_drawString(cx - fcWidth / 2, 4, "FORECAST", CC_BLACK, 1);
-    dev_drawFastHLine(cx - half, 13, 2 * half, CC_BLACK);   // aligns with header bottom (headerH-1)
+    dev_drawFastHLine(cx - kHalf, 13, 2 * kHalf, CC_BLACK);   // aligns with header bottom (headerH-1)
 
     char tbuf[16];
     snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
@@ -482,28 +489,28 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
         const GFXfont* prev = cc_setBodyFont(&Roboto5pt7b);
         const int alertLH = Roboto5pt7b.yAdvance;
 
-        drawWeatherIcon(target(), cx, 32, 24, w.icon);
+        drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
         int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);
         dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, 47, tbuf, CC_BLACK, 1);
 #else
         const int alertLH = 10;
-        drawWeatherIcon(target(), cx, 32, 24, w.icon);
+        drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
         int tWidth = dev_measureText(tbuf, 2);
         dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
 #endif
 
-        int lines = cc_wrappedLineCount(w.alert, colW, 1);
+        int lines = cc_wrappedLineCount(w.alert, kColW, 1);
         if (lines > 3) lines = 3;
         int textY  = 128 - 2 - 8 - (lines - 1) * alertLH;   // last line ends 2 px above bottom
         int labelY = textY - alertLH - 1;
         int divY   = labelY - 3;
         if (w.condition) {
-            drawWrappedTextCentered(cx, 65, colW, divY - 2 - 65, w.condition, CC_BLACK, 1, cc_lineHeight(1, 10));
+            drawWrappedTextCentered(cx, 65, kColW, divY - 2 - 65, w.condition, CC_BLACK, 1, cc_lineHeight(1, 10));
         }
-        dev_drawFastHLine(cx - half, divY, 2 * half, CC_RED);
+        dev_drawFastHLine(cx - kHalf, divY, 2 * kHalf, CC_RED);
         int alWidth = dev_measureText("ALERT:", 1);
         dev_drawString(cx - alWidth / 2, labelY, "ALERT:", CC_RED, 1);
-        drawWrappedTextCentered(cx, textY, colW, 128 - 2 - textY, w.alert, CC_RED, 1, alertLH);
+        drawWrappedTextCentered(cx, textY, kColW, 128 - 2 - textY, w.alert, CC_RED, 1, alertLH);
 
 #ifdef CHROMAWOTD_FONT_FREESANS
         cc_restoreBodyFont(prev);
@@ -512,31 +519,27 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     }
 
     // --- No alert: grow the icon to use the freed space, stack fills the column.
-    const int colTop = 17;      // below the FORECAST rule
-    const int colBot = 126;     // 2 px above the panel bottom
-    const int availH = colBot - colTop;             // 109
-    const int tempH  = 19;                          // size-2 temperature block (+1px gap to condition)
-    const int gap    = 4;
+    const int availH = kColBot - kColTop;       // 109
 
     // Condition height depends on how many lines it wraps to (same estimate the
     // renderer uses), so the icon yields space as the condition grows.
-    int condLines = w.condition ? cc_wrappedLineCount(w.condition, colW, 1) : 0;
+    int condLines = w.condition ? cc_wrappedLineCount(w.condition, kColW, 1) : 0;
     if (condLines > 5) condLines = 5;
-    const int condH = condLines * 10 + 8;           // wrapped condition + 8px inset
+    const int condH = condLines * 10 + 8;       // wrapped condition + 8px inset
 
     // Icon size = leftover column after temp + condition, clamped to [24, 48].
-    int iconS = availH - tempH - condH - 2 * gap;
-    if (iconS < 24) iconS = 24;
-    else if (iconS > 48) iconS = 48;
+    int iconS = availH - kTempH - condH - 2 * kGap;
+    if (iconS < kIconMin) iconS = kIconMin;
+    else if (iconS > kIconMax) iconS = kIconMax;
 
     // Top-align under the header (2px pad). Any remaining whitespace collects
     // below the condition, so the column reads "filled".
     int topPad = 2;
 
-    int iconCY = colTop + topPad + iconS / 2;
+    int iconCY = kColTop + topPad + iconS / 2;
     drawWeatherIcon(target(), cx, iconCY, iconS, w.icon);
 
-    int tempY = colTop + topPad + iconS + gap;
+    int tempY = kColTop + topPad + iconS + kGap;
 #ifdef CHROMAWOTD_FONT_FREESANS
     int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);   // temp at native size (smooth)
     dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, tempY, tbuf, CC_BLACK, 1);
@@ -546,8 +549,8 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
 #endif
 
     if (w.condition) {
-        int condStart = tempY + tempH + gap;
-        drawWrappedTextCentered(cx, condStart, colW, colBot - condStart, w.condition, CC_BLACK, 1, 10);
+        int condStart = tempY + kTempH + kGap;
+        drawWrappedTextCentered(cx, condStart, kColW, kColBot - condStart, w.condition, CC_BLACK, 1, 10);
     }
 }
 
