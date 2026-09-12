@@ -207,3 +207,37 @@ TEST(Unicode, NonBreakingSpaceDoesNotBreakLayout) {
     EXPECT_TRUE(rectAllColor(226, 0, 226, 127, CC_BLACK))
         << "divider column must be intact";
 }
+
+// Adversarial UTF-8 (S2): truncated / overlong sequences must not be read past
+// the declared length bound, and each orphaned byte collapses to one '?'.
+//   - "\xE2\x80" (3-byte lead cut mid-grapheme) -> two '?' (lead + orphan continuation)
+//   - "\xF0"     (lone 4-byte lead)            -> one '?'
+//   - "\xC2"     (lone 2-byte lead)            -> one '?'
+TEST(Unicode, TruncatedSequencesCollapseToOneQuestionMarkPerByte) {
+    const char* truncated = "a \xE2\x80 b \xF0 c \xC2 d";
+    const char* asciiEquivalent = "a ?? b ? c ? d";
+
+    g_canvas.init(296, 128);
+    drawLayout(verse(truncated, nullptr, "Gen 1:1"), WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
+    std::string truncatedHash = canvasHash();
+
+    g_canvas.init(296, 128);
+    drawLayout(verse(asciiEquivalent, nullptr, "Gen 1:1"), WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
+    EXPECT_EQ(truncatedHash, canvasHash())
+        << "truncated UTF-8 must collapse each orphaned byte to a '?' (bounded, no OOB read)";
+}
+
+// A 4-byte emoji (overlong) maps to one '?' — not one per byte.
+TEST(Unicode, FourByteSequenceCollapsesToSingleReplacement) {
+    const char* emoji = "joy \xF0\x9F\x98\x80 today";
+    const char* asciiEquivalent = "joy ? today";
+
+    g_canvas.init(296, 128);
+    drawLayout(verse(emoji, nullptr, "Ps 1:1"), WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
+    std::string emojiHash = canvasHash();
+
+    g_canvas.init(296, 128);
+    drawLayout(verse(asciiEquivalent, nullptr, "Ps 1:1"), WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
+    EXPECT_EQ(emojiHash, canvasHash())
+        << "a 4-byte sequence must collapse to a single '?'";
+}
