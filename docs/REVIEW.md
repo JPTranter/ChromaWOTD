@@ -14,23 +14,23 @@ Severity: **P0** security/correctness that must be fixed before shipping network
 
 ---
 
-## Check-off status (2026-09-12, against HEAD `39a7118`)
+## Check-off status (2026-09-12, against HEAD `20eb3ed`)
 
 Each finding re-tested against the current tree. `tools/verify_all.py` **green at HEAD**.
 
 | ID | Severity | Status | Notes |
 |----|----------|--------|-------|
-| S1 | P0 | **RESOLVED** | TLS/credential policy documented in `docs/ARCHITECTURE.md` §Security Model. |
+| S1 | P0 | **RESOLVED** | TLS/credential policy documented in `docs/ARCHITECTURE.md` §Security Model + README §Security & Compliance. |
 | S2 | P1 | **RESOLVED** | `cc_utf8ToAsciiN` length-bounded decoder + adversarial truncation tests added. |
 | S3 | P1 | **RESOLVED** | Credential policy in `docs/ARCHITECTURE.md`; `secrets.h.example` added. |
 | S4 | P2 | **RESOLVED** | Remote-string safety documented + `wordBuf`/`lineBuf` boundary comments added. |
 | S5 | P3 | **RESOLVED** | OTA posture documented in `docs/ARCHITECTURE.md` + `chroma_version.h`. |
-| D1 | P1 | **DEFERRED** | Module split (text/, draw/) not done — requires D6 first; low risk, large diff. |
+| D1 | P1 | **MOSTLY RESOLVED** | Backend + font types extracted to `draw/`; text/wrap/icon still colocated in `verse_display.cpp`. |
 | D2 | P1 | **MOSTLY RESOLVED** | `drawLayout()` constants added; `drawLandscapeWeatherColumn()` magic numbers remain. |
 | D3 | P1 | **RESOLVED** | Single presentation; `Orientation`/`Theme` enums added. |
 | D4 | P2 | **RESOLVED** | `WeatherIcon` enum replaces magic `int`. |
-| D5 | P2 | **DEFERRED** | `canvas.cpp` dead UTF-8 decoder not yet stripped (bundled with D1/D6). |
-| D6 | P2 | **DEFERRED** | `DisplayTarget` interface sketched but not wired in (FreeSans glyph path entangled). |
+| D5 | P2 | **RESOLVED** | Dead UTF-8 decoder stripped from `canvas.cpp`; ASCII-only contract comment added. |
+| D6 | P2 | **RESOLVED** | `DisplayTarget` interface + `SeeedTarget`/`CanvasTarget` wired in; single `dev_*` layer. |
 | D7 | P2 | **RESOLVED** | State machine documented in `docs/ARCHITECTURE.md`. |
 | C1 | — | **RESOLVED** | Buffer boundary comments added (truncation documented, not silently unmarked). |
 | C2 | — | **RESOLVED** | Narrow-column `.` degradation commented in `cc_lineBudget`. |
@@ -46,17 +46,17 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | DOC3 | P2 | **RESOLVED** | GitHub Actions CI. |
 | DOC4 | P1 | **RESOLVED** | `docs/ARCHITECTURE.md`. |
 | DOC5 | P2 | **RESOLVED** | `secrets.h.example`. |
-| DOC6 | P2 | **PARTIAL** | Security note in ARCHITECTURE.md; README Security section pending. |
+| DOC6 | P2 | **RESOLVED** | README §Security & Compliance added. |
 | DOC7 | P3 | **RESOLVED** | Release checklist in `chroma_version.h`. |
 | H1 | P3 | **RESOLVED** | Root `output/` gone. |
 | H2 | P2 | **RESOLVED** | `board_pins.h` deleted. |
 | H3 | P2 | **RESOLVED** | `driver.h` deleted; single source of truth is platformio.ini. |
 | H4 | P3 | **RESOLVED** | .editorconfig added. |
-| T1 | P1 | **MOSTLY RESOLVED** | Adversarial UTF-8 + icon tests added; `toDeviceColor`/`cc_lineCapacity` unit tests need D1/D6. |
+| T1 | P1 | **MOSTLY RESOLVED** | Adversarial UTF-8 + icon tests added; `cc_lineCapacity` unit test needs text module split. |
 | T2 | P2 | **RESOLVED** | Device branch in CI. |
 | T3 | P3 | **RESOLVED** | Ledger gated in CI. |
 
-Resolved: **S1–S5, D3, D4, D7, C1–C4, R2, R3, R4, H1–H4, DOC1–DOC5, DOC7, T2, T3.** Mostly: **D2, R1, T1.** Partial: **DOC6, R5.** Deferred (large diff, needs D6 first): **D1, D5, D6.**
+Resolved: **S1–S5, D3–D7, C1–C4, R2, R3, R4, H1–H4, DOC1–DOC7, T2, T3.** Mostly: **D1, D2, R1, T1.** Partial: **R5.**
 
 ---
 

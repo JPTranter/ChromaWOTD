@@ -167,6 +167,22 @@ CHROMAWOTD/
 
 ---
 
+## Security & Compliance
+
+> [!IMPORTANT]
+> This device handles credentials (Wi-Fi, API keys) and displays content from
+> untrusted sources (scripture, weather). The full security model — TLS
+> certificate validation, credential handling, remote-data boundaries, and OTA
+> posture — is documented in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#security-model).
+> Key rules, in brief:
+>
+> - **TLS validation is mandatory.** Never call `WiFiClientSecure::setInsecure()`;
+>   ship root CAs and call `setCACert()` before every HTTPS request (S1).
+> - **Credentials live in NVS only**, are entered over the captive portal, and are
+>   never echoed to serial (S3). Template: `firmware/src/secrets.h.example`.
+> - **Remote text is untrusted input** — the renderer's fixed buffers are the
+>   boundary; `snprintf`/bounded-copy only, never `sprintf` (S4).
+
 ## Building and Running
 
 > A critical review of the code and project structure lives in
