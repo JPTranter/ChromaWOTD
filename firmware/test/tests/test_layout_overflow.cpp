@@ -241,3 +241,40 @@ TEST(Unicode, FourByteSequenceCollapsesToSingleReplacement) {
     EXPECT_EQ(emojiHash, canvasHash())
         << "a 4-byte sequence must collapse to a single '?'";
 }
+
+// ------------------------------------------------------ weather icon cases --
+
+// Each of the four weather icons must render distinct pixels — proof that
+// drawWeatherIcon actually draws per-icon content and a refactor or new size
+// can't silently regress one icon into another (C3).
+TEST(WeatherIcon, FourIconsAreDistinct) {
+    const char* shortVerse = "Trust in the Lord.";
+    std::string hashes[4];
+
+    for (int i = 0; i < 4; i++) {
+        g_canvas.init(296, 128);
+        drawLayout(verse(shortVerse, nullptr, "Prov 3:5"),
+                   WeatherData{ 21.0f, "Clear", nullptr, static_cast<WeatherIcon>(i) });
+        hashes[i] = canvasHash();
+    }
+
+    // All four hashes must be pairwise distinct.
+    for (int a = 0; a < 4; a++) {
+        for (int b = a + 1; b < 4; b++) {
+            EXPECT_NE(hashes[a], hashes[b])
+                << "icon " << a << " and icon " << b << " rendered identically";
+        }
+    }
+}
+
+// The weather icon must actually paint pixels in the column region (not be a no-op).
+TEST(WeatherIcon, SunIconPaintsYellow) {
+    g_canvas.init(296, 128);
+    drawLayout(verse("Trust in the Lord.", nullptr, "Prov 3:5"),
+               WeatherData{ 21.0f, "Clear", nullptr, WeatherIcon::Sun });
+
+    // The sun icon (and its rays) are yellow; the weather column (x > 233) must
+    // contain yellow ink beyond the FORECAST header.
+    int yellow = colorCount(233, 20, 295, 127, CC_YELLOW);
+    EXPECT_GT(yellow, 0) << "sun icon must paint yellow pixels in the weather column";
+}
