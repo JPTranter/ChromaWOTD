@@ -59,9 +59,15 @@ static const char kTzPosix[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
 static const uint64_t kFallbackSleepSec = 3600ULL;
 static const int      kMinSleepSec      = 60;
 
-// EE05 user buttons: BUTTON1/2/3 = D1/D2/D4 = GPIO2/3/5, active-low. All three
-// are RTC-capable, so a shared ext1 (all-low) mask can wake the chip.
-static const gpio_num_t kButtonPins[] = { GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_5 };
+// EE05 user buttons, established on hardware with the env:probe diagnostic
+// (2026-09-12) rather than from the schematic — the schematic's net labels are
+// ambiguous with -layout extraction and the third button is NOT where the first
+// reading suggested:
+//   BUTTON1 = D1 = GPIO2, BUTTON2 = D2 = GPIO3, BUTTON3 = D9 = GPIO8
+// All three are active-low and RTC-capable, so one ext1 (all-low) mask wakes
+// the chip. Arming GPIO5/D4 (the schematic's "I2C_SDA" net, not a button) was
+// what caused the deep-sleep wake storm — see LESSONS §34.
+static const gpio_num_t kButtonPins[] = { GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_8 };
 static const int        kButtonCount  = sizeof(kButtonPins) / sizeof(kButtonPins[0]);
 
 // Safety net: consecutive button-wake cycles observed, kept in RTC memory so it
@@ -169,17 +175,27 @@ static const char* kFallbackDef  =
 // (LESSONS §34): the assumed pin map/polarity is demonstrably wrong.
 static void runButtonProbe() {
     struct Probe { int gpio; const char* label; };
+    // XIAO ESP32-S3 D-pin map, minus the native-USB pads (GPIO19/20 = D-/D+,
+    // which must not be reconfigured or the USB CDC link drops) and the
+    // flash/PSRAM pads. D1/D2 already confirmed as BUTTON1/BUTTON2 (active-low);
+    // D4 did NOT respond, so the third button is somewhere else in this set.
     const Probe pins[] = {
-        { 0, "GPIO0  (XIAO BOOT)" },
-        { 1, "GPIO1  (D0/BAT_ADC)" },
-        { 2, "GPIO2  (D1)" },
-        { 3, "GPIO3  (D2)" },
-        { 4, "GPIO4  (D3/panel BUSY)" },
-        { 5, "GPIO5  (D4)" },
-        { 6, "GPIO6  (D5)" },
+        {  0, "GPIO0  (XIAO BOOT)" },
+        {  1, "GPIO1  (D0/BAT_ADC)" },
+        {  2, "GPIO2  (D1)  [BTN1]" },
+        {  3, "GPIO3  (D2)  [BTN2]" },
+        {  4, "GPIO4  (D3)" },
+        {  5, "GPIO5  (D4)" },
+        {  6, "GPIO6  (D5)" },
+        {  7, "GPIO7  (D8)" },
+        {  8, "GPIO8  (D9)" },
+        {  9, "GPIO9  (D10)" },
+        { 21, "GPIO21 (D?)" },
+        { 43, "GPIO43 (D6/TX)" },
+        { 44, "GPIO44 (D7/RX)" },
     };
     const int n = (int)(sizeof(pins) / sizeof(pins[0]));
-    int last[8];
+    int last[16];
 
     Serial.println();
     Serial.println("=== CHROMAWOTD BUTTON PROBE ===");
