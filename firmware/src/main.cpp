@@ -160,10 +160,64 @@ static const char* kFallbackPron = "(ser-uhn-DIP-i-tee)";
 static const char* kFallbackDef  =
     "noun: The occurrence and development of events by chance in a happy or beneficial way.";
 
+#ifdef CHROMAWOTD_BUTTON_PROBE
+// Bench diagnostic (env:probe): identify which pads the EE05's three side
+// buttons are actually wired to, and their polarity. Deep sleep is never
+// entered — this watches the candidate pads and prints every transition, so
+// each button can be pressed in turn and matched to a line. Exists because
+// arming ext1 on the schematic's D1/D2/D4 caused a deep-sleep wake storm
+// (LESSONS §34): the assumed pin map/polarity is demonstrably wrong.
+static void runButtonProbe() {
+    struct Probe { int gpio; const char* label; };
+    const Probe pins[] = {
+        { 0, "GPIO0  (XIAO BOOT)" },
+        { 1, "GPIO1  (D0/BAT_ADC)" },
+        { 2, "GPIO2  (D1)" },
+        { 3, "GPIO3  (D2)" },
+        { 4, "GPIO4  (D3/panel BUSY)" },
+        { 5, "GPIO5  (D4)" },
+        { 6, "GPIO6  (D5)" },
+    };
+    const int n = (int)(sizeof(pins) / sizeof(pins[0]));
+    int last[8];
+
+    Serial.println();
+    Serial.println("=== CHROMAWOTD BUTTON PROBE ===");
+    Serial.println("All pads are INPUT_PULLUP: an UNPRESSED button reads 1.");
+    Serial.println("A press pulls its pad to 0 (active-low).");
+    Serial.println();
+    for (int i = 0; i < n; i++) {
+        pinMode(pins[i].gpio, INPUT_PULLUP);
+        last[i] = digitalRead(pins[i].gpio);
+        Serial.printf("  %-22s idle=%d\n", pins[i].label, last[i]);
+    }
+    Serial.println();
+    Serial.println("watching for level changes - press each side button in turn...");
+
+    while (true) {
+        for (int i = 0; i < n; i++) {
+            int v = digitalRead(pins[i].gpio);
+            if (v != last[i]) {
+                Serial.printf("[%7lu ms] %-22s %d -> %d  %s\n", (unsigned long)millis(),
+                              pins[i].label, last[i], v,
+                              v == 0 ? "<== PRESSED (active-low)" : "released");
+                last[i] = v;
+            }
+        }
+        delay(15);
+    }
+}
+#endif
+
 void setup() {
     Serial.begin(115200);
     delay(2000);
     Serial.printf("CHROMAWOTD %s boot\n", CHROMAWOTD_VERSION);
+
+#ifdef CHROMAWOTD_BUTTON_PROBE
+    runButtonProbe();   // never returns; nothing else in setup() runs
+#endif
+
     esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
     Serial.printf("wake cause: %d (%s)\n", (int)wakeCause,
                   wakeCause == ESP_SLEEP_WAKEUP_TIMER ? "timer" :
