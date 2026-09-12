@@ -257,7 +257,15 @@ bool cc_fetchVerse(VerseData* v) {
     const char* y = votd["year"].as<const char*>() ? votd["year"].as<const char*>() : "";
     const char* m = votd["month"].as<const char*>() ? votd["month"].as<const char*>() : "";
     const char* d = votd["day"].as<const char*>()  ? votd["day"].as<const char*>()  : "";
-    snprintf(date, sizeof(date), "%s-%s-%s", y, m, d);
+    // Bound each component explicitly: they come from a remote payload, so the
+    // compiler cannot prove "%s-%s-%s" fits and warns about truncation. Clamping
+    // to the field widths the API actually uses keeps the format string honest
+    // (date is "YYYY-MM-DD") without ever truncating real data.
+    char yb[5] = "", mb[3] = "", db[3] = "";
+    snprintf(yb, sizeof(yb), "%.4s", y);
+    snprintf(mb, sizeof(mb), "%.2s", m);
+    snprintf(db, sizeof(db), "%.2s", d);
+    snprintf(date, sizeof(date), "%s-%s-%s", yb, mb, db);
 
     cc_htmlDecode(text);
     cc_stripLeadingBracket(text);   // shared with host (net.cpp)

@@ -65,8 +65,9 @@ static const int kMinSleepSec = 60;
 // ambiguous with -layout extraction and the third button is NOT where the first
 // reading suggested:
 //   BUTTON1 = D1 = GPIO2, BUTTON2 = D2 = GPIO3, BUTTON3 = D9 = GPIO8
-// All three are active-low and RTC-capable, so one ext1 (all-low) mask wakes
-// the chip. Arming GPIO5/D4 (the schematic's "I2C_SDA" net, not a button) was
+// All three are active-low and RTC-capable, so one ext1 ANY_LOW mask wakes
+// the chip (a press pulls its own pin low; the other two stay high). Arming
+// GPIO5/D4 (the schematic's "I2C_SDA" net, not a button) was
 // what caused the deep-sleep wake storm — see LESSONS §34.
 static const gpio_num_t kButtonPins[] = {GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_8};
 static const int kButtonCount = sizeof(kButtonPins) / sizeof(kButtonPins[0]);
@@ -333,7 +334,7 @@ void setup() {
     // EXPERIMENTAL — gated behind CHROMAWOTD_BUTTON_WAKE (off by default) until
     // the pin behaviour is confirmed on real hardware. Enabling it on a board
     // where these pads do not idle high produces a wake storm (boot -> sync ->
-    // wake instantly -> repeat), because a level-triggered ext1 ALL_LOW wake
+    // wake instantly -> repeat), because a level-triggered ext1 low-level wake
     // fires immediately if any armed pin already reads low.
     //
     // Correct configuration requires ALL of:
@@ -366,7 +367,16 @@ void setup() {
             btnMask |= (1ULL << (int)pin);
     }
     if (btnMask) {
-        esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ALL_LOW);
+        // ANY_LOW, not ALL_LOW: the chip wakes when ANY armed pin goes low, which
+        // is what a single button press does. Only pins that idle HIGH are armed
+        // above, so a press pulls exactly one pin low and wakes the chip.
+        //
+        // ESP_EXT1_WAKEUP_ALL_LOW is deprecated on ESP32-S3 and is defined as an
+        // alias of ANY_LOW (=0) — the legacy ALL_LOW semantics (wake only when ALL
+        // selected pins are simultaneously low) exist on the original ESP32 alone.
+        // Using the alias spammed -Wdeprecated-declarations, and naming it ALL_LOW
+        // misdescribed the hardware-verified behaviour (a single press wakes).
+        esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ANY_LOW);
     } else {
         Serial.println("button wake disabled (no pin idles HIGH) - timer only");
     }

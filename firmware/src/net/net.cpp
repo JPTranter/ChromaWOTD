@@ -442,18 +442,36 @@ bool cc_fetchVerse(VerseData* out) {
     static char text[NET_TEXT_MAX];
     static char ref[NET_TEXT_MAX];
     static char date[NET_TEXT_MAX];
+    // The date is assembled in its own buffer, then copied into `date` once. The
+    // previous form passed `date` as BOTH an input and the snprintf destination:
+    // year went into `date`, and "%s-%s-%s" read from it while writing to it. That
+    // is undefined behaviour for overlapping arguments (glibc now warns with
+    // -Wformat-truncation about the output possibly being truncated) and it would
+    // also have lost data had the year ever exceeded 8 bytes, since the bounded
+    // write would have NUL-terminated `date` before "month-day" was appended.
+    // Buffer sizes are dictated by parseJsonString(), which bails out unless
+    // outsz >= len + 5 (it reserves room for worst-case escape expansion). So a
+    // 4-char year needs >= 9 and a 2-char month needs >= 7 — sizes below that fail
+    // to parse at all rather than truncating. 16 keeps every field comfortable.
+    char ym[16] = "", dm[16] = "";
+    char ybuf[16] = "";
 
-    char ym[8] = "", dm[8] = "";
     if (!parseMember(json, "text",      true, text, sizeof(text), nullptr)) return false;
     if (!parseMember(json, "reference", true, ref,  sizeof(ref),  nullptr)) return false;
-    if (!parseMember(json, "year",      true, date, sizeof(date), nullptr) ||
+    if (!parseMember(json, "year",      true, ybuf, sizeof(ybuf), nullptr) ||
         !parseMember(json, "month",     true, ym,   sizeof(ym),   nullptr) ||
         !parseMember(json, "day",       true, dm,   sizeof(dm),   nullptr)) return false;
 
     cc_htmlDecode(text);
     cc_stripLeadingBracket(text);
 
-    snprintf(date, sizeof(date), "%s-%s-%s", date, ym, dm);
+    // Clamp each component to its real field width before assembling, so the
+    // format string cannot overrun `date` no matter what the remote payload holds
+    // (this is what silences -Wformat-truncation, rather than merely relocating
+    // the buffers). YYYY-MM-DD is what BibleGateway publishes, so no real data is
+    // truncated. The device path (net_impl_esp32.cpp) clamps identically — host
+    // and device must produce the same string.
+    snprintf(date, sizeof(date), "%.4s-%.2s-%.2s", ybuf, ym, dm);
 
     out->verse     = text;
     out->highlight = nullptr;

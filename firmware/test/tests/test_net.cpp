@@ -11,6 +11,15 @@
 #include <cstdio>
 #include <gtest/gtest.h>
 
+namespace {
+// Count occurrences of a character (used to assert the date shape is YYYY-MM-DD).
+int countChar(const char* s, char c) {
+    int n = 0;
+    for (; s && *s; ++s) if (*s == c) n++;
+    return n;
+}
+}  // namespace
+
 // ---------------------------------------------------------------------------
 // WMO mapping (pure, always run) --------------------------------------------
 // ---------------------------------------------------------------------------
@@ -133,6 +142,19 @@ TEST(Fetch, Verse_Live) {
     EXPECT_TRUE(v.verse && v.verse[0]);
     EXPECT_TRUE(v.reference && v.reference[0]);
     EXPECT_TRUE(v.date && v.date[0]);
+    // The date must be a real "YYYY-MM-DD" assembly, not a malformed or
+    // partially-overwritten buffer. This is the assertion that would have caught
+    // the aliased-snprintf bug: date was passed as both an input and the
+    // destination, so a wrong/truncated value was possible while a mere
+    // "is it non-empty?" check still passed.
+    ASSERT_TRUE(v.date);
+    const size_t dlen = strlen(v.date);
+    EXPECT_GE(dlen, 8u) << "date too short: '" << v.date << "'";
+    EXPECT_LE(dlen, 10u) << "date too long: '" << v.date << "'";
+    EXPECT_EQ(countChar(v.date, '-'), 2) << "date is not YYYY-MM-DD: '" << v.date << "'";
+    for (const char* p = v.date; *p; ++p)
+        EXPECT_TRUE((*p >= '0' && *p <= '9') || *p == '-')
+            << "unexpected character '" << *p << "' in date '" << v.date << "'";
     // The rendered verse must be ASCII-safe (the renderer expects it).
     for (const unsigned char* p = (const unsigned char*)v.verse; *p; ++p)
         EXPECT_LT(*p, 0x80) << "non-ASCII byte 0x" << std::hex << (int)*p << " reached the renderer";
