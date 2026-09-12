@@ -540,15 +540,23 @@ unit-tested (`test_sched.cpp`, 8 tests incl. midnight roll-over and "never retur
 
 ## 33. Phase 5 — buttons, time-based Verse/Word switching, and the Word-of-the-Day source
 
-**Buttons (EE05).** The schematic's XIAO pin column labels each net, and it corrects the
-earlier plan guess: **BUTTON1/2/3 = D1/D2/D4 = GPIO2/3/5** — while **D0 = GPIO1 is
-`BAT_ADC`** (the battery-sense divider), *not* a button. ⚠️ **The wake implementation is
-NOT working yet and is disabled in the shipped build** (`-DCHROMAWOTD_BUTTON_WAKE`, off by
-default): arming `ext1` on these pads produces a deep-sleep wake storm. See §34 for the
-symptom, what was tried, and the diagnostic that should settle the real pin map/polarity.
-The intended design (a button press runs the same Sync→Render→Sleep path as a timer wake,
-with `wake_cause == ESP_SLEEP_WAKEUP_EXT1`) is unchanged — only the pin behaviour is
-unverified.
+**Buttons (EE05).** The real pin map was established on hardware with the `env:probe`
+diagnostic (an infinite GPIO watch), **not** from the schematic — reading the schematic's
+XIAO symbol with `pdftotext -layout` scrambles the net-label-to-pin association, and the
+first reading put BUTTON3 on D4 (which is actually `I2C_SDA` and caused a deep-sleep wake
+storm; see §34). The verified map:
+
+| Button | XIAO pin | GPIO | Polarity |
+|--------|----------|------|----------|
+| BUTTON1 | D1 | GPIO2 | active-low |
+| BUTTON2 | D2 | GPIO3 | active-low |
+| BUTTON3 | D9 | GPIO8 | active-low |
+
+**D0/GPIO1 is `BAT_ADC`** (battery-sense divider), *not* a button. All three button pads are
+RTC-capable, so one shared `ext1` (all-low) mask wakes the chip, and a press runs the same
+Sync→Render→Sleep path as a timer wake (`wake_cause == ESP_SLEEP_WAKEUP_EXT1`). Verified on
+hardware: press → `wake cause: 3 (button)` → full sync → refresh → sleep to the next slot
+(29579 s).
 
 **Time-based content.** `sched/content_policy.{h,cpp}` is pure + unit-tested:
 `cc_contentModeForHour()` (Verse before noon, Word from noon) and `cc_useTomorrowForecast()`
@@ -591,42 +599,41 @@ weatherLabel / leftCaption) so adding a label is one field, not another position
 
 (2026-09-12)
 
-## 34. Button wake on GPIO2/3/5 causes a deep-sleep wake storm (OPEN)
+## 34. Button wake: GPIO5/D4 was not a button — arming it caused a deep-sleep wake storm (RESOLVED)
 
 **Symptom.** With `ext1` armed on GPIO2/3/5 (`ESP_EXT1_WAKEUP_ALL_LOW`), the device entered a
 wake storm: boot → sync (~13 s) → sleep → wake ~1 s later → repeat, forever. Measured
-non-invasively by polling COM-port presence (~14 s cycles). Disabling the `ext1` arm makes the
-device stable (it sleeps its full 8.6 h to the next slot), so the button wake is unambiguously
-the cause.
+non-invasively by polling COM-port presence (~14 s cycles).
 
-**What was tried, and did not fix it:**
-- `rtc_gpio_init()` + `rtc_gpio_set_direction(RTC_GPIO_MODE_INPUT_ONLY)` +
-  `rtc_gpio_pulldown_dis()` + `rtc_gpio_pullup_en()` before sleeping.
-- Reading the level with `rtc_gpio_get_level()` rather than `digitalRead()`. Note in passing:
-  `pinMode()` called *after* configuring the RTC pad hands the pad back to the digital domain
-  and silently undoes the RTC pull-up, so `pinMode()` must not be used here at all.
-- Arming **only** pins that read HIGH at arm time.
+**Root cause.** The pin map was taken from a `pdftotext -layout` reading of the EE05
+schematic, where the XIAO symbol's net labels do not preserve their association with the pin
+numbers. It gave `BUTTON3 = D4 = GPIO5`. An on-hardware probe (`env:probe`) showed the truth:
 
-Even so, `rtc_gpio_get_level()` reports HIGH for all three pads immediately before sleep, yet a
-level-triggered `ALL_LOW` wake fires ~1 s later. So either the pads do not stay high once the
-chip is in deep sleep, or these nets are not the buttons on this board/adapter combination.
-**The pin/polarity model inherited from the EE04 cookbook is not confirmed for EE05 and must
-be treated as unverified.**
+| Button | XIAO pin | GPIO | Polarity |
+|--------|----------|------|----------|
+| BUTTON1 | D1 | GPIO2 | active-low |
+| BUTTON2 | D2 | GPIO3 | active-low |
+| BUTTON3 | **D9** | **GPIO8** | active-low |
 
-**Current state:** button wake is gated behind `-DCHROMAWOTD_BUTTON_WAKE` (commented out in
-`platformio.ini`); the shipped build is timer-only. An `RTC_DATA_ATTR` counter
-(`kExt1StreakLimit`) also stops arming `ext1` after 5 consecutive button wakes, so a
-misbehaving pad can never loop the device forever.
+**GPIO5/D4 is not a button at all** — the schematic labels it `I2C_SDA`. It happens to idle
+HIGH (so it looked plausible), but it does not stay high once the chip is in deep sleep, and
+a level-triggered `ALL_LOW` wake fires immediately when any armed pin is low. Arming a
+non-button pad was the entire storm.
 
-**Next diagnostic (not yet run).** Flash an awake build (deep sleep disabled) that watches the
-candidate pads (D1/D2/D4 = GPIO2/3/5, plus D0 for reference) and prints level transitions, then
-press each button in turn. That establishes the real pin map and polarity — far cheaper than
-iterating on deep-sleep cycles, each of which costs a flash plus a soak test.
+**Fix.** Arm `ext1` on GPIO2/3/8 only, plus: `rtc_gpio_init()` +
+`RTC_GPIO_MODE_INPUT_ONLY` + `rtc_gpio_pullup_en()`/`pulldown_dis()` before sleeping, read
+levels with `rtc_gpio_get_level()` (never `pinMode()`, which hands the pad back to the digital
+domain and undoes the RTC pull-up), and arm only pins that idle HIGH. Verified on hardware:
+`wake cause: 3 (button)` → full sync → refresh → `sleeping 29579 s`, no storm.
+
+**Lesson.** Do not derive wake-pin maps from a schematic you had to decode with `-layout`;
+probe the pins on the real board. The `env:probe` diagnostic (an infinite GPIO watch that
+prints level transitions) settled in one flash what two deep-sleep iterations could not.
 
 **Method note.** `pio device monitor` asserts DTR/RTS on attach, which **resets** the
 ESP32-S3. A retry-loop of monitor attaches therefore *manufactures* a ~14 s reboot cycle that
 is easily mistaken for a firmware wake storm — the first storm "measured" that way was partly
-self-inflicted. Only the port-presence poll (never opening the port) is trustworthy for
-wake/sleep behaviour.
+self-inflicted. For wake/sleep work use either the port-presence poll (never opening the port)
+or a pyserial reader that sets `dtr=False`/`rts=False` before `open()`.
 
 (2026-09-12)

@@ -37,13 +37,14 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 - [ ] **First-Boot Setup Screen**: Display on-screen instructions guide (SSID, AP IP address `192.168.4.1`, setup steps).
 - [ ] **Captive Portal Wi-Fi Wizard**: SoftAP mode + web configuration portal for SSID/password, timezone, location, and preferred content mode.
 - [ ] **Factory Reset**: Long-press button hold (10 seconds) detection to wipe NVS credentials and reboot into setup wizard.
-- [ ] **Button Hardware Interaction & Deep Sleep Wake** (Phase 5, 2026-09-12 — **BLOCKED**):
-  - [ ] `ext1` multi-button deep sleep wake mask — BUTTON1/2/3 = GPIO2/3/5 per the EE05
-        schematic (**D0/GPIO1 is `BAT_ADC`, not a button** — the earlier guess was wrong).
-        Arming `ext1` currently causes a deep-sleep wake storm, so it is gated behind
-        `-DCHROMAWOTD_BUTTON_WAKE` (off by default). See LESSONS §34 for the diagnostic plan.
-  - [ ] The wake path itself is implemented (a button press would run the same
-        Sync→Render→Sleep cycle as a timer wake); only the pad behaviour is unverified.
+- [x] **Button Hardware Interaction & Deep Sleep Wake** (Phase 5, 2026-09-12):
+  - [x] `ext1` multi-button deep sleep wake mask — **BUTTON1/2/3 = GPIO2/GPIO3/GPIO8
+        (D1/D2/D9)**, active-low, all RTC-capable. **D0/GPIO1 is `BAT_ADC`**, not a button.
+        The pin map was *probed on hardware* (`env:probe`); the schematic-derived
+        D1/D2/D4 guess was wrong (D4 is `I2C_SDA`) and caused a deep-sleep wake storm —
+        see LESSONS §34.
+  - [x] All three buttons run a full immediate re-sync + refresh (same path as a timer
+        wake). Verified on hardware: `wake cause: 3 (button)` → sync → refresh → sleep.
   - [x] Content mode is time-based, not toggled: Verse 00:00–11:59, Word 12:00–23:59.
   - [ ] Lockout during active ~25s screen sweep to ignore switch bounce/spam.
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
