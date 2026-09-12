@@ -91,6 +91,20 @@ cc_test(test_layout_landscape tests/test_layout_landscape.cpp)
 cc_test(test_layout_alert     tests/test_layout_alert.cpp)
 cc_test(test_layout_overflow  tests/test_layout_overflow.cpp)
 
+# Pure text modules (text/glyphs, text/wrap) — no layout/backend dependency, so
+# these are tested in isolation (REVIEW T1). chroma_canvas already compiles the
+# two .cpp files.
+add_executable(test_text tests/test_text.cpp)
+target_compile_definitions(test_text PRIVATE CHROMAWOTD_HOST=1)
+target_link_libraries(test_text PRIVATE chroma_canvas gtest_main)
+add_test(NAME test_text COMMAND test_text WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+if(WIN32 AND EXISTS "${_mingw_bin_dir}")
+    add_custom_command(TARGET test_text POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${_rt_dlls} $<TARGET_FILE_DIR:test_text>
+        COMMENT "Copying MinGW runtime DLLs for test_text")
+endif()
+
 # Preview renderer: render an arbitrary fixture through the real layout engine.
 # Driven by tools/render_preview.py.
 add_executable(layout_render
