@@ -13,10 +13,10 @@
 // RGB approximations of the four ePaper pigments
 extern const uint8_t CC_RGB[4][3];
 
-// Mock canvas: receives only ASCII bytes plus the 0xB0 degree sentinel. UTF-8
-// decoding happens in the shared decoder (verse_display.cpp's cc_utf8ToAscii)
-// before any draw call, so there is exactly one decoder in the project — the
-// canvas never re-decodes multi-byte text.
+// Mock canvas: receives only ASCII bytes (0x00..0x7F). UTF-8 decoding happens in
+// the shared decoder (verse_display.cpp's cc_utf8ToAscii) before any draw call,
+// and the degree symbol is drawn by the caller as a vector circle — so there is
+// exactly one decoder and one degree handler in the project.
 struct CcCanvas {
     int w = 0;
     int h = 0;
@@ -33,7 +33,7 @@ struct CcCanvas {
     void drawCircle(int x0, int y0, int r, uint32_t c);
     void fillCircle(int x0, int y0, int r, uint32_t c);
 
-    // ch is ASCII (0x00..0x7F) or the 0xB0 degree sentinel; see the contract above.
+    // ch is ASCII (0x00..0x7F) only; degree is drawn by the caller as a circle.
     void drawChar(int x, int y, unsigned char ch, uint32_t color, uint8_t size = 1);
 
     bool dumpPng(const char* path);

@@ -21,6 +21,22 @@ static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out);
 static int cc_utf8ToAsciiN(const unsigned char* p, const unsigned char* end, unsigned char* out);
 
 // ---------------------------------------------------------------------------
+// Backend abstraction (D6). All drawing routes through the DisplayTarget
+// interface so the layout code never sees Seeed GFX or the mock canvas directly.
+// The two targets (CanvasTarget for host, SeeedTarget for device) own their own
+// colour mapping and glyph rasterisation.
+// ---------------------------------------------------------------------------
+#include "draw/target.h"
+
+static DisplayTarget& target() {
+#ifdef CHROMAWOTD_HOST
+    return getCanvasTarget();
+#else
+    return getSeeedTarget();
+#endif
+}
+
+// ---------------------------------------------------------------------------
 // Font metrics abstraction.
 //
 // The whole layout engine measures text in pixel widths assuming a CONSTANT
@@ -32,20 +48,10 @@ static int cc_utf8ToAsciiN(const unsigned char* p, const unsigned char* end, uns
 // decision is localised here. Default (no flag) is unchanged: 6px * size.
 // ---------------------------------------------------------------------------
 #ifdef CHROMAWOTD_FONT_FREESANS
-#ifdef CHROMAWOTD_HOST
-// Host has no gfxfont.h (device lib). Provide the two structs + extern the font.
-#ifndef PROGMEM
-#define PROGMEM
-#endif
-typedef struct { uint32_t bitmapOffset; uint8_t width, height, xAdvance; int8_t xOffset, yOffset; } GFXglyph;
-typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; uint8_t yAdvance; } GFXfont;
-#else
-// Device: GFXglyph/GFXfont/PROGMEM come from TFT_eSPI.h -> gfxfont.h. Include it
-// here (early) so the font header below and the metrics helpers can use them.
-// verse_display.cpp is its own TU; main.cpp's include of TFT_eSPI.cpp does not
-// carry over. Board macros are supplied as global build_flags.
-#include "TFT_eSPI.h"
-#endif
+// GFXglyph/GFXfont/PROGMEM come from draw/font_types.h (host shim or device
+// gfxfont.h via TFT_eSPI.h) — a single definition shared with the DisplayTarget
+// backends, instead of a per-TU #ifdef shim.
+#include "draw/font_types.h"
 #include "fonts/Roboto55pt7b.h"    // body font (needs GFXglyph/GFXfont visible)
 #include "fonts/Roboto5pt7b.h"     // auto-size small body (long verses)
 #include "fonts/Roboto6pt7b.h"     // auto-size large body (short verses)
@@ -91,10 +97,6 @@ static int cc_glyphAscent(int size) {
 #endif
 }
 
-// Forward-declared: each backend (host canvas / device epaper) provides its own
-// primitive below, after this shared section.
-static void dev_drawCircle(int x, int y, int r, uint32_t c);
-
 // Pixel advance of ONE decoded ASCII glyph at the given magnification.
 #ifdef CHROMAWOTD_FONT_FREESANS
 static int cc_advanceF(const GFXfont* f, unsigned char ascii, int size) {
@@ -127,12 +129,12 @@ static int cc_degreeRadius(const GFXfont* f) {
 
 // Draw a degree circle for a given font: a small superscript circle whose top
 // aligns near the font's cap top and whose left sits at the cursor+radius.
-// Shared by host + device (both provide drawCircle).
+// Shared by host + device — both route the circle through the target.
 static void dev_drawDegree(const GFXfont* f, int cursorX, int base, uint32_t c, int size) {
     int r = cc_degreeRadius(f) * size;
     int cx = cursorX + r;
     int cy = base - cc_glyphAscentF(f, size) + r;   // top near cap top
-    dev_drawCircle(cx, cy, r, c);
+    target().drawCircle(cx, cy, r, c);
 }
 #endif   // CHROMAWOTD_FONT_FREESANS
 
@@ -278,46 +280,26 @@ bool verseHighlightFound(const VerseData& vd) {
     return cc_findIgnoreCase(vd.verse, vd.highlight) != nullptr;
 }
 
-#ifdef CHROMAWOTD_HOST
-#include "../test/harness/canvas.h"
+// ---------------------------------------------------------------------------
+// Unified backend. The dev_* primitives forward to the DisplayTarget, and the
+// FreeSans glyph/degree special-casing lives in the shared code below so host and
+// device agree byte-for-byte. There is exactly one copy of each, not two under
+// #ifdef CHROMAWOTD_HOST.
+// ---------------------------------------------------------------------------
 
-static void dev_fillRect(int x, int y, int w, int h, uint32_t c) { g_canvas.fillRect(x, y, w, h, c); }
-static void dev_drawRect(int x, int y, int w, int h, uint32_t c) { g_canvas.drawRect(x, y, w, h, c); }
-static void dev_drawFastHLine(int x, int y, int w, uint32_t c) { g_canvas.drawFastHLine(x, y, w, c); }
-static void dev_drawFastVLine(int x, int y, int h, uint32_t c) { g_canvas.drawFastVLine(x, y, h, c); }
-static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { g_canvas.drawLine(x0, y0, x1, y1, c); }
-static void dev_drawCircle(int x, int y, int r, uint32_t c) { g_canvas.drawCircle(x, y, r, c); }
-static void dev_fillCircle(int x, int y, int r, uint32_t c) { g_canvas.fillCircle(x, y, r, c); }
+static void dev_fillRect(int x, int y, int w, int h, uint32_t c) { target().fillRect(x, y, w, h, c); }
+static void dev_drawRect(int x, int y, int w, int h, uint32_t c) { target().drawRect(x, y, w, h, c); }
+static void dev_drawFastHLine(int x, int y, int w, uint32_t c) { target().drawFastHLine(x, y, w, c); }
+static void dev_drawFastVLine(int x, int y, int h, uint32_t c) { target().drawFastVLine(x, y, h, c); }
+static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { target().drawLine(x0, y0, x1, y1, c); }
+static void dev_drawCircle(int x, int y, int r, uint32_t c) { target().drawCircle(x, y, r, c); }
+static void dev_fillCircle(int x, int y, int r, uint32_t c) { target().fillCircle(x, y, r, c); }
+
+static int dev_measureText(const char* str, int size) { return cc_measurePx(str, size); }
 
 #ifdef CHROMAWOTD_FONT_FREESANS
-// Render one glyph from a specific free font at baseline (x,y), magnification
-// size, honouring xOffset/yOffset so descenders hang below the baseline.
-static void dev_drawGlyphF(const GFXfont* f, unsigned char ch, int x, int y, uint32_t c, int size) {
-    if (ch < f->first || ch > f->last) { g_canvas.drawChar(x, y, '?', c, (uint8_t)size); return; }
-    const GFXglyph* g = &f->glyph[ch - f->first];
-    if (!g->width || !g->height) return;   // space etc.
-    // decode packed bitmap: byte offset g->bitmapOffset, MSB-first bitstream
-    int nbit = 0;
-    for (int r = 0; r < g->height; r++) {
-        for (int col = 0; col < g->width; col++) {
-            int byteaddr = g->bitmapOffset + nbit / 8;
-            uint8_t byte = f->bitmap[byteaddr];
-            if (byte & (0x80 >> (nbit & 7))) {
-                int px = x + g->xOffset * size + col * size;
-                int py = y + g->yOffset * size + r * size;
-                for (int dy = 0; dy < size; dy++)
-                    for (int dx = 0; dx < size; dx++)
-                        g_canvas.setPixel(px + dx, py + dy, c);
-            }
-            nbit++;
-        }
-    }
-}
-
-static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) {
-    dev_drawGlyphF(g_bodyFont, ch, x, y, c, size);
-}
-
+// FreeSans/Roboto path: per-glyph decode, baseline = y + glyphAscent, degree drawn
+// as a vector circle, glyphs drawn at baseline+yOffset.
 static void dev_drawStringF(const GFXfont* f, int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
     int cursorX = x;
@@ -329,7 +311,7 @@ static void dev_drawStringF(const GFXfont* f, int x, int y, const char* str, uin
         if (glyph == CC_DEGREE) {
             dev_drawDegree(f, cursorX, base, c, size);
         } else {
-            dev_drawGlyphF(f, glyph, cursorX, base, c, size);
+            target().drawGlyphF(f, glyph, cursorX, base, c, size);
         }
         cursorX += cc_advanceF(f, glyph, size);
     }
@@ -339,6 +321,8 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
     dev_drawStringF(g_bodyFont, x, y, str, c, size);
 }
 #else
+// Built-in 5x7 path: fixed 6px advance, degree drawn as a small circle at
+// (cursorX + 2*size, y + 2*size, r=size).
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
     int cursorX = x;
@@ -346,90 +330,19 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
     while (*p) {
         unsigned char glyph = 0;
         p += cc_utf8ToAscii(p, &glyph);
-        g_canvas.drawChar(cursorX, y, glyph, c, (uint8_t)size);
+        if (glyph == CC_DEGREE) {
+            target().drawCircle(cursorX + 2 * size, y + 2 * size, size, c);
+        } else {
+            target().drawChar(cursorX, y, glyph, c, (uint8_t)size);
+        }
         cursorX += CC_GLYPH_W * size;
     }
 }
 #endif
-static int dev_measureText(const char* str, int size) { return cc_measurePx(str, size); }
-static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
-    dev_drawString(rx - dev_measureText(str, size), y, str, c, size);
-}
-
-#else
-#include <Arduino.h>
-#include "TFT_eSPI.h"
-
-extern EPaper epaper;
-
-static uint16_t toDeviceColor(uint32_t c) {
-    switch (c) {
-        case CC_WHITE:  return TFT_WHITE;
-        case CC_BLACK:  return TFT_BLACK;
-        case CC_RED:    return TFT_RED;
-        case CC_YELLOW: return TFT_YELLOW;
-        default:        return TFT_WHITE;
-    }
-}
-
-static void dev_fillRect(int x, int y, int w, int h, uint32_t c) { epaper.fillRect(x, y, w, h, toDeviceColor(c)); }
-static void dev_drawRect(int x, int y, int w, int h, uint32_t c) { epaper.drawRect(x, y, w, h, toDeviceColor(c)); }
-static void dev_drawFastHLine(int x, int y, int w, uint32_t c) { epaper.drawFastHLine(x, y, w, toDeviceColor(c)); }
-static void dev_drawFastVLine(int x, int y, int h, uint32_t c) { epaper.drawFastVLine(x, y, h, toDeviceColor(c)); }
-static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { epaper.drawLine(x0, y0, x1, y1, toDeviceColor(c)); }
-static void dev_drawCircle(int x, int y, int r, uint32_t c) { epaper.drawCircle(x, y, r, toDeviceColor(c)); }
-static void dev_fillCircle(int x, int y, int r, uint32_t c) { epaper.fillCircle(x, y, r, toDeviceColor(c)); }
-static int dev_measureText(const char* str, int size) { return cc_measurePx(str, size); }
-
-static void dev_drawStringF(const GFXfont* f, int x, int y, const char* str, uint32_t c, int size) {
-    if (!str) return;
-#ifdef CHROMAWOTD_FONT_FREESANS
-    // Per-glyph so we can special-case the degree (0xB0) which the ASCII-only
-    // GFX font does NOT contain -- drawString() would silently drop it. Mirrors
-    // the host path: baseline = y + glyphAscent, glyph drawn at baseline+yOffset.
-    epaper.setTextColor(toDeviceColor(c));
-    epaper.setTextSize(size);
-    epaper.setFreeFont(f);
-    int baseline = y + cc_glyphAscentF(f, size);
-    int cursorX = x;
-    const unsigned char* p = (const unsigned char*)str;
-    while (*p) {
-        unsigned char glyph = 0;
-        p += cc_utf8ToAscii(p, &glyph);
-        if (glyph == CC_DEGREE) {
-            dev_drawDegree(f, cursorX, baseline, c, size);
-        } else {
-            epaper.drawChar(glyph, cursorX, baseline);
-        }
-        cursorX += cc_advanceF(f, glyph, size);
-    }
-    return;
-#else
-    epaper.setTextSize(size);
-    epaper.setTextColor(toDeviceColor(c));
-    int cursorX = x;
-    const unsigned char* p = (const unsigned char*)str;
-    while (*p) {
-        unsigned char glyph = 0;
-        p += cc_utf8ToAscii(p, &glyph);
-        if (glyph == CC_DEGREE) {
-            epaper.drawCircle(cursorX + 2 * size, y + 2 * size, size, toDeviceColor(c));
-        } else {
-            epaper.drawChar(glyph, cursorX, y);
-        }
-        cursorX += CC_GLYPH_W * size;
-    }
-#endif
-}
-
-static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
-    dev_drawStringF(g_bodyFont, x, y, str, c, size);
-}
 
 static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
     dev_drawString(rx - dev_measureText(str, size), y, str, c, size);
 }
-#endif
 
 static void drawWeatherIcon(int cx, int cy, int size, WeatherIcon iconType) {
     int r = size / 3;

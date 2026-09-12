@@ -159,15 +159,10 @@ void CcCanvas::fillCircle(int x0, int y0, int r, uint32_t c) {
 }
 
 void CcCanvas::drawChar(int x, int y, unsigned char ch, uint32_t color, uint8_t size) {
-    // ch is ASCII (0x00..0x7F) or the 0xB0 degree sentinel — see the contract in
-    // canvas.h. UTF-8 decoding happens in the shared decoder before this is called,
-    // so there is no non-ASCII fallback here (that would be a second decoder).
-    if (ch == 0xB0) {
-        int r = size;
-        drawCircle(x + 2 * size, y + 2 * size, r, color);
-        return;
-    }
-
+    // ch is ASCII (0x00..0x7F) only — see the contract in canvas.h. UTF-8 decoding
+    // happens in the shared decoder, and the degree symbol is drawn by the caller
+    // as a vector circle, so there is exactly one decoder and one degree handler
+    // in the project (no per-target non-ASCII fallback here).
     for (int i = 0; i < 5; i++) {
         uint8_t line = font[ch * 5 + i];
         for (int j = 0; j < 8; j++, line >>= 1) {
