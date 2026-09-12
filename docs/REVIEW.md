@@ -14,6 +14,52 @@ Severity: **P0** security/correctness that must be fixed before shipping network
 
 ---
 
+## Check-off status (2026-09-12, against HEAD `c7a9584`)
+
+Each finding re-tested against the current tree. `tools/verify_all.py` green at HEAD.
+
+| ID | Severity | Status | Notes |
+|----|----------|--------|-------|
+| S1 | P0 | **STILL VALID** | No TLS/`setCACert` policy anywhere; VPN + captive-portal surface unaddressed. |
+| S2 | P1 | **STILL VALID** | `cc_utf8ToAscii` still length-unaware; `cc_measurePxN` passes a NUL-terminated substring past a `len` bound. |
+| S3 | P1 | **STILL VALID** | No `secrets.h.example`, no credential/NVS policy. |
+| S4 | P2 | **STILL VALID** | Fixed buffers `wordBuf[64]`/`lineBuf[96]` carry no untrusted-input comment. |
+| S5 | P3 | **STILL VALID** | No OTA note in plan's release item. |
+| D1 | P1 | **STILL VALID** | `verse_display.cpp` now 796 lines; still holds decode/wrap/icon/backend/layout. |
+| D2 | P1 | **MOSTLY RESOLVED** | 5 layouts collapsed to one; magic-number constants (R1) still inline. |
+| D3 | P1 | **RESOLVED** | Single light/landscape presentation; no theme dispatcher; header documents it. |
+| D4 | P2 | **STILL VALID** | `WeatherData::icon` still a 0–3 `int`; string-matched in 3 places. |
+| D5 | P2 | **STILL VALID** | `canvas.cpp` `drawChar`/`drawString`/`measureText` UTF-8 handling is dead/bypassed. |
+| D6 | P2 | **STILL VALID** | `dev_*` shims under `#ifdef` grew with the FreeSans glyph path (3rd copy). |
+| D7 | P2 | **STILL VALID** | `main.cpp` still a hardcoded-fixture demo, no state machine, no `ARCHITECTURE.md`. |
+| C1 | — | **STILL VALID** | `lineBuf[96]`/`wordBuf[64]` silent truncation, mid-word no marker. |
+| C2 | — | **STILL VALID** | `cc_lineBudget` narrow-column → `.` degradation uncommented. |
+| C3 | — | **STILL VALID** | Weather icons untested; heavy integer division. |
+| C4 | — | **RESOLVED** | `+0.5f` idiom remains only as deliberate warnings (verse_display.cpp:210, LESSONS). |
+| R1 | — | **STILL VALID** | Layout geometry still inline magic numbers in `drawLayout`/`drawLandscapeWeatherColumn`. |
+| R2 | — | **RESOLVED** | `verse_display.h` now documents the single presentation + layering. |
+| R3 | — | **RESOLVED** | `C_*` legacy aliases removed; only `CC_*` remain. |
+| R4 | — | **RESOLVED** | Old portrait budget code gone; new column budget is named + commented. |
+| R5 | — | **PARTIAL** | Comments still mix terse fragments and prose. |
+| DOC1 | P1 | **STILL VALID** | No LICENSE. |
+| DOC2 | P1 | **STILL VALID** | No CONTRIBUTING.md / .clang-format / .editorconfig. |
+| DOC3 | P2 | **STILL VALID** | No CI. |
+| DOC4 | P1 | **STILL VALID** | No ARCHITECTURE.md. |
+| DOC5 | P2 | **STILL VALID** | No secrets.h.example (S3). |
+| DOC6 | P2 | **STILL VALID** | README no Security note (S1). |
+| DOC7 | P3 | **STILL VALID** | `chroma_version.h` hardcoded, no release checklist. |
+| H1 | P3 | **RESOLVED** | Root `output/` gone. |
+| H2 | P2 | **STILL VALID** | `board_pins.h` deprecated stub, zero references. |
+| H3 | P2 | **STILL VALID** | `driver.h` still a second source of truth + `JD79661`-only comment. |
+| H4 | P3 | **STILL VALID** | No shared editor/format config (folded into DOC2). |
+| T1 | P1 | **STILL VALID** | No tests: colour mapping, `cc_lineCapacity` edges, icon cases, adversarial UTF-8. |
+| T2 | P2 | **STILL VALID** | Device branch only covered by local `verify_all` (no CI gate). |
+| T3 | P3 | **STILL VALID** | Ledger not gated in CI (folded into DOC2/DOC3). |
+
+Resolved: **D2 (mostly), D3, C4, R2, R3, R4, H1.** Still valid: **S1–S5, D1, D4–D7, C1–C3, R1, R5, H2–H4, DOC1–DOC7, T1–T3.**
+
+---
+
 ## 1. Security
 
 ### S1 (P0) — TLS certificate validation is not addressed for the network stage
