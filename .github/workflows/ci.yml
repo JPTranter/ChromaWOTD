@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup PlatformIO
+      uses: platformio/action-ci@v1
+      with:
+        project_dir: .
+
+    - name: Build firmware
+      run: pio run -e s3
+
+    - name: Setup CMake
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake ninja-build
+        cmake --version
+
+    - name: Configure host tests
+      run: |
+        cmake -S firmware/test -B firmware/test/build -G Ninja
+
+    - name: Build host tests
+      run: |
+        cmake --build firmware/test/build
+
+    - name: Run host tests
+      run: |
+        ctest --test-dir firmware/test/build --output-on-failure
+
+    - name: Verify render ledger
+      run: |
+        pip install pillow
+        python tools/verify_all.py --skip-firmware
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup clang-format
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format
+
+    - name: Check C++ formatting
+      run: |
+        clang-format --dry-run --Werror -style=file firmware/src/*.cpp firmware/src/*.h
+
+    - name: Check Python formatting
+      run: |
+        pip install black flake8
+        black --check --line-length 100 tools/
+        flake8 tools/ --max-line-length 100
