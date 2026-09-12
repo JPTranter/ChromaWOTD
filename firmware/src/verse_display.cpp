@@ -267,10 +267,25 @@ static int dev_measureText(const char* str, int size) { return cc_measurePx(str,
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
 #ifdef CHROMAWOTD_FONT_FREESANS
+    // Per-glyph so we can special-case the degree (0xB0) which the ASCII-only
+    // GFX font does NOT contain -- drawString() would silently drop it. Mirrors
+    // the host path: baseline = y + glyphAscent, glyph drawn at baseline+yOffset.
     epaper.setTextColor(toDeviceColor(c));
     epaper.setTextSize(size);
     epaper.setFreeFont(&FreeSans6pt7b);
-    epaper.drawString(str, x, y);   // TFT_eSPI adds glyph_ab internally; y = glyph TOP
+    int baseline = y + cc_glyphAscent(size);
+    int cursorX = x;
+    const unsigned char* p = (const unsigned char*)str;
+    while (*p) {
+        unsigned char glyph = 0;
+        p += cc_utf8ToAscii(p, &glyph);
+        if (glyph == CC_DEGREE) {
+            epaper.drawCircle(cursorX + 2 * size, y + 2 * size, size, toDeviceColor(c));
+        } else {
+            epaper.drawChar(glyph, cursorX, baseline);
+        }
+        cursorX += cc_advance(glyph, size);
+    }
     return;
 #else
     epaper.setTextSize(size);
