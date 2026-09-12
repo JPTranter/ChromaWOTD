@@ -44,7 +44,7 @@ The first commit after installing can fail while `end-of-file-fixer` rewrites ne
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/jptra/ChromaWOTD.git
+git clone https://github.com/JPTranter/ChromaWOTD.git
 cd ChromaWOTD
 ```
 
