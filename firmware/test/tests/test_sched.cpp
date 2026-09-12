@@ -4,6 +4,7 @@
 // next-slot computation must be strictly forward, roll over midnight, and never
 // return 0 (which would spin the device in a wake loop).
 #include "sched/wake_schedule.h"
+#include "sched/content_policy.h"
 #include <gtest/gtest.h>
 
 static struct tm at(int h, int m, int s = 0) {
@@ -48,4 +49,32 @@ TEST(WakeSchedule, Night_RollsOver) {
 
 TEST(WakeSchedule, AlwaysPositive_EvenAtLastSecondOfDay) {
     EXPECT_GT(cc_secondsUntilNextWake(at(23, 59, 59)), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Content policy (time-of-day presentation) ---------------------------------
+// ---------------------------------------------------------------------------
+TEST(ContentPolicy, VerseInTheMorning) {
+    for (int h = 0; h < 12; h++)
+        EXPECT_EQ(cc_contentModeForHour(h), ContentMode::Verse) << "hour " << h;
+}
+
+TEST(ContentPolicy, WordInTheAfternoonAndEvening) {
+    for (int h = 12; h < 24; h++)
+        EXPECT_EQ(cc_contentModeForHour(h), ContentMode::Word) << "hour " << h;
+}
+
+TEST(ContentPolicy, ModeFlipsExactlyAtNoon) {
+    EXPECT_EQ(cc_contentModeForHour(11), ContentMode::Verse);
+    EXPECT_EQ(cc_contentModeForHour(12), ContentMode::Word);
+}
+
+TEST(ContentPolicy, TodayForecastBefore18) {
+    for (int h = 0; h < 18; h++)
+        EXPECT_FALSE(cc_useTomorrowForecast(h)) << "hour " << h;
+}
+
+TEST(ContentPolicy, TomorrowForecastFrom18) {
+    for (int h = 18; h < 24; h++)
+        EXPECT_TRUE(cc_useTomorrowForecast(h)) << "hour " << h;
 }

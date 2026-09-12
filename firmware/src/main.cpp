@@ -1,28 +1,34 @@
 // CHROMAWOTD — 2.9" quad-colour ePaper Verse/Word of the Day + weather display.
 // Seeed EE05 (XIAO ESP32-S3 Plus) + 2.9" BWRY ePaper (JD79661 panel / JD79667 driver IC).
 //
-// Phase 3 main: connect Wi-Fi, sync NTP, fetch weather (Open-Meteo) + verse
-// (BibleGateway) over validated TLS, then run the single landscape layout and
-// do one full ~25s refresh. Falls back to an inline verse / plain weather and
-// an OFFLINE banner when the network is unavailable. See docs/ARCHITECTURE.md
-// for the full state machine (Boot → Sync → Render → Sleep → wake).
+// Behaviour:
+//   * Sleeps between scheduled refreshes (06:30 / 12:30 / 18:00) and wakes on
+//     the RTC timer OR any of the three user buttons (BUTTON1/2/3 = GPIO2/3/5,
+//     active-low) — a button press runs exactly the same sync+render cycle.
+//   * Content by local time: 00:00–11:59 Verse of the Day, 12:00–23:59 Word of
+//     the Day (Word from A.Word.A.Day, with the respelling pronunciation).
+//   * Weather column by local time: 18:00–23:59 shows TOMORROW's outlook and
+//     captions it "TOMORROW", otherwise today's under "FORECAST".
+//   * Falls back to bundled content + a red OFFLINE banner when the network or
+//     an API is unavailable. See docs/ARCHITECTURE.md for the state machine.
 //
 // STACK NOTE: mbedtls's entropy gathering + CTR-DRBG reseed during the first
 // TLS handshake needs more stack than the default Arduino loopTask (8 KB on
 // this core) provides — it overflows partway through start_ssl_client(). This
 // project ships the precompiled Arduino-ESP32 core (not an IDF component
 // build), so framework sdkconfig.h already `#define`s CONFIG_MAIN_TASK_STACK_SIZE
-// and a build_flags override is silently shadowed — bumping it is not
-// available without rebuilding the framework. The portable fix that works with
-// the precompiled core: run the whole Sync phase (Wi-Fi + TLS fetch) on a
-// dedicated FreeRTOS task created with an explicit 16 KB stack, and have
-// setup() block on a semaphore until it finishes.
+// and a build_flags override is silently shadowed. The portable fix: run the
+// whole Sync phase (Wi-Fi + TLS fetch) on a dedicated FreeRTOS task with an
+// explicit 16 KB stack, and have setup() block on a semaphore until it finishes.
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <esp_sleep.h>
+#include <driver/rtc_io.h>
+#include <time.h>
 // Seeed_GFX is a flat-layout Arduino library: its root TFT_eSPI.cpp includes
 // Processors + Extensions (EPaper etc.) itself. Include it wholesale so everything
 // lands in this TU; PlatformIO only compiles the library's root directory, so no
@@ -39,36 +45,40 @@ EPaper epaper;
 #include "verse_display.h"
 #include "net/net.h"
 #include "sched/wake_schedule.h"
-#include <esp_sleep.h>
+#include "sched/content_policy.h"
 
 #ifdef CHROMAWOTD_NETWORK
 #include "net/net_impl_esp32.h"
 #endif
 
-// POSIX TZ string (Sydney/Melbourne, DST-aware). Shared by the NTP sync and the
-// local-time schedule computation.
+// POSIX TZ string (Sydney/Melbourne, DST-aware).
 static const char kTzPosix[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
 
-// Fallback sleep when the wall clock isn't trustworthy (no NTP this wake): one
-// hour, so the device retries soon instead of sleeping until a bogus "next slot".
+// Fallback sleep when the wall clock isn't trustworthy: retry soon rather than
+// sleeping until a bogus "next slot". Never sleep less than this (wake-loop guard).
 static const uint64_t kFallbackSleepSec = 3600ULL;
+static const int      kMinSleepSec      = 60;
 
-// Never sleep for less than this — guards against a wake loop if the clock
-// lands exactly on a slot or drifts backwards.
-static const int kMinSleepSec = 60;
+// EE05 user buttons: BUTTON1/2/3 = D1/D2/D4 = GPIO2/3/5, active-low. All three
+// are RTC-capable, so a shared ext1 (all-low) mask can wake the chip.
+static const gpio_num_t kButtonPins[] = { GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_5 };
+static const int        kButtonCount  = sizeof(kButtonPins) / sizeof(kButtonPins[0]);
 
 // --- Sync-task state, shared between the sync task and setup() -------------
 static VerseData   g_verse    = {};
+static WordData    g_word     = {};
 static WeatherData g_weather  = {};
 static const char* g_offlineReason = nullptr;
 static SemaphoreHandle_t g_syncDone = nullptr;
+static ContentMode g_mode     = ContentMode::Verse;
+static bool        g_tomorrow = false;
+static bool        g_haveTime = false;
+static char        g_date[32] = "";   // "YYYY-MM-DD" for the header
 
 // Runs the whole network Sync phase on its own task/stack (see STACK NOTE
 // above), then signals g_syncDone and deletes itself.
 static void syncTask(void* /*arg*/) {
 #ifdef CHROMAWOTD_NETWORK
-    // cc_wifiConnect() internally checks for WIFI_SSID and returns 1 if not
-    // configured, so we can call it unconditionally.
     Serial.println("sync: connecting wifi...");
     if (cc_wifiConnect() != 0) {
         g_offlineReason = "no wifi";
@@ -78,33 +88,55 @@ static void syncTask(void* /*arg*/) {
                       WiFi.getHostname(), WiFi.localIP().toString().c_str());
         configTzTime(kTzPosix, "pool.ntp.org");
 
-        // Wait for SNTP so the schedule below has a valid local time. Bounded:
-        // a slow/unreachable NTP server must not hang the wake.
+        // Bounded NTP wait: the content mode + weather window depend on it.
         struct tm tmv;
         if (getLocalTime(&tmv, 6000)) {
-            Serial.printf("sync: time OK %04d-%02d-%02d %02d:%02d:%02d\n",
-                          tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+            g_haveTime = true;
+            snprintf(g_date, sizeof(g_date), "%04d-%02d-%02d",
+                     tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
+            Serial.printf("sync: time OK %s %02d:%02d:%02d\n", g_date,
                           tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
         } else {
             Serial.println("sync: WARN ntp time not available");
         }
 
-        static VerseData fv;
-        Serial.println("sync: fetching verse...");
-        if (cc_fetchVerse(&fv) && fv.verse) {
-            g_verse = fv;
-            Serial.printf("sync: verse OK (%s)\n", fv.reference ? fv.reference : "?");
+        // Without a clock we cannot pick content by time: default to the verse
+        // and today's weather rather than showing the wrong thing.
+        g_mode     = g_haveTime ? cc_contentModeForHour(tmv.tm_hour) : ContentMode::Verse;
+        g_tomorrow = g_haveTime ? cc_useTomorrowForecast(tmv.tm_hour) : false;
+        Serial.printf("sync: mode=%s weather=%s\n",
+                      g_mode == ContentMode::Word ? "word" : "verse",
+                      g_tomorrow ? "tomorrow" : "today");
+
+        if (g_mode == ContentMode::Word) {
+            static WordData wd;
+            Serial.println("sync: fetching word of the day...");
+            if (cc_fetchWord(&wd) && wd.definition) {
+                g_word = wd;
+                Serial.printf("sync: word OK (%s)\n", wd.word ? wd.word : "?");
+            } else {
+                g_offlineReason = g_offlineReason ? g_offlineReason : "word API";
+                Serial.println("sync: word FAILED (bundled fallback)");
+            }
         } else {
-            g_offlineReason = g_offlineReason ? g_offlineReason : "verse API";
-            Serial.println("sync: verse FAILED");
+            static VerseData fv;
+            Serial.println("sync: fetching verse...");
+            if (cc_fetchVerse(&fv) && fv.verse) {
+                g_verse = fv;
+                Serial.printf("sync: verse OK (%s)\n", fv.reference ? fv.reference : "?");
+            } else {
+                g_offlineReason = g_offlineReason ? g_offlineReason : "verse API";
+                Serial.println("sync: verse FAILED");
+            }
         }
+
         Serial.println("sync: fetching weather...");
-        if (!cc_fetchWeather(&g_weather)) {
+        if (!cc_fetchWeather(&g_weather, g_tomorrow)) {
             g_offlineReason = g_offlineReason ? g_offlineReason : "weather API";
             Serial.println("sync: weather FAILED");
         } else {
             Serial.printf("sync: weather OK (%.1f C, %s)\n", g_weather.temp,
-                           g_weather.condition ? g_weather.condition : "?");
+                          g_weather.condition ? g_weather.condition : "?");
         }
     }
 #else
@@ -114,6 +146,13 @@ static void syncTask(void* /*arg*/) {
     vTaskDelete(nullptr);
 }
 
+// Bundled word used when the A.Word.A.Day fetch/parse fails, so the afternoon
+// panel still shows something coherent (flagged by the OFFLINE banner).
+static const char* kFallbackWord = "serendipity";
+static const char* kFallbackPron = "(ser-uhn-DIP-i-tee)";
+static const char* kFallbackDef  =
+    "noun: The occurrence and development of events by chance in a happy or beneficial way.";
+
 void setup() {
     Serial.begin(115200);
     delay(2000);
@@ -121,72 +160,90 @@ void setup() {
     esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
     Serial.printf("wake cause: %d (%s)\n", (int)wakeCause,
                   wakeCause == ESP_SLEEP_WAKEUP_TIMER ? "timer" :
+                  wakeCause == ESP_SLEEP_WAKEUP_EXT1  ? "button" :
                   wakeCause == ESP_SLEEP_WAKEUP_UNDEFINED ? "power-on/reset" : "other");
 #ifdef CHROMAWOTD_DEBUG_DELAY
-    // Development only: gives a serial monitor time to attach after reset.
-    delay(3000);
+    delay(3000);   // development only: time to attach a serial monitor
 #endif
 
     epaper.begin();
     epaper.setRotation(1);
     epaper.fillScreen(TFT_WHITE);
 
-    // --- Sync (Phase 3): fetch real content on a big-stack task, wait. ------
+    // --- Sync (Phase 3): fetch content on a big-stack task, wait for it. ----
     g_weather.temp = 0.0f;
     g_weather.icon = WeatherIcon::PartlyCloudy;
 
     g_syncDone = xSemaphoreCreateBinary();
-    // 16 KB: mbedtls entropy/DRBG + HTTPClient + ArduinoJson easily exceed the
-    // 8 KB default loopTask stack; this task owns its own arena so the rest of
-    // the app is unaffected. Pinned to core 1 (same as loop) — no cross-core
-    // surprises, just a bigger stack for this one call chain.
     xTaskCreatePinnedToCore(syncTask, "cc_sync", 16384, nullptr, 1, nullptr, 1);
     xSemaphoreTake(g_syncDone, portMAX_DELAY);
     vSemaphoreDelete(g_syncDone);
 
-    VerseData& v = g_verse;
-    WeatherData& w = g_weather;
-    const char* offlineReason = g_offlineReason;
+    // --- Assemble the view --------------------------------------------------
+    LayoutOptions opts;
+    VerseData v = {};
 
-    // --- Fallback content (no network / no API) -----------------------------
-    if (!v.verse) {
-        static const char* fv =
-            "Trust in the Lord with all your heart, and do not lean on your own "
-            "understanding. In all your ways acknowledge him, and he will make "
-            "straight your paths.";
-        static const char* fref = "Proverbs 3:5-6";
-        static const char* fdate = "Offline";
-        v.verse = fv;
-        v.reference = fref;
-        v.date = fdate;
+    if (g_mode == ContentMode::Word) {
+        // Word of the Day: definition + example in the body, the respelling
+        // pronunciation as the black left caption, the headword as the red right
+        // caption. Notes: the IPA-style pronunciation is pre-respelled by the
+        // source, so it is plain ASCII and safe for the panel font.
+        static char body[NET_TEXT_MAX];
+        const char* word = (g_word.definition ? g_word.word : kFallbackWord);
+        const char* def  = (g_word.definition ? g_word.definition : kFallbackDef);
+        const char* ex   = (g_word.definition ? g_word.example : nullptr);
+        if (ex && ex[0]) snprintf(body, sizeof(body), "%s  %s", def, ex);
+        else             snprintf(body, sizeof(body), "%s", def);
+
+        v.verse     = body;
+        v.highlight = nullptr;
+        v.reference = word;                       // red, right
+        v.date      = g_haveTime ? g_date : "Word of the Day";
+        opts.headerTitle = "Word of the Day";
+        opts.leftCaption = g_word.pronunciation ? g_word.pronunciation : kFallbackPron;
+        if (!g_word.definition) opts.leftCaption = kFallbackPron;
+    } else {
+        if (g_verse.verse) {
+            v = g_verse;
+        } else {
+            static const char* fv =
+                "Trust in the Lord with all your heart, and do not lean on your own "
+                "understanding. In all your ways acknowledge him, and he will make "
+                "straight your paths.";
+            static const char* fref = "Proverbs 3:5-6";
+            v.verse = fv;
+            v.reference = fref;
+            v.date = g_haveTime ? g_date : "Offline";
+        }
+        opts.headerTitle = "Verse of the Day";
     }
+
+    WeatherData& w = g_weather;
     if (!w.condition) {
         static char cbuf[32];
         snprintf(cbuf, sizeof(cbuf), "Temp %.0f", (double)w.temp);
         w.condition = cbuf;
     }
+    opts.weatherLabel = g_tomorrow ? "TOMORROW" : "FORECAST";
 
     // --- Render -------------------------------------------------------------
     if (!verseHighlightFound(v)) {
-        Serial.println("WARN: highlight phrase not found in verse - no red accent drawn");
+        Serial.println("NOTE: no highlight phrase in this content (expected for Word of the Day)");
     }
-    if (offlineReason) {
+    if (g_offlineReason) {
         static char rbuf[NET_TEXT_MAX];
-        snprintf(rbuf, sizeof(rbuf), "OFFLINE: %s", offlineReason);
+        snprintf(rbuf, sizeof(rbuf), "OFFLINE: %s", g_offlineReason);
         w.alert = rbuf;   // shows as the red alert in the weather column
     }
 
-    drawLayout(v, w);
+    drawLayout(v, w, opts);
     epaper.update();
-    Serial.println("CHROMAWOTD landscape layout pushed to display");
+    Serial.println("CHROMAWOTD layout pushed to display");
     epaper.sleep();
 
-    // --- Sleep until the next scheduled slot (Phase 4) ----------------------
-    // The panel is bistable (the image stays with zero power) and the ESP32-S3
-    // RTC keeps wall time across deep sleep, so we sync NTP once per wake and
-    // then sleep straight to the next 06:30 / 12:30 / 18:00 slot.
+    // --- Sleep until the next slot, or until a button is pressed ------------
 #ifdef CHROMAWOTD_DEEP_SLEEP
-    setenv("TZ", kTzPosix, 1);   // ensure localtime() is correct even if NTP failed
+    setenv("TZ", kTzPosix, 1);   // ensure localtime() works even if NTP failed
     tzset();
 
     uint64_t sleepSec = kFallbackSleepSec;
@@ -195,26 +252,23 @@ void setup() {
         int s = cc_secondsUntilNextWake(tmNow);
         if (s < kMinSleepSec) s = kMinSleepSec;
         sleepSec = (uint64_t)s;
-        Serial.printf("sleep: now %02d:%02d:%02d -> next wake in %llu s (%.2f h)\n",
-                      tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec,
-                      (unsigned long long)sleepSec, sleepSec / 3600.0);
-    } else {
-        Serial.printf("sleep: clock invalid, fallback %llu s\n",
-                      (unsigned long long)sleepSec);
     }
 #ifdef CHROMAWOTD_WAKE_TEST_SEC
-    // Bring-up helper: force a short sleep so timer-wake can be observed on the
-    // bench without waiting for the next real slot. Never set in production.
     sleepSec = CHROMAWOTD_WAKE_TEST_SEC;
-    Serial.printf("sleep: WAKE TEST override -> %llu s\n", (unsigned long long)sleepSec);
 #endif
-    // Printed just before sleeping so a monitor that attaches late still sees how
-    // this cycle was triggered (esp_sleep_wakeup_cause_t; timer == 4).
-    Serial.printf("awake-status: wake_cause=%d (timer=%d), sleeping %llu s\n",
-                  (int)wakeCause, (int)ESP_SLEEP_WAKEUP_TIMER,
-                  (unsigned long long)sleepSec);
 
+    // Button wake: enable RTC pull-ups (digital pulls are lost in deep sleep)
+    // and arm the shared ext1 mask. A press then wakes us for a normal sync.
+    uint64_t btnMask = 0;
+    for (int i = 0; i < kButtonCount; i++) {
+        rtc_gpio_pullup_en(kButtonPins[i]);
+        rtc_gpio_pulldown_dis(kButtonPins[i]);
+        btnMask |= (1ULL << (int)kButtonPins[i]);
+    }
+    esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ALL_LOW);
     esp_sleep_enable_timer_wakeup(sleepSec * 1000000ULL);
+    Serial.printf("awake-status: wake_cause=%d, sleeping %llu s (or on button)\n",
+                  (int)wakeCause, (unsigned long long)sleepSec);
     Serial.flush();
     esp_deep_sleep_start();   // does not return
 #else
