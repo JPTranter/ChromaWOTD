@@ -46,9 +46,9 @@ def main():
     face = freetype.Face(ttf)
     face.set_char_size(int(size * 64), 0, DPI, 0)
     yAdvance = face.size.height >> 6 if face.size else int(size)
-    # Font name token: '5.5' -> '55' (underscores dropped by the sanitizer above),
-    # so Roboto 5.5pt becomes Roboto55pt7b.
-    sizeToken = str(size).replace('.', '')
+    # Font name token: '5.5' -> '55', '5.0'/'5' -> '5' (drop the dot and any
+    # trailing '.0' so integers get a clean token). Roboto 5pt -> Roboto5pt7b.
+    sizeToken = ('%g' % size).replace('.', '')
 
     glyphs = []
     bitmapOffset = 0

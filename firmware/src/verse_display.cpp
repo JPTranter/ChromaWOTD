@@ -45,7 +45,23 @@ typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; u
 // carry over. Board macros are supplied as global build_flags.
 #include "TFT_eSPI.h"
 #endif
-#include "fonts/Roboto55pt7b.h"   // needs GFXglyph/GFXfont visible
+#include "fonts/Roboto55pt7b.h"    // body font (needs GFXglyph/GFXfont visible)
+#include "fonts/Roboto5pt7b.h"     // auto-size small body (long verses)
+#include "fonts/Roboto6pt7b.h"     // auto-size large body (short verses)
+#include "fonts/RobotoT10pt7b.h"   // temperature font (dedicated, native-size)
+#endif
+
+// Active body font. The main UI defaults to 5.5pt; the verse block auto-sizes
+// (5 / 5.5 / 6pt) to the available box by switching this pointer around the
+// verse draw only, then restoring. Alert text switches to 5pt specifically.
+#ifdef CHROMAWOTD_FONT_FREESANS
+static const GFXfont* g_bodyFont = &Roboto55pt7b;
+static const GFXfont* cc_setBodyFont(const GFXfont* f) {
+    const GFXfont* prev = g_bodyFont;
+    g_bodyFont = f;
+    return prev;
+}
+static void cc_restoreBodyFont(const GFXfont* prev) { g_bodyFont = prev; }
 #endif
 
 // Font ascent (glyph_ab in TFT_eSPI): largest distance from baseline up to a
@@ -53,10 +69,9 @@ typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; u
 // internally, then draws each glyph at (baseline + yOffset) -- so y passed to
 // drawString() is the glyph TOP and caps land exactly at y. The host mock below
 // replicates that exactly so the preview matches the device pixel-for-pixel.
-static int cc_glyphAscent(int size) {
 #ifdef CHROMAWOTD_FONT_FREESANS
+static int cc_glyphAscentF(const GFXfont* f, int size) {
     int ab = 0;
-    const GFXfont* f = &Roboto55pt7b;
     for (int c = f->first; c <= f->last; c++) {
         const GFXglyph* g = &f->glyph[c - f->first];
         if (g->width && g->height) {
@@ -65,24 +80,60 @@ static int cc_glyphAscent(int size) {
         }
     }
     return ab * size;
+}
+#endif
+static int cc_glyphAscent(int size) {
+#ifdef CHROMAWOTD_FONT_FREESANS
+    return cc_glyphAscentF(g_bodyFont, size);
 #else
     return 0;
 #endif
 }
 
+// Forward-declared: each backend (host canvas / device epaper) provides its own
+// primitive below, after this shared section.
+static void dev_drawCircle(int x, int y, int r, uint32_t c);
+
 // Pixel advance of ONE decoded ASCII glyph at the given magnification.
-static int cc_advance(unsigned char ascii, int size) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    static const GFXfont* f = &Roboto55pt7b;
+static int cc_advanceF(const GFXfont* f, unsigned char ascii, int size) {
     if (ascii >= f->first && ascii <= f->last) {
         GFXglyph* g = &f->glyph[ascii - f->first];
         return (g->width || g->height) ? g->xAdvance * size : 6 * size;
     }
     return 6 * size;
+}
+#endif
+static int cc_advance(unsigned char ascii, int size) {
+#ifdef CHROMAWOTD_FONT_FREESANS
+    return cc_advanceF(g_bodyFont, ascii, size);
 #else
     return CC_GLYPH_W * size;
 #endif
 }
+
+// Degree-sign geometry for a given font. The degree is a small superscript
+// circle sitting at the TOP of the digits, not a baseline character. Center it
+// so its top roughly aligns with the font's cap top, and size it relative to
+// the font's ascent so it reads correctly across body and temperature fonts.
+#ifdef CHROMAWOTD_FONT_FREESANS
+static int cc_degreeRadius(const GFXfont* f) {
+    int r = cc_glyphAscentF(f, 1) / 4;   // ~3 for the 10pt temp, ~2 for 5.5pt body
+    if (r < 1) r = 1;
+    if (r > 3) r = 3;
+    return r;
+}
+
+// Draw a degree circle for a given font: a small superscript circle whose top
+// aligns near the font's cap top and whose left sits at the cursor+radius.
+// Shared by host + device (both provide drawCircle).
+static void dev_drawDegree(const GFXfont* f, int cursorX, int base, uint32_t c, int size) {
+    int r = cc_degreeRadius(f) * size;
+    int cx = cursorX + r;
+    int cy = base - cc_glyphAscentF(f, size) + r;   // top near cap top
+    dev_drawCircle(cx, cy, r, c);
+}
+#endif   // CHROMAWOTD_FONT_FREESANS
 
 // Pixel width of a decoded string at the given magnification.
 static int cc_measurePx(const char* str, int size) {
@@ -92,6 +143,17 @@ static int cc_measurePx(const char* str, int size) {
     while (*p) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); w += cc_advance(g, size); }
     return w;
 }
+
+// Pixel width of a decoded string in a specific GFX font (temperature etc.).
+#ifdef CHROMAWOTD_FONT_FREESANS
+static int cc_measurePxF(const GFXfont* f, const char* str, int size) {
+    if (!str) return 0;
+    int w = 0;
+    const unsigned char* p = (const unsigned char*)str;
+    while (*p) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); w += cc_advanceF(f, g, size); }
+    return w;
+}
+#endif   // CHROMAWOTD_FONT_FREESANS
 
 // Same, but for a substring of `len` bytes (word-splitting callers).
 static int cc_measurePxN(const char* str, int len, int size) {
@@ -106,7 +168,7 @@ static int cc_measurePxN(const char* str, int len, int size) {
 // Vertical distance between successive text baselines.
 static int cc_lineHeight(int size, int fallback) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    return Roboto55pt7b.yAdvance * size;
+    return g_bodyFont->yAdvance * size;
 #else
     return fallback;
 #endif
@@ -179,15 +241,13 @@ static void dev_drawCircle(int x, int y, int r, uint32_t c) { g_canvas.drawCircl
 static void dev_fillCircle(int x, int y, int r, uint32_t c) { g_canvas.fillCircle(x, y, r, c); }
 
 #ifdef CHROMAWOTD_FONT_FREESANS
-// Render one FreeSans glyph at baseline (x,y), magnification size, honouring the
-// glyph's xOffset/yOffset so descenders hang below the baseline as drawn on-device.
-static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) {
-    const GFXfont* f = &Roboto55pt7b;
+// Render one glyph from a specific free font at baseline (x,y), magnification
+// size, honouring xOffset/yOffset so descenders hang below the baseline.
+static void dev_drawGlyphF(const GFXfont* f, unsigned char ch, int x, int y, uint32_t c, int size) {
     if (ch < f->first || ch > f->last) { g_canvas.drawChar(x, y, '?', c, (uint8_t)size); return; }
     const GFXglyph* g = &f->glyph[ch - f->first];
     if (!g->width || !g->height) return;   // space etc.
     // decode packed bitmap: byte offset g->bitmapOffset, MSB-first bitstream
-    int rowbytes = (g->width + 7) / 8;
     int nbit = 0;
     for (int r = 0; r < g->height; r++) {
         for (int col = 0; col < g->width; col++) {
@@ -205,21 +265,29 @@ static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) 
     }
 }
 
-static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
+static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) {
+    dev_drawGlyphF(g_bodyFont, ch, x, y, c, size);
+}
+
+static void dev_drawStringF(const GFXfont* f, int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
     int cursorX = x;
-    int base = y + cc_glyphAscent(size);   // replicate TFT_eSPI poY += glyph_ab
+    int base = y + cc_glyphAscentF(f, size);   // replicate TFT_eSPI poY += glyph_ab
     const unsigned char* p = (const unsigned char*)str;
     while (*p) {
         unsigned char glyph = 0;
         p += cc_utf8ToAscii(p, &glyph);
         if (glyph == CC_DEGREE) {
-            g_canvas.drawChar(cursorX, base, 0xB0, c, (uint8_t)size);
+            dev_drawDegree(f, cursorX, base, c, size);
         } else {
-            dev_drawGlyph(glyph, cursorX, base, c, size);
+            dev_drawGlyphF(f, glyph, cursorX, base, c, size);
         }
-        cursorX += cc_advance(glyph, size);
+        cursorX += cc_advanceF(f, glyph, size);
     }
+}
+
+static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
+    dev_drawStringF(g_bodyFont, x, y, str, c, size);
 }
 #else
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
@@ -264,7 +332,7 @@ static void dev_drawCircle(int x, int y, int r, uint32_t c) { epaper.drawCircle(
 static void dev_fillCircle(int x, int y, int r, uint32_t c) { epaper.fillCircle(x, y, r, toDeviceColor(c)); }
 static int dev_measureText(const char* str, int size) { return cc_measurePx(str, size); }
 
-static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
+static void dev_drawStringF(const GFXfont* f, int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
 #ifdef CHROMAWOTD_FONT_FREESANS
     // Per-glyph so we can special-case the degree (0xB0) which the ASCII-only
@@ -272,21 +340,19 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
     // the host path: baseline = y + glyphAscent, glyph drawn at baseline+yOffset.
     epaper.setTextColor(toDeviceColor(c));
     epaper.setTextSize(size);
-    epaper.setFreeFont(&Roboto55pt7b);
-    int baseline = y + cc_glyphAscent(size);
+    epaper.setFreeFont(f);
+    int baseline = y + cc_glyphAscentF(f, size);
     int cursorX = x;
     const unsigned char* p = (const unsigned char*)str;
     while (*p) {
         unsigned char glyph = 0;
         p += cc_utf8ToAscii(p, &glyph);
         if (glyph == CC_DEGREE) {
-            // Superscript circle relative to the BASELINE (== host path), so the
-            // degree sits at the top of the digits rather than a cap-height high.
-            epaper.drawCircle(cursorX + 2 * size, baseline + 2 * size, size, toDeviceColor(c));
+            dev_drawDegree(f, cursorX, baseline, c, size);
         } else {
             epaper.drawChar(glyph, cursorX, baseline);
         }
-        cursorX += cc_advance(glyph, size);
+        cursorX += cc_advanceF(f, glyph, size);
     }
     return;
 #else
@@ -305,6 +371,10 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
         cursorX += CC_GLYPH_W * size;
     }
 #endif
+}
+
+static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
+    dev_drawStringF(g_bodyFont, x, y, str, c, size);
 }
 
 static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
@@ -513,6 +583,21 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const VerseData& vd) {
     if (!vd.verse) return;
 
+    // Auto-size the body font to the verse length: pick the largest of
+    // 6 / 5.5 / 5pt that fits maxH lines in the box. Short verses get the
+    // larger type; long ones fall back to 5pt. The main UI elsewhere stays at
+    // the default 5.5pt via g_bodyFont.
+#ifdef CHROMAWOTD_FONT_FREESANS
+    const GFXfont* prevFont = g_bodyFont;
+    const GFXfont* candidates[3] = { &Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b };
+    for (int i = 0; i < 3; i++) {
+        g_bodyFont = candidates[i];
+        int lh = g_bodyFont->yAdvance;
+        int cap = cc_lineCapacity(maxH, 1, lh);
+        if (cc_wrappedLineCount(vd.verse, maxW, 1) <= cap) { break; }   // fits
+    }
+#endif
+
     // Locate the highlighted phrase: exact match first, then case-insensitive so a
     // capitalisation change in the source does not silently drop the red accent.
     int hlStart = -1, hlEnd = -1;
@@ -578,6 +663,10 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     if (truncated && drewAny) {
         drawOverflowMarker(lastX, lastY, startX + maxW, CC_BLACK, 1);
     }
+
+#if defined(CHROMAWOTD_FONT_FREESANS)
+    cc_restoreBodyFont(prevFont);   // hand back the main-UI font
+#endif
 }
 
 // 66 px-wide weather column. The alert block — rule, ALERT: label and wrapped
@@ -598,22 +687,38 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
 
     if (w.alert) {
         // --- Alert pinned to bottom; icon + temp at the fixed top layout. -----
+        // Alert text is set in the 5pt body font (user preference); the rest of
+        // the column stays at the default body size.
+#ifdef CHROMAWOTD_FONT_FREESANS
+        const GFXfont* prev = cc_setBodyFont(&Roboto5pt7b);
+        const int alertLH = Roboto5pt7b.yAdvance;
+
+        drawWeatherIcon(cx, 32, 24, w.icon);
+        int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);
+        dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, 47, tbuf, CC_BLACK, 1);
+#else
+        const int alertLH = 10;
         drawWeatherIcon(cx, 32, 24, w.icon);
         int tWidth = dev_measureText(tbuf, 2);
         dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
+#endif
 
         int lines = cc_wrappedLineCount(w.alert, colW, 1);
         if (lines > 3) lines = 3;
-        int textY  = 128 - 2 - 8 - (lines - 1) * 10;   // last line ends 2 px above bottom
-        int labelY = textY - 11;
+        int textY  = 128 - 2 - 8 - (lines - 1) * alertLH;   // last line ends 2 px above bottom
+        int labelY = textY - alertLH - 1;
         int divY   = labelY - 3;
         if (w.condition) {
-            drawWrappedTextCentered(cx, 65, colW, divY - 2 - 65, w.condition, CC_BLACK, 1, 10);
+            drawWrappedTextCentered(cx, 65, colW, divY - 2 - 65, w.condition, CC_BLACK, 1, cc_lineHeight(1, 10));
         }
         dev_drawFastHLine(cx - half, divY, 2 * half, CC_RED);
         int alWidth = dev_measureText("ALERT:", 1);
         dev_drawString(cx - alWidth / 2, labelY, "ALERT:", CC_RED, 1);
-        drawWrappedTextCentered(cx, textY, colW, 128 - 2 - textY, w.alert, CC_RED, 1, 10);
+        drawWrappedTextCentered(cx, textY, colW, 128 - 2 - textY, w.alert, CC_RED, 1, alertLH);
+
+#ifdef CHROMAWOTD_FONT_FREESANS
+        cc_restoreBodyFont(prev);
+#endif
         return;
     }
 
@@ -643,8 +748,13 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     drawWeatherIcon(cx, iconCY, iconS, w.icon);
 
     int tempY = colTop + topPad + iconS + gap;
+#ifdef CHROMAWOTD_FONT_FREESANS
+    int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);   // temp at native size (smooth)
+    dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, tempY, tbuf, CC_BLACK, 1);
+#else
     int tWidth = dev_measureText(tbuf, 2);
     dev_drawString(cx - tWidth / 2, tempY, tbuf, CC_BLACK, 2);
+#endif
 
     if (w.condition) {
         int condStart = tempY + tempH + gap;
@@ -653,19 +763,23 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
 }
 
 void drawLayout(const VerseData& v, const WeatherData& w) {
-    const int splitX = 205;
+    // Verse area was 205px (10% larger requested => ~226); weather col takes the
+    // rest. The weather cx is derived so the column always centers in its region.
+    const int splitX = 226;      // was 205: verse ~10% wider
+    const int weatherCx = (splitX + 1 + 296) / 2;   // center of remaining column
+    const int headerH = 14;      // was 20; smaller 5pt body needs less header height
 
     // 1. Header (Yellow band)
-    dev_fillRect(0, 0, splitX, 20, CC_YELLOW);
-    dev_drawString(6, 6, "Verse of the Day", CC_BLACK, 1);
+    dev_fillRect(0, 0, splitX, headerH, CC_YELLOW);
+    dev_drawString(6, 3, "Verse of the Day", CC_BLACK, 1);
     if (v.date) {
-        dev_drawStringRight(splitX - 6, 6, v.date, CC_BLACK, 1);
+        dev_drawStringRight(splitX - 6, 3, v.date, CC_BLACK, 1);
     }
-    dev_drawFastHLine(0, 19, splitX, CC_BLACK);
+    dev_drawFastHLine(0, headerH - 1, splitX, CC_BLACK);
 
     // 2. Verse body (White background)
-    dev_fillRect(0, 20, splitX, 108, CC_WHITE);
-    drawVerseBlock(8, 26, 188, 76, v);
+    dev_fillRect(0, headerH, splitX, 128 - headerH, CC_WHITE);
+    drawVerseBlock(8, headerH + 8, splitX - 16, 82, v);
 
     // 3. Reference line (Red)
     if (v.reference) {
@@ -676,7 +790,7 @@ void drawLayout(const VerseData& v, const WeatherData& w) {
     // 4. Vertical divider
     dev_drawFastVLine(splitX, 0, 128, CC_BLACK);
 
-    // 5. Right-hand weather column (72 px; alert pinned to bottom)
+    // 5. Right-hand weather column (alert pinned to bottom)
     dev_fillRect(splitX + 1, 0, 296 - splitX - 1, 128, CC_WHITE);
-    drawLandscapeWeatherColumn(251, w);
+    drawLandscapeWeatherColumn(weatherCx, w);
 }
