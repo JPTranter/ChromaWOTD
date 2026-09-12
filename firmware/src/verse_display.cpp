@@ -1,14 +1,14 @@
 #include "verse_display.h"
-#include <cstdio>
 #include <cctype>
-#include <cstring>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 
 // Shared UTF-8 -> single-byte decoder and wrapping math live in text/ (D1) so
 // they are pure, unit-testable units rather than hidden in this monolith.
+#include "draw/weather_icon.h"
 #include "text/glyphs.h"
 #include "text/wrap.h"
-#include "draw/weather_icon.h"
 
 // ---------------------------------------------------------------------------
 // Backend abstraction (D6). All drawing routes through the DisplayTarget
@@ -42,10 +42,10 @@ static DisplayTarget& target() {
 // gfxfont.h via TFT_eSPI.h) — a single definition shared with the DisplayTarget
 // backends, instead of a per-TU #ifdef shim.
 #include "draw/font_types.h"
-#include "fonts/Roboto55pt7b.h"    // body font (needs GFXglyph/GFXfont visible)
-#include "fonts/Roboto5pt7b.h"     // auto-size small body (long verses)
-#include "fonts/Roboto6pt7b.h"     // auto-size large body (short verses)
-#include "fonts/RobotoT10pt7b.h"   // temperature font (dedicated, native-size)
+#include "fonts/Roboto55pt7b.h"  // body font (needs GFXglyph/GFXfont visible)
+#include "fonts/Roboto5pt7b.h"   // auto-size small body (long verses)
+#include "fonts/Roboto6pt7b.h"   // auto-size large body (short verses)
+#include "fonts/RobotoT10pt7b.h" // temperature font (dedicated, native-size)
 #endif
 
 // Active body font. The main UI defaults to 5.5pt; the verse block auto-sizes
@@ -58,7 +58,9 @@ static const GFXfont* cc_setBodyFont(const GFXfont* f) {
     g_bodyFont = f;
     return prev;
 }
-static void cc_restoreBodyFont(const GFXfont* prev) { g_bodyFont = prev; }
+static void cc_restoreBodyFont(const GFXfont* prev) {
+    g_bodyFont = prev;
+}
 #endif
 
 // Font ascent (glyph_ab in TFT_eSPI): largest distance from baseline up to a
@@ -72,8 +74,9 @@ static int cc_glyphAscentF(const GFXfont* f, int size) {
     for (int c = f->first; c <= f->last; c++) {
         const GFXglyph* g = &f->glyph[c - f->first];
         if (g->width && g->height) {
-            int a = -g->yOffset;             // this glyph's ascent
-            if (a > ab) ab = a;
+            int a = -g->yOffset; // this glyph's ascent
+            if (a > ab)
+                ab = a;
         }
     }
     return ab * size;
@@ -111,9 +114,11 @@ static int cc_advance(unsigned char ascii, int size) {
 // the font's ascent so it reads correctly across body and temperature fonts.
 #ifdef CHROMAWOTD_FONT_FREESANS
 static int cc_degreeRadius(const GFXfont* f) {
-    int r = cc_glyphAscentF(f, 1) / 4;   // ~3 for the 10pt temp, ~2 for 5.5pt body
-    if (r < 1) r = 1;
-    if (r > 3) r = 3;
+    int r = cc_glyphAscentF(f, 1) / 4; // ~3 for the 10pt temp, ~2 for 5.5pt body
+    if (r < 1)
+        r = 1;
+    if (r > 3)
+        r = 3;
     return r;
 }
 
@@ -123,40 +128,55 @@ static int cc_degreeRadius(const GFXfont* f) {
 static void dev_drawDegree(const GFXfont* f, int cursorX, int base, uint32_t c, int size) {
     int r = cc_degreeRadius(f) * size;
     int cx = cursorX + r;
-    int cy = base - cc_glyphAscentF(f, size) + r;   // top near cap top
+    int cy = base - cc_glyphAscentF(f, size) + r; // top near cap top
     target().drawCircle(cx, cy, r, c);
 }
-#endif   // CHROMAWOTD_FONT_FREESANS
+#endif // CHROMAWOTD_FONT_FREESANS
 
 // Pixel width of a decoded string at the given magnification.
 static int cc_measurePx(const char* str, int size) {
-    if (!str) return 0;
+    if (!str)
+        return 0;
     int w = 0;
     const unsigned char* p = (const unsigned char*)str;
-    while (*p) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); w += cc_advance(g, size); }
+    while (*p) {
+        unsigned char g = 0;
+        p += cc_utf8ToAscii(p, &g);
+        w += cc_advance(g, size);
+    }
     return w;
 }
 
 // Pixel width of a decoded string in a specific GFX font (temperature etc.).
 #ifdef CHROMAWOTD_FONT_FREESANS
 static int cc_measurePxF(const GFXfont* f, const char* str, int size) {
-    if (!str) return 0;
+    if (!str)
+        return 0;
     int w = 0;
     const unsigned char* p = (const unsigned char*)str;
-    while (*p) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); w += cc_advanceF(f, g, size); }
+    while (*p) {
+        unsigned char g = 0;
+        p += cc_utf8ToAscii(p, &g);
+        w += cc_advanceF(f, g, size);
+    }
     return w;
 }
-#endif   // CHROMAWOTD_FONT_FREESANS
+#endif // CHROMAWOTD_FONT_FREESANS
 
 // Same, but for a substring of `len` bytes (word-splitting callers). Uses the
 // length-bounded decoder so a multi-byte sequence straddling `len` is not read
 // past the declared bound (see S2).
 static int cc_measurePxN(const char* str, int len, int size) {
-    if (!str || len <= 0) return 0;
+    if (!str || len <= 0)
+        return 0;
     int w = 0;
     const unsigned char* p = (const unsigned char*)str;
     const unsigned char* end = p + len;
-    while (p < end) { unsigned char g = 0; p += cc_utf8ToAsciiN(p, end, &g); w += cc_advance(g, size); }
+    while (p < end) {
+        unsigned char g = 0;
+        p += cc_utf8ToAsciiN(p, end, &g);
+        w += cc_advance(g, size);
+    }
     return w;
 }
 
@@ -170,24 +190,29 @@ static int cc_lineHeight(int size, int fallback) {
 }
 
 // Round half away from zero: -0.6 -> -1 (plain (int)(t+0.5f) gives 0).
-static int cc_roundTemp(float t) { return (int)lroundf(t); }
+static int cc_roundTemp(float t) {
+    return (int)lroundf(t);
+}
 
 // Case-insensitive substring search (fallback for highlight phrases whose
 // capitalisation is changed by the content source).
 static const char* cc_findIgnoreCase(const char* hay, const char* needle) {
-    if (!hay || !needle || !*needle) return nullptr;
+    if (!hay || !needle || !*needle)
+        return nullptr;
     size_t nlen = strlen(needle);
     for (const char* p = hay; *p; p++) {
         size_t i = 0;
-        while (i < nlen && p[i] &&
-               tolower((unsigned char)p[i]) == tolower((unsigned char)needle[i])) i++;
-        if (i == nlen) return p;
+        while (i < nlen && p[i] && tolower((unsigned char)p[i]) == tolower((unsigned char)needle[i]))
+            i++;
+        if (i == nlen)
+            return p;
     }
     return nullptr;
 }
 
 bool verseHighlightFound(const VerseData& vd) {
-    if (!vd.verse || !vd.highlight || !vd.highlight[0]) return false;
+    if (!vd.verse || !vd.highlight || !vd.highlight[0])
+        return false;
     return cc_findIgnoreCase(vd.verse, vd.highlight) != nullptr;
 }
 
@@ -198,23 +223,40 @@ bool verseHighlightFound(const VerseData& vd) {
 // #ifdef CHROMAWOTD_HOST.
 // ---------------------------------------------------------------------------
 
-static void dev_fillRect(int x, int y, int w, int h, uint32_t c) { target().fillRect(x, y, w, h, c); }
-static void dev_drawRect(int x, int y, int w, int h, uint32_t c) { target().drawRect(x, y, w, h, c); }
-static void dev_drawFastHLine(int x, int y, int w, uint32_t c) { target().drawFastHLine(x, y, w, c); }
-static void dev_drawFastVLine(int x, int y, int h, uint32_t c) { target().drawFastVLine(x, y, h, c); }
-static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { target().drawLine(x0, y0, x1, y1, c); }
-static void dev_drawCircle(int x, int y, int r, uint32_t c) { target().drawCircle(x, y, r, c); }
-static void dev_fillCircle(int x, int y, int r, uint32_t c) { target().fillCircle(x, y, r, c); }
+static void dev_fillRect(int x, int y, int w, int h, uint32_t c) {
+    target().fillRect(x, y, w, h, c);
+}
+static void dev_drawRect(int x, int y, int w, int h, uint32_t c) {
+    target().drawRect(x, y, w, h, c);
+}
+static void dev_drawFastHLine(int x, int y, int w, uint32_t c) {
+    target().drawFastHLine(x, y, w, c);
+}
+static void dev_drawFastVLine(int x, int y, int h, uint32_t c) {
+    target().drawFastVLine(x, y, h, c);
+}
+static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) {
+    target().drawLine(x0, y0, x1, y1, c);
+}
+static void dev_drawCircle(int x, int y, int r, uint32_t c) {
+    target().drawCircle(x, y, r, c);
+}
+static void dev_fillCircle(int x, int y, int r, uint32_t c) {
+    target().fillCircle(x, y, r, c);
+}
 
-static int dev_measureText(const char* str, int size) { return cc_measurePx(str, size); }
+static int dev_measureText(const char* str, int size) {
+    return cc_measurePx(str, size);
+}
 
 #ifdef CHROMAWOTD_FONT_FREESANS
 // FreeSans/Roboto path: per-glyph decode, baseline = y + glyphAscent, degree drawn
 // as a vector circle, glyphs drawn at baseline+yOffset.
 static void dev_drawStringF(const GFXfont* f, int x, int y, const char* str, uint32_t c, int size) {
-    if (!str) return;
+    if (!str)
+        return;
     int cursorX = x;
-    int base = y + cc_glyphAscentF(f, size);   // replicate TFT_eSPI poY += glyph_ab
+    int base = y + cc_glyphAscentF(f, size); // replicate TFT_eSPI poY += glyph_ab
     const unsigned char* p = (const unsigned char*)str;
     while (*p) {
         unsigned char glyph = 0;
@@ -235,7 +277,8 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
 // Built-in 5x7 path: fixed 6px advance, degree drawn as a small circle at
 // (cursorX + 2*size, y + 2*size, r=size).
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
-    if (!str) return;
+    if (!str)
+        return;
     int cursorX = x;
     const unsigned char* p = (const unsigned char*)str;
     while (*p) {
@@ -261,17 +304,24 @@ static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int 
 // Lines the greedy wrapper below needs for a given width budget (mirrors the
 // draw loops exactly, so the truncation decision is made before drawing).
 static int cc_wrappedLineCount(const char* text, int maxW, int size) {
-    if (!text || !*text) return 0;
+    if (!text || !*text)
+        return 0;
     int lines = 1, curX = 0;
     const char* p = text;
     while (*p) {
-        while (*p == ' ') p++;
-        if (!*p) break;
+        while (*p == ' ')
+            p++;
+        if (!*p)
+            break;
         const char* wordStart = p;
-        while (*p && *p != ' ') p++;
+        while (*p && *p != ' ')
+            p++;
         int wordPx = cc_measurePxN(wordStart, (int)(p - wordStart), size);
         int spx = cc_advance(' ', size);
-        if (curX > 0 && curX + wordPx > maxW) { lines++; curX = 0; }
+        if (curX > 0 && curX + wordPx > maxW) {
+            lines++;
+            curX = 0;
+        }
         curX += wordPx + spx;
     }
     return lines;
@@ -286,17 +336,20 @@ static int cc_wrappedLineCount(const char* text, int maxW, int size) {
 // instead of pixel-probing the render (LESSONS §38).
 #ifdef CHROMAWOTD_FONT_FREESANS
 static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
-    static const GFXfont* const candidates[3] = { &Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b };
+    static const GFXfont* const candidates[3] = {&Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b};
     // The wrap measurement routes through cc_advance(), which reads the global
     // g_bodyFont — so the candidate must BE the active body font while its line
     // count is measured (measuring every candidate at one font collapses the
     // ladder; see LESSONS §38).
     const GFXfont* prev = g_bodyFont;
-    const GFXfont* pick = &Roboto5pt7b;   // nothing fit: smallest font
+    const GFXfont* pick = &Roboto5pt7b; // nothing fit: smallest font
     for (int i = 0; i < 3; i++) {
         g_bodyFont = candidates[i];
         const int cap = cc_lineCapacity(maxH, 1, candidates[i]->yAdvance);
-        if (cc_wrappedLineCount(verse, maxW, 1) <= cap) { pick = candidates[i]; break; }
+        if (cc_wrappedLineCount(verse, maxW, 1) <= cap) {
+            pick = candidates[i];
+            break;
+        }
     }
     g_bodyFont = prev;
     return pick;
@@ -304,14 +357,18 @@ static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
 
 VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH) {
     const GFXfont* f = cc_pickVerseFont(verse, maxW, maxH);
-    if (f == &Roboto6pt7b) return VerseFontSize::Pt6;
-    if (f == &Roboto5pt7b) return VerseFontSize::Pt5;
+    if (f == &Roboto6pt7b)
+        return VerseFontSize::Pt6;
+    if (f == &Roboto5pt7b)
+        return VerseFontSize::Pt5;
     return VerseFontSize::Pt55;
 }
 #else
 VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH) {
-    (void)verse; (void)maxW; (void)maxH;
-    return VerseFontSize::Pt55;   // auto-size compiled out: fixed default body font
+    (void)verse;
+    (void)maxW;
+    (void)maxH;
+    return VerseFontSize::Pt55; // auto-size compiled out: fixed default body font
 }
 #endif
 
@@ -321,18 +378,29 @@ VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH) {
 // that cannot be placed.
 static void drawOverflowMarker(int x, int y, int maxRight, uint32_t color, int size) {
     int w = cc_advance('.', size);
-    if (x + 3 * w <= maxRight) { dev_drawString(x, y, "...", color, size); return; }
+    if (x + 3 * w <= maxRight) {
+        dev_drawString(x, y, "...", color, size);
+        return;
+    }
     int two = maxRight - 2 * w;
     // Text's ink ends at x - w (the trailing space advance); start the dots there.
-    if (two >= x - w) { dev_drawString(two, y, "..", color, size); return; }
-    if (x + w <= maxRight) { dev_drawString(x, y, ".", color, size); return; }
+    if (two >= x - w) {
+        dev_drawString(two, y, "..", color, size);
+        return;
+    }
+    if (x + w <= maxRight) {
+        dev_drawString(x, y, ".", color, size);
+        return;
+    }
     dev_drawString(maxRight - w, y, ".", color, size);
 }
 
-static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, const char* text, uint32_t color, int size = 1, int lineHeight = 10) {
-    if (!text || !*text) return startY;
+static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, const char* text, uint32_t color,
+                                   int size = 1, int lineHeight = 10) {
+    if (!text || !*text)
+        return startY;
 
-    const int charWidth = cc_advance(' ', size);      // reference advance for slack/budget
+    const int charWidth = cc_advance(' ', size); // reference advance for slack/budget
     const int lh = cc_lineHeight(size, lineHeight);
     const int capacity = cc_lineCapacity(maxH, size, lh);
     const bool truncated = cc_wrappedLineCount(text, maxW, size) > capacity;
@@ -344,10 +412,13 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 
     const char* lineStart = text;
     while (*lineStart) {
-        while (*lineStart == ' ') lineStart++;
-        if (!*lineStart) break;
+        while (*lineStart == ' ')
+            lineStart++;
+        if (!*lineStart)
+            break;
 
-        if (curY + 8 * size > startY + maxH) break;
+        if (curY + 8 * size > startY + maxH)
+            break;
 
         int budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
         const char* p = lineStart;
@@ -355,11 +426,14 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
         int linePx = 0;
 
         while (*p) {
-            while (*p == ' ') p++;
-            if (!*p) break;
+            while (*p == ' ')
+                p++;
+            if (!*p)
+                break;
 
             const char* wordStart = p;
-            while (*p && *p != ' ') p++;
+            while (*p && *p != ' ')
+                p++;
             int wordPx = cc_measurePxN(wordStart, (int)(p - wordStart), size);
             int spx = cc_advance(' ', size);
             int testPx = (linePx == 0) ? wordPx : (linePx + spx + wordPx);
@@ -378,7 +452,8 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
         // line mid-word with no marker (see C1); lines are <= ~14 glyphs in practice.
         char lineBuf[96];
         int bytes = (int)(lastWordEnd - lineStart);
-        if (bytes > 95) bytes = 95;
+        if (bytes > 95)
+            bytes = 95;
         memcpy(lineBuf, lineStart, bytes);
         lineBuf[bytes] = '\0';
 
@@ -400,7 +475,8 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 }
 
 static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const VerseData& vd) {
-    if (!vd.verse) return;
+    if (!vd.verse)
+        return;
 
     // Auto-size the body font to the verse length: pick the largest of
     // 6 / 5.5 / 5pt that fits maxH lines in the box. Short verses get the
@@ -416,7 +492,8 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     int hlStart = -1, hlEnd = -1;
     if (vd.highlight && vd.highlight[0]) {
         const char* p = strstr(vd.verse, vd.highlight);
-        if (!p) p = cc_findIgnoreCase(vd.verse, vd.highlight);
+        if (!p)
+            p = cc_findIgnoreCase(vd.verse, vd.highlight);
         if (p) {
             hlStart = (int)(p - vd.verse);
             hlEnd = hlStart + (int)strlen(vd.highlight);
@@ -436,13 +513,17 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
 
     const char* ptr = vd.verse;
     while (*ptr) {
-        while (*ptr == ' ') ptr++;
-        if (!*ptr) break;
+        while (*ptr == ' ')
+            ptr++;
+        if (!*ptr)
+            break;
 
-        if (curY + 8 > startY + maxH) break;
+        if (curY + 8 > startY + maxH)
+            break;
 
         const char* wordStart = ptr;
-        while (*ptr && *ptr != ' ') ptr++;
+        while (*ptr && *ptr != ' ')
+            ptr++;
         int wordLen = (int)(ptr - wordStart);
         int wordPx = cc_measurePxN(wordStart, wordLen, 1);
         int wordIdx = (int)(wordStart - vd.verse);
@@ -452,7 +533,8 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
             curX = startX;
             curY += lineHeight;
             lineIdx++;
-            if (curY + 8 > startY + maxH) break;
+            if (curY + 8 > startY + maxH)
+                break;
             budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
         }
 
@@ -482,7 +564,7 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     }
 
 #if defined(CHROMAWOTD_FONT_FREESANS)
-    cc_restoreBodyFont(prevFont);   // hand back the main-UI font
+    cc_restoreBodyFont(prevFont); // hand back the main-UI font
 #endif
 }
 
@@ -493,21 +575,21 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
 // the top and leaving a band of whitespace at the bottom.
 static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char* label) {
     // Column geometry (was magic numbers; named here so a design change is one edit).
-    static constexpr int kColW    = 66;   // wrapped-text width (fits FORECAST + 3-line alert)
-    static constexpr int kHalf    = 28;   // half of the FORECAST/alert rule span
-    static constexpr int kColTop  = 17;   // below the FORECAST rule
-    static constexpr int kColBot  = 126;  // 2 px above the panel bottom
-    static constexpr int kTempH   = 19;   // size-2 temperature block (+1px gap to condition)
-    static constexpr int kGap     = 4;    // gap between temp and condition
-    static constexpr int kIconMin = 24;   // fixed alert-layout icon size / reflow lower clamp
-    static constexpr int kIconMax = 48;   // reflow upper clamp (2x the fixed size)
+    static constexpr int kColW = 66;    // wrapped-text width (fits FORECAST + 3-line alert)
+    static constexpr int kHalf = 28;    // half of the FORECAST/alert rule span
+    static constexpr int kColTop = 17;  // below the FORECAST rule
+    static constexpr int kColBot = 126; // 2 px above the panel bottom
+    static constexpr int kTempH = 19;   // size-2 temperature block (+1px gap to condition)
+    static constexpr int kGap = 4;      // gap between temp and condition
+    static constexpr int kIconMin = 24; // fixed alert-layout icon size / reflow lower clamp
+    static constexpr int kIconMax = 48; // reflow upper clamp (2x the fixed size)
 
     // Section caption ("FORECAST" / "TOMORROW"), centred and baseline-aligned
     // with the header title/date (y=2) so it sits level with the date and keeps
     // clear of the rule below.
     int fcWidth = dev_measureText(label, 1);
     dev_drawString(cx - fcWidth / 2, 2, label, CC_BLACK, 1);
-    dev_drawFastHLine(cx - kHalf, 13, 2 * kHalf, CC_BLACK);   // aligns with header bottom (headerH-1)
+    dev_drawFastHLine(cx - kHalf, 13, 2 * kHalf, CC_BLACK); // aligns with header bottom (headerH-1)
 
     char tbuf[16];
     snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
@@ -531,10 +613,11 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char*
 #endif
 
         int lines = cc_wrappedLineCount(w.alert, kColW, 1);
-        if (lines > 3) lines = 3;
-        int textY  = 128 - 2 - 8 - (lines - 1) * alertLH;   // last line ends 2 px above bottom
+        if (lines > 3)
+            lines = 3;
+        int textY = 128 - 2 - 8 - (lines - 1) * alertLH; // last line ends 2 px above bottom
         int labelY = textY - alertLH - 1;
-        int divY   = labelY - 3;
+        int divY = labelY - 3;
         if (w.condition) {
             drawWrappedTextCentered(cx, 65, kColW, divY - 2 - 65, w.condition, CC_BLACK, 1, cc_lineHeight(1, 10));
         }
@@ -550,18 +633,21 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char*
     }
 
     // --- No alert: grow the icon to use the freed space, stack fills the column.
-    const int availH = kColBot - kColTop;       // 109
+    const int availH = kColBot - kColTop; // 109
 
     // Condition height depends on how many lines it wraps to (same estimate the
     // renderer uses), so the icon yields space as the condition grows.
     int condLines = w.condition ? cc_wrappedLineCount(w.condition, kColW, 1) : 0;
-    if (condLines > 5) condLines = 5;
-    const int condH = condLines * 10 + 8;       // wrapped condition + 8px inset
+    if (condLines > 5)
+        condLines = 5;
+    const int condH = condLines * 10 + 8; // wrapped condition + 8px inset
 
     // Icon size = leftover column after temp + condition, clamped to [24, 48].
     int iconS = availH - kTempH - condH - 2 * kGap;
-    if (iconS < kIconMin) iconS = kIconMin;
-    else if (iconS > kIconMax) iconS = kIconMax;
+    if (iconS < kIconMin)
+        iconS = kIconMin;
+    else if (iconS > kIconMax)
+        iconS = kIconMax;
 
     // Top-align under the header (2px pad). Any remaining whitespace collects
     // below the condition, so the column reads "filled".
@@ -572,7 +658,7 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char*
 
     int tempY = kColTop + topPad + iconS + kGap;
 #ifdef CHROMAWOTD_FONT_FREESANS
-    int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);   // temp at native size (smooth)
+    int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1); // temp at native size (smooth)
     dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, tempY, tbuf, CC_BLACK, 1);
 #else
     int tWidth = dev_measureText(tbuf, 2);
@@ -591,19 +677,19 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
     // drawLandscapeWeatherColumn(). Each constant has a one-line rationale.
     static constexpr int kPanelW = 296;
     static constexpr int kPanelH = 128;
-    static constexpr int kSplitX = 226;       // divider x: verse ~10% wider than original 205
-    static constexpr int kHeaderH = 14;       // was 20; smaller 5pt body needs less header height
-    static constexpr int kWeatherCx = (kSplitX + 1 + kPanelW) / 2;  // center of weather column
-    static constexpr int kVerseMargin = 4;    // verse block left margin
-    static constexpr int kReferenceY = 109;   // reference line y-position
-    static constexpr int kWeatherColW = 66;   // weather column width (66px fits FORECAST + 3-line alert)
+    static constexpr int kSplitX = 226;                            // divider x: verse ~10% wider than original 205
+    static constexpr int kHeaderH = 14;                            // was 20; smaller 5pt body needs less header height
+    static constexpr int kWeatherCx = (kSplitX + 1 + kPanelW) / 2; // center of weather column
+    static constexpr int kVerseMargin = 4;                         // verse block left margin
+    static constexpr int kReferenceY = 109;                        // reference line y-position
+    static constexpr int kWeatherColW = 66;    // weather column width (66px fits FORECAST + 3-line alert)
     static constexpr int kWeatherColHalf = 28; // half of kWeatherColW (for FORECAST rule)
 
     // 1. Header (Yellow band)
     dev_fillRect(0, 0, kSplitX, kHeaderH, CC_YELLOW);
-    dev_drawString(6, 2, opts.headerTitle, CC_BLACK, 1);   // lifted 1px
+    dev_drawString(6, 2, opts.headerTitle, CC_BLACK, 1); // lifted 1px
     if (v.date) {
-        dev_drawStringRight(kSplitX - 6, 2, v.date, CC_BLACK, 1);   // lifted 1px
+        dev_drawStringRight(kSplitX - 6, 2, v.date, CC_BLACK, 1); // lifted 1px
     }
     dev_drawFastHLine(0, kHeaderH - 1, kSplitX, CC_BLACK);
 

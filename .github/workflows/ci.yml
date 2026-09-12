@@ -78,7 +78,26 @@ jobs:
 
     - name: Check C++ formatting
       run: |
-        clang-format --dry-run --Werror -style=file firmware/src/*.cpp firmware/src/*.h
+        # Scope to TRACKED, top-level firmware/src files. Two reasons this is not a
+        # shell glob:
+        #  1. `firmware/src/*.h` also matches the gitignored secrets.h, which a
+        #     developer has locally but CI never does — so a glob makes the check
+        #     disagree between environments AND makes clang-format print the
+        #     offending lines, i.e. real credentials, to the terminal.
+        #  2. git's pathspec `*` matches across '/', so a plain 'firmware/src/*.cpp'
+        #     recurses into every subdirectory (fonts/, net/, text/, draw/) and
+        #     drags in the auto-generated font tables, which are machine-written by
+        #     tools/font_convert.py and must never be reformatted.
+        # `:(glob)` makes '*' stop at a path separator, reproducing the original
+        # top-level-only scope without matching secrets.h.
+        FILES=$(git ls-files ':(glob)firmware/src/*.cpp' ':(glob)firmware/src/*.h')
+        echo "checking:"; echo "$FILES"
+        clang-format --dry-run --Werror -style=file $FILES
+
+    # NOTE: this gate covers ONLY top-level firmware/src. The modules under
+    # draw/, net/, sched/ and text/ are not checked, and the four font tables are
+    # deliberately excluded (generated). Widening the scope is a separate change
+    # because it requires reformatting those files first.
 
     - name: Check Python formatting
       run: |

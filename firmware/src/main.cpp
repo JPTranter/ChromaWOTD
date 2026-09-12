@@ -23,11 +23,11 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/semphr.h>
-#include <esp_sleep.h>
 #include <driver/rtc_io.h>
+#include <esp_sleep.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 #include <time.h>
 // Seeed_GFX is a flat-layout Arduino library: its root TFT_eSPI.cpp includes
 // Processors + Extensions (EPaper etc.) itself. Include it wholesale so everything
@@ -39,13 +39,14 @@
 #ifdef EPAPER_ENABLE
 EPaper epaper;
 #else
-#error "EPAPER_ENABLE not set - check BOARD_SCREEN_COMBO / USE_XIAO_EPAPER_DISPLAY_BOARD_EE05 build_flags in platformio.ini"
+#error \
+    "EPAPER_ENABLE not set - check BOARD_SCREEN_COMBO / USE_XIAO_EPAPER_DISPLAY_BOARD_EE05 build_flags in platformio.ini"
 #endif
 
-#include "verse_display.h"
 #include "net/net.h"
-#include "sched/wake_schedule.h"
 #include "sched/content_policy.h"
+#include "sched/wake_schedule.h"
+#include "verse_display.h"
 
 #ifdef CHROMAWOTD_NETWORK
 #include "net/net_impl_esp32.h"
@@ -57,7 +58,7 @@ static const char kTzPosix[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
 // Fallback sleep when the wall clock isn't trustworthy: retry soon rather than
 // sleeping until a bogus "next slot". Never sleep less than this (wake-loop guard).
 static const uint64_t kFallbackSleepSec = 3600ULL;
-static const int      kMinSleepSec      = 60;
+static const int kMinSleepSec = 60;
 
 // EE05 user buttons, established on hardware with the env:probe diagnostic
 // (2026-09-12) rather than from the schematic — the schematic's net labels are
@@ -67,8 +68,8 @@ static const int      kMinSleepSec      = 60;
 // All three are active-low and RTC-capable, so one ext1 (all-low) mask wakes
 // the chip. Arming GPIO5/D4 (the schematic's "I2C_SDA" net, not a button) was
 // what caused the deep-sleep wake storm — see LESSONS §34.
-static const gpio_num_t kButtonPins[] = { GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_8 };
-static const int        kButtonCount  = sizeof(kButtonPins) / sizeof(kButtonPins[0]);
+static const gpio_num_t kButtonPins[] = {GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_8};
+static const int kButtonCount = sizeof(kButtonPins) / sizeof(kButtonPins[0]);
 
 // Safety net: consecutive button-wake cycles observed, kept in RTC memory so it
 // survives deep sleep. If a button line misbehaves (floats, or is stuck low) the
@@ -78,15 +79,15 @@ RTC_DATA_ATTR static uint32_t g_ext1Streak = 0;
 static const uint32_t kExt1StreakLimit = 5;
 
 // --- Sync-task state, shared between the sync task and setup() -------------
-static VerseData   g_verse    = {};
-static WordData    g_word     = {};
-static WeatherData g_weather  = {};
+static VerseData g_verse = {};
+static WordData g_word = {};
+static WeatherData g_weather = {};
 static const char* g_offlineReason = nullptr;
 static SemaphoreHandle_t g_syncDone = nullptr;
-static ContentMode g_mode     = ContentMode::Verse;
-static bool        g_tomorrow = false;
-static bool        g_haveTime = false;
-static char        g_date[32] = "";   // "YYYY-MM-DD" for the header
+static ContentMode g_mode = ContentMode::Verse;
+static bool g_tomorrow = false;
+static bool g_haveTime = false;
+static char g_date[32] = ""; // "YYYY-MM-DD" for the header
 
 // Runs the whole network Sync phase on its own task/stack (see STACK NOTE
 // above), then signals g_syncDone and deletes itself.
@@ -97,28 +98,24 @@ static void syncTask(void* /*arg*/) {
         g_offlineReason = "no wifi";
         Serial.println("sync: wifi FAILED (check secrets.h / signal)");
     } else {
-        Serial.printf("sync: wifi OK, host=%s ip=%s\n",
-                      WiFi.getHostname(), WiFi.localIP().toString().c_str());
+        Serial.printf("sync: wifi OK, host=%s ip=%s\n", WiFi.getHostname(), WiFi.localIP().toString().c_str());
         configTzTime(kTzPosix, "pool.ntp.org");
 
         // Bounded NTP wait: the content mode + weather window depend on it.
         struct tm tmv;
         if (getLocalTime(&tmv, 6000)) {
             g_haveTime = true;
-            snprintf(g_date, sizeof(g_date), "%04d-%02d-%02d",
-                     tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
-            Serial.printf("sync: time OK %s %02d:%02d:%02d\n", g_date,
-                          tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+            snprintf(g_date, sizeof(g_date), "%04d-%02d-%02d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
+            Serial.printf("sync: time OK %s %02d:%02d:%02d\n", g_date, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
         } else {
             Serial.println("sync: WARN ntp time not available");
         }
 
         // Without a clock we cannot pick content by time: default to the verse
         // and today's weather rather than showing the wrong thing.
-        g_mode     = g_haveTime ? cc_contentModeForHour(tmv.tm_hour) : ContentMode::Verse;
+        g_mode = g_haveTime ? cc_contentModeForHour(tmv.tm_hour) : ContentMode::Verse;
         g_tomorrow = g_haveTime ? cc_useTomorrowForecast(tmv.tm_hour) : false;
-        Serial.printf("sync: mode=%s weather=%s\n",
-                      g_mode == ContentMode::Word ? "word" : "verse",
+        Serial.printf("sync: mode=%s weather=%s\n", g_mode == ContentMode::Word ? "word" : "verse",
                       g_tomorrow ? "tomorrow" : "today");
 
         if (g_mode == ContentMode::Word) {
@@ -163,7 +160,7 @@ static void syncTask(void* /*arg*/) {
 // panel still shows something coherent (flagged by the OFFLINE banner).
 static const char* kFallbackWord = "serendipity";
 static const char* kFallbackPron = "(ser-uhn-DIP-i-tee)";
-static const char* kFallbackDef  =
+static const char* kFallbackDef =
     "noun: The occurrence and development of events by chance in a happy or beneficial way.";
 
 #ifdef CHROMAWOTD_BUTTON_PROBE
@@ -174,25 +171,19 @@ static const char* kFallbackDef  =
 // arming ext1 on the schematic's D1/D2/D4 caused a deep-sleep wake storm
 // (LESSONS §34): the assumed pin map/polarity is demonstrably wrong.
 static void runButtonProbe() {
-    struct Probe { int gpio; const char* label; };
+    struct Probe {
+        int gpio;
+        const char* label;
+    };
     // XIAO ESP32-S3 D-pin map, minus the native-USB pads (GPIO19/20 = D-/D+,
     // which must not be reconfigured or the USB CDC link drops) and the
     // flash/PSRAM pads. D1/D2 already confirmed as BUTTON1/BUTTON2 (active-low);
     // D4 did NOT respond, so the third button is somewhere else in this set.
     const Probe pins[] = {
-        {  0, "GPIO0  (XIAO BOOT)" },
-        {  1, "GPIO1  (D0/BAT_ADC)" },
-        {  2, "GPIO2  (D1)  [BTN1]" },
-        {  3, "GPIO3  (D2)  [BTN2]" },
-        {  4, "GPIO4  (D3)" },
-        {  5, "GPIO5  (D4)" },
-        {  6, "GPIO6  (D5)" },
-        {  7, "GPIO7  (D8)" },
-        {  8, "GPIO8  (D9)" },
-        {  9, "GPIO9  (D10)" },
-        { 21, "GPIO21 (D?)" },
-        { 43, "GPIO43 (D6/TX)" },
-        { 44, "GPIO44 (D7/RX)" },
+        {0, "GPIO0  (XIAO BOOT)"}, {1, "GPIO1  (D0/BAT_ADC)"}, {2, "GPIO2  (D1)  [BTN1]"}, {3, "GPIO3  (D2)  [BTN2]"},
+        {4, "GPIO4  (D3)"},        {5, "GPIO5  (D4)"},         {6, "GPIO6  (D5)"},         {7, "GPIO7  (D8)"},
+        {8, "GPIO8  (D9)"},        {9, "GPIO9  (D10)"},        {21, "GPIO21 (D?)"},        {43, "GPIO43 (D6/TX)"},
+        {44, "GPIO44 (D7/RX)"},
     };
     const int n = (int)(sizeof(pins) / sizeof(pins[0]));
     int last[16];
@@ -214,8 +205,7 @@ static void runButtonProbe() {
         for (int i = 0; i < n; i++) {
             int v = digitalRead(pins[i].gpio);
             if (v != last[i]) {
-                Serial.printf("[%7lu ms] %-22s %d -> %d  %s\n", (unsigned long)millis(),
-                              pins[i].label, last[i], v,
+                Serial.printf("[%7lu ms] %-22s %d -> %d  %s\n", (unsigned long)millis(), pins[i].label, last[i], v,
                               v == 0 ? "<== PRESSED (active-low)" : "released");
                 last[i] = v;
             }
@@ -231,16 +221,17 @@ void setup() {
     Serial.printf("CHROMAWOTD %s boot\n", CHROMAWOTD_VERSION);
 
 #ifdef CHROMAWOTD_BUTTON_PROBE
-    runButtonProbe();   // never returns; nothing else in setup() runs
+    runButtonProbe(); // never returns; nothing else in setup() runs
 #endif
 
     esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
     Serial.printf("wake cause: %d (%s)\n", (int)wakeCause,
-                  wakeCause == ESP_SLEEP_WAKEUP_TIMER ? "timer" :
-                  wakeCause == ESP_SLEEP_WAKEUP_EXT1  ? "button" :
-                  wakeCause == ESP_SLEEP_WAKEUP_UNDEFINED ? "power-on/reset" : "other");
+                  wakeCause == ESP_SLEEP_WAKEUP_TIMER       ? "timer"
+                  : wakeCause == ESP_SLEEP_WAKEUP_EXT1      ? "button"
+                  : wakeCause == ESP_SLEEP_WAKEUP_UNDEFINED ? "power-on/reset"
+                                                            : "other");
 #ifdef CHROMAWOTD_DEBUG_DELAY
-    delay(3000);   // development only: time to attach a serial monitor
+    delay(3000); // development only: time to attach a serial monitor
 #endif
 
     epaper.begin();
@@ -267,26 +258,28 @@ void setup() {
         // source, so it is plain ASCII and safe for the panel font.
         static char body[NET_TEXT_MAX];
         const char* word = (g_word.definition ? g_word.word : kFallbackWord);
-        const char* def  = (g_word.definition ? g_word.definition : kFallbackDef);
-        const char* ex   = (g_word.definition ? g_word.example : nullptr);
-        if (ex && ex[0]) snprintf(body, sizeof(body), "%s  %s", def, ex);
-        else             snprintf(body, sizeof(body), "%s", def);
+        const char* def = (g_word.definition ? g_word.definition : kFallbackDef);
+        const char* ex = (g_word.definition ? g_word.example : nullptr);
+        if (ex && ex[0])
+            snprintf(body, sizeof(body), "%s  %s", def, ex);
+        else
+            snprintf(body, sizeof(body), "%s", def);
 
-        v.verse     = body;
+        v.verse = body;
         v.highlight = nullptr;
-        v.reference = word;                       // red, right
-        v.date      = g_haveTime ? g_date : "Word of the Day";
+        v.reference = word; // red, right
+        v.date = g_haveTime ? g_date : "Word of the Day";
         opts.headerTitle = "Word of the Day";
         opts.leftCaption = g_word.pronunciation ? g_word.pronunciation : kFallbackPron;
-        if (!g_word.definition) opts.leftCaption = kFallbackPron;
+        if (!g_word.definition)
+            opts.leftCaption = kFallbackPron;
     } else {
         if (g_verse.verse) {
             v = g_verse;
         } else {
-            static const char* fv =
-                "Trust in the Lord with all your heart, and do not lean on your own "
-                "understanding. In all your ways acknowledge him, and he will make "
-                "straight your paths.";
+            static const char* fv = "Trust in the Lord with all your heart, and do not lean on your own "
+                                    "understanding. In all your ways acknowledge him, and he will make "
+                                    "straight your paths.";
             static const char* fref = "Proverbs 3:5-6";
             v.verse = fv;
             v.reference = fref;
@@ -310,7 +303,7 @@ void setup() {
     if (g_offlineReason) {
         static char rbuf[NET_TEXT_MAX];
         snprintf(rbuf, sizeof(rbuf), "OFFLINE: %s", g_offlineReason);
-        w.alert = rbuf;   // shows as the red alert in the weather column
+        w.alert = rbuf; // shows as the red alert in the weather column
     }
 
     drawLayout(v, w, opts);
@@ -320,14 +313,15 @@ void setup() {
 
     // --- Sleep until the next slot, or until a button is pressed ------------
 #ifdef CHROMAWOTD_DEEP_SLEEP
-    setenv("TZ", kTzPosix, 1);   // ensure localtime() works even if NTP failed
+    setenv("TZ", kTzPosix, 1); // ensure localtime() works even if NTP failed
     tzset();
 
     uint64_t sleepSec = kFallbackSleepSec;
     struct tm tmNow;
     if (getLocalTime(&tmNow, 100)) {
         int s = cc_secondsUntilNextWake(tmNow);
-        if (s < kMinSleepSec) s = kMinSleepSec;
+        if (s < kMinSleepSec)
+            s = kMinSleepSec;
         sleepSec = (uint64_t)s;
     }
 #ifdef CHROMAWOTD_WAKE_TEST_SEC
@@ -351,8 +345,10 @@ void setup() {
     //   * arming only pins that actually idle HIGH.
 #ifdef CHROMAWOTD_BUTTON_WAKE
     uint64_t btnMask = 0;
-    if (wakeCause == ESP_SLEEP_WAKEUP_EXT1) g_ext1Streak++;
-    else                                    g_ext1Streak = 0;
+    if (wakeCause == ESP_SLEEP_WAKEUP_EXT1)
+        g_ext1Streak++;
+    else
+        g_ext1Streak = 0;
     if (g_ext1Streak >= kExt1StreakLimit) {
         Serial.printf("button wake suppressed for one cycle (%lu consecutive button wakes) - timer only\n",
                       (unsigned long)g_ext1Streak);
@@ -365,9 +361,9 @@ void setup() {
         rtc_gpio_pulldown_dis(pin);
         rtc_gpio_pullup_en(pin);
         bool released = (rtc_gpio_get_level(pin) == 1);
-        Serial.printf("button GPIO%d idle=%s\n", (int)pin,
-                      released ? "HIGH (armed)" : "LOW (floating? NOT armed)");
-        if (released) btnMask |= (1ULL << (int)pin);
+        Serial.printf("button GPIO%d idle=%s\n", (int)pin, released ? "HIGH (armed)" : "LOW (floating? NOT armed)");
+        if (released)
+            btnMask |= (1ULL << (int)pin);
     }
     if (btnMask) {
         esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ALL_LOW);
@@ -378,10 +374,10 @@ void setup() {
     Serial.println("button wake: not enabled in this build (timer-only sleep)");
 #endif
     esp_sleep_enable_timer_wakeup(sleepSec * 1000000ULL);
-    Serial.printf("awake-status: wake_cause=%d, sleeping %llu s (or on button)\n",
-                  (int)wakeCause, (unsigned long long)sleepSec);
+    Serial.printf("awake-status: wake_cause=%d, sleeping %llu s (or on button)\n", (int)wakeCause,
+                  (unsigned long long)sleepSec);
     Serial.flush();
-    esp_deep_sleep_start();   // does not return
+    esp_deep_sleep_start(); // does not return
 #else
     Serial.println("sleep: CHROMAWOTD_DEEP_SLEEP not set - idling (debug build)");
 #endif
