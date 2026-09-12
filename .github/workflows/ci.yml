@@ -27,15 +27,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
-    - name: Setup PlatformIO
-      uses: platformio/action-ci@v1
+    # Install PlatformIO via pip rather than the platformio/action-ci action:
+    # that action no longer resolves (repository not found), which broke this job
+    # on the first real CI run. Pinned to match the local toolchain.
+    - uses: actions/setup-python@v5
       with:
-        project_dir: .
+        python-version: "3.11"
+    - name: Install PlatformIO Core
+      run: pip install platformio==6.1.19
 
     - name: Build firmware
       run: pio run -e s3
+      working-directory: firmware
 
     - name: Setup CMake
       run: |
@@ -64,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Setup clang-format
       run: |

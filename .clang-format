@@ -1,14 +1,19 @@
 # clang-format configuration for CHROMAWOTD
-
-Based on LLVM style with minor adjustments for C++17 and PlatformIO conventions.
+#
+# Based on LLVM style with minor adjustments for C++17 and PlatformIO conventions.
+#
+# NOTE: enum option values must use their modern Capitalised spelling. clang-format
+# >= 18 REJECTS the old lowercase forms ('left', 'right', 'none', 'beforeColon')
+# outright, and CI runs a current clang-format, so the whole config fails to parse
+# if any are reintroduced.
 
 Language: Cpp
 BasedOnStyle: LLVM
 AccessModifierOffset: -2
 AlignConsecutiveAssignments: false
 AlignConsecutiveDeclarations: false
-AlignEscapedNewlines: left
-AlignOperands: right
+AlignEscapedNewlines: Left
+AlignOperands: AlignAfterOperator
 AlignTrailingComments: true
 AllowAllParametersOfDeclarationOnNextLine: true
 AllowShortBlocksOnASingleLine: false
@@ -16,14 +21,14 @@ AllowShortCaseLabelsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: Inline
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
-AlwaysBreakAfterReturnType: none
+AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
-AlwaysBreakTemplateDeclarations: yes
+AlwaysBreakTemplateDeclarations: Yes
 BinPackArguments: true
 BinPackParameters: true
 BreakBeforeBraces: Attach
 BreakBeforeTernaryOperators: true
-BreakConstructorInitializers: beforeColon
+BreakConstructorInitializers: BeforeColon
 BreakStringLiterals: true
 ColumnLimit: 120
 CommentPragmas: '^ IWYU pragma:'
@@ -33,7 +38,7 @@ IndentCaseBlocks: false
 KeepEmptyLinesAtTheStartOfBlocks: false
 MaxEmptyLinesToKeep: 1
 NamespaceIndentation: None
-PointerAlignment: left
+PointerAlignment: Left
 ReflowComments: true
 SortIncludes: true
 SortUsingDeclarations: true
