@@ -65,6 +65,23 @@ target_include_directories(chroma_canvas PUBLIC
 )
 target_compile_definitions(chroma_canvas PUBLIC CHROMAWOTD_HOST=1)
 
+# Device font path. The firmware ships the proportional Roboto/FreeSans set
+# (-DCHROMAWOTD_FONT_FREESANS=1 in platformio.ini), but the host targets all
+# defined CHROMAWOTD_HOST only, so the auto-size ladder and the proportional
+# glyph/degree/measurement path had NO local coverage — ctest, layout_render,
+# regenerate_screenshots and the docs/images ledger all exercised the fallback
+# 5x7 path. Turning this ON compiles the layout targets on the device font path.
+# Default OFF keeps the classic 5x7 renders the docs/images ledger is built from;
+# the layout invariants that encode 5x7 glyph geometry only hold in that mode
+# (see LESSONS 38).
+option(CHROMAWOTD_DEVICE_FONTS
+       "Compile host layout targets on the device (FreeSans/Roboto) font path" OFF)
+set(CC_FONT_DEFS "")
+if(CHROMAWOTD_DEVICE_FONTS)
+    set(CC_FONT_DEFS CHROMAWOTD_FONT_FREESANS=1)
+    message(STATUS "Device font path ON: host layout targets get CHROMAWOTD_FONT_FREESANS=1")
+endif()
+
 # Helper function to register tests and copy MinGW runtime DLLs
 file(TO_CMAKE_PATH "${CMAKE_CXX_COMPILER}" _compiler)
 get_filename_component(_mingw_bin_dir "${_compiler}" DIRECTORY)
@@ -78,7 +95,7 @@ function(cc_test NAME SRC_TEST)
         ${CC_SRC_DIR}/verse_display.cpp
         ${SRC_TEST}
     )
-    target_compile_definitions(${NAME} PRIVATE CHROMAWOTD_HOST=1)
+    target_compile_definitions(${NAME} PRIVATE CHROMAWOTD_HOST=1 ${CC_FONT_DEFS})
     target_link_libraries(${NAME} PRIVATE chroma_canvas gtest_main)
     add_test(NAME ${NAME}
              COMMAND ${NAME}
@@ -152,7 +169,7 @@ add_executable(layout_render
     ${CC_SRC_DIR}/verse_display.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tools/layout_render.cpp
 )
-target_compile_definitions(layout_render PRIVATE CHROMAWOTD_HOST=1)
+target_compile_definitions(layout_render PRIVATE CHROMAWOTD_HOST=1 ${CC_FONT_DEFS})
 target_link_libraries(layout_render PRIVATE chroma_canvas)
 if(WIN32 AND EXISTS "${_mingw_bin_dir}")
     add_custom_command(TARGET layout_render POST_BUILD

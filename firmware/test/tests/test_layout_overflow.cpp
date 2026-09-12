@@ -31,10 +31,40 @@ static int colorCount(int x0, int y0, int x1, int y1, uint32_t color) {
     return n;
 }
 
-// The ellipsis overflow marker is made of '.' glyphs. In the vendored 5x7 font '.'
-// is a 2x2 ink block at columns 2..3, rows 5..6 of an otherwise empty 6x8 cell, so
-// two cell-exact matches at the 6-px glyph pitch identify the marker without false
-// positives from ordinary prose.
+// The ellipsis overflow marker is a run of '.' glyphs, and its ink shape is
+// FONT-SPECIFIC, so the detector is per font family (LESSONS 39):
+//   - 5x7 (fallback font): '.' is a 2x2 ink block at columns 2..3, rows 5..6 of an
+//     otherwise empty 6x8 cell, and the glyph pitch is a fixed 6 px.
+//   - Roboto (the device path): '.' is a 1x1 dot sitting on the baseline with a
+//     3 px advance, so the marker is >=2 single-pixel dots 3 px apart with clean
+//     columns between them. A dot must be isolated on ALL FOUR sides: up/down
+//     exclude a hyphen (contiguous ink) and the dot of an 'i'/'j' (stem below),
+//     and left/right exclude the END of a baseline-terminating stroke — the bottom
+//     of 's'/'u'/'n' is a horizontal run whose last pixel is otherwise dot-shaped
+//     and, at Roboto's 3 px pitch, lands exactly 3 px from its neighbour (LESSONS 39).
+#ifdef CHROMAWOTD_FONT_FREESANS
+static bool isIsolatedDot(int x, int y) {
+    return g_canvas.getPixel(x, y)     != CC_WHITE &&
+           g_canvas.getPixel(x, y - 1) == CC_WHITE &&
+           g_canvas.getPixel(x, y + 1) == CC_WHITE &&
+           g_canvas.getPixel(x - 1, y) == CC_WHITE &&
+           g_canvas.getPixel(x + 1, y) == CC_WHITE;
+}
+
+static bool hasOverflowMarker(int x0, int y0, int x1, int y1) {
+    // The dot's own row must lie inside the region, but its neighbours may be read
+    // outside it: CcCanvas::getPixel() is bounds-safe (returns background), which
+    // matters because the alert's marker sits on the panel's second-to-last row.
+    for (int y = y0; y <= y1; y++)
+        for (int cx = x0 + 1; cx + 4 <= x1; cx++)
+            if (isIsolatedDot(cx, y) &&
+                g_canvas.getPixel(cx + 1, y) == CC_WHITE &&
+                g_canvas.getPixel(cx + 2, y) == CC_WHITE &&
+                isIsolatedDot(cx + 3, y))
+                return true;
+    return false;
+}
+#else
 static bool cellIsDotGlyph(int cx, int cy) {
     for (int j = 0; j < 8; j++) {
         for (int i = 0; i < 6; i++) {
@@ -53,6 +83,7 @@ static bool hasOverflowMarker(int x0, int y0, int x1, int y1) {
                 return true;
     return false;
 }
+#endif
 
 static VerseData verse(const char* text, const char* highlight, const char* reference) {
     return { "Fri, Sep 12", text, highlight, reference };
@@ -113,9 +144,13 @@ TEST(VerseOverflow, LandscapeMarksOverflowAndKeepsDividerIntact) {
     // appear inside that region.
     EXPECT_TRUE(hasOverflowMarker(8, 16, 218, 126))
         << "long verse must be visibly marked as truncated";
-    // The divider is at x=226; the weather-column FORECAST rule starts at x=233,
-    // so the gutter x=227..230 must stay blank (x=231-232 may have sun icon pixels).
-    EXPECT_TRUE(rectAllColor(227, 0, 230, 127, CC_WHITE))
+    // The divider is at x=226 and the weather column starts at x=227, so the
+    // gutter immediately right of the divider must stay blank. x=230 is NOT part
+    // of that gutter: it legitimately carries weather-column content — the
+    // condition line ("Partly cloudy") sets on ONE centred line in the
+    // proportional font and reaches x=230, where 5x7 wraps it to two lines and
+    // stops short (LESSONS 39).
+    EXPECT_TRUE(rectAllColor(227, 0, 229, 127, CC_WHITE))
         << "verse text crossed the divider into the weather-column gutter";
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_overflow_landscape.png"));

@@ -1,6 +1,8 @@
 .pio/
 build/
 **/build/
+# CMake build dirs for the alternate (device-font) host configuration
+**/build-*/
 output/
 **/output/*.png
 *.png.tmp
