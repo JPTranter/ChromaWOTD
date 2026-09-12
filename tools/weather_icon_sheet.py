@@ -15,6 +15,7 @@ Usage:
     python tools/weather_icon_sheet.py --scale 3      # 3x nearest-neighbour view
     python tools/weather_icon_sheet.py --output out.png
 """
+
 import argparse
 import os
 
@@ -167,7 +168,7 @@ def draw_weather_icon(c, cx, cy, size, iconType):
         c.draw_fast_hline(cx - size // 3, cy + size // 4, (size * 2) // 3, cloudOutline)
     elif iconType == 2:  # Rain
         # cyShift + drop x-offset scale with size (== shipped firmware at size 24)
-        cyShift = cy - size // 6   # == cy-4 at size 24
+        cyShift = cy - size // 6  # == cy-4 at size 24
         c.fill_circle(cx - size // 4, cyShift + size // 10, size // 5, cloudFill)
         c.draw_circle(cx - size // 4, cyShift + size // 10, size // 5, cloudOutline)
         c.fill_circle(cx + size // 5, cyShift + size // 10, size // 6, cloudFill)
@@ -181,15 +182,27 @@ def draw_weather_icon(c, cx, cy, size, iconType):
         dropTop = cyShift + size // 4 + 3
         dropBot = cyShift + size // 2 + 3
         c.draw_line(cx - dx, dropTop, cx - dx - 3, dropBot, CC_RED)
-        c.draw_line(cx,      dropTop, cx - 3,       dropBot, CC_RED)
+        c.draw_line(cx, dropTop, cx - 3, dropBot, CC_RED)
         c.draw_line(cx + dx, dropTop, cx + dx - 3, dropBot, CC_RED)
     else:  # Partly Cloudy (also default)
-        ray = size // 8   # == 3 at size 24
+        ray = size // 8  # == 3 at size 24
         if ray < 3:
             ray = 3
         c.fill_circle(cx - size // 4, cy - size // 5, size // 4, CC_YELLOW)
-        c.draw_line(cx - size // 4, cy - size // 5 - size // 4 - ray, cx - size // 4, cy - size // 5 - size // 4 - ray + 2, CC_YELLOW)
-        c.draw_line(cx - size // 4 - size // 4 - ray, cy - size // 5, cx - size // 4 - size // 4 - ray + 2, cy - size // 5, CC_YELLOW)
+        c.draw_line(
+            cx - size // 4,
+            cy - size // 5 - size // 4 - ray,
+            cx - size // 4,
+            cy - size // 5 - size // 4 - ray + 2,
+            CC_YELLOW,
+        )
+        c.draw_line(
+            cx - size // 4 - size // 4 - ray,
+            cy - size // 5,
+            cx - size // 4 - size // 4 - ray + 2,
+            cy - size // 5,
+            CC_YELLOW,
+        )
         c.fill_circle(cx - size // 6, cy + size // 8, size // 5, cloudFill)
         c.draw_circle(cx - size // 6, cy + size // 8, size // 5, cloudOutline)
         c.fill_circle(cx + size // 5, cy + size // 8, size // 6, cloudFill)
@@ -226,11 +239,12 @@ def render_icon(icon_type, size=24, pad=4):
     ys = max(0, ys - pad)
     xe = min(c.w - 1, xe + pad)
     ye = min(c.h - 1, ye + pad)
-    return [row[xs:xe + 1] for row in c.px[ys:ye + 1]]
+    return [row[xs : xe + 1] for row in c.px[ys : ye + 1]]
 
 
 def to_png(img):
     from PIL import Image
+
     h = len(img)
     w = len(img[0])
     im = Image.new("RGB", (w, h), CC_RGB[CC_WHITE])
@@ -243,6 +257,7 @@ def to_png(img):
 
 def scale_nn(im, factor):
     from PIL import Image
+
     if factor == 1:
         return im
     return im.resize((im.width * factor, im.height * factor), resample=Image.NEAREST)
@@ -279,8 +294,10 @@ def main():
     sheet = Image.new("RGB", (8, 8))  # temporary; real size computed after measuring
     tmp = ImageDraw.Draw(sheet)
 
-    labels = ["%d  %s   (%dx%d ink)" % (i, ICON_NAMES[i], im.width, im.height)
-              for i, im in enumerate(imgs)]
+    labels = [
+        "%d  %s   (%dx%d ink)" % (i, ICON_NAMES[i], im.width, im.height)
+        for i, im in enumerate(imgs)
+    ]
 
     # Column width = widest of the icon box and its label, so no label collides
     # with the neighbouring column. All columns share the same width for a clean grid.
@@ -309,17 +326,25 @@ def main():
         ox = left + (col_w - im.width) // 2
         oy = top + (cell_h - im.height) // 2
         sheet.paste(im, (ox, oy))
-        d.rectangle([left, top, left + col_w, top + cell_h],
-                    outline=CC_RGB[CC_BLACK])
-        d.text((left + (col_w - int(d.textlength(labels[i], font=font))) // 2,
-                top + cell_h + 3), labels[i], fill=CC_RGB[CC_BLACK], font=font)
+        d.rectangle([left, top, left + col_w, top + cell_h], outline=CC_RGB[CC_BLACK])
+        d.text(
+            (left + (col_w - int(d.textlength(labels[i], font=font))) // 2, top + cell_h + 3),
+            labels[i],
+            fill=CC_RGB[CC_BLACK],
+            font=font,
+        )
 
     # palette legend (reserved footer region, below the grid)
     ly = sheet_h - margin - footer_h + 12
     lx = margin + 4
     d.text((lx, ly - 4), "Palette:", fill=CC_RGB[CC_BLACK], font=font)
     x = lx + 60
-    for name, color in [("white", CC_WHITE), ("black", CC_BLACK), ("red", CC_RED), ("yellow", CC_YELLOW)]:
+    for name, color in [
+        ("white", CC_WHITE),
+        ("black", CC_BLACK),
+        ("red", CC_RED),
+        ("yellow", CC_YELLOW),
+    ]:
         d.rectangle([x, ly - 8, x + 16, ly + 8], fill=CC_RGB[color], outline=CC_RGB[CC_BLACK])
         d.text((x + 21, ly - 4), name, fill=CC_RGB[CC_BLACK], font=font)
         x += 60 + len(name) * 6
@@ -334,7 +359,10 @@ def main():
     sheet.save(out)
     print("Sprite sheet written: %s" % out)
     print("  Icons: 4 (0=Sun, 1=Cloud, 2=Rain, 3=Partly Cloudy)")
-    print("  Sheet: %dx%dpx  (scale x%d, grid %s)" % (sheet.width, sheet.height, args.scale, args.grid))
+    print(
+        "  Sheet: %dx%dpx  (scale x%d, grid %s)"
+        % (sheet.width, sheet.height, args.scale, args.grid)
+    )
 
 
 if __name__ == "__main__":

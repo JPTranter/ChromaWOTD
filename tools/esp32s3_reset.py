@@ -11,6 +11,7 @@ Usage:
     python tools/esp32s3_reset.py --port COM13
     python tools/esp32s3_reset.py --port COM13 --watch 5
 """
+
 import argparse
 import sys
 import time
@@ -49,11 +50,13 @@ def release_bootloader(port: str, baud: int = 115200, watch_s: float = 4.0) -> s
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--port", required=True,
-                        help="serial port of the board, e.g. COM13 or /dev/ttyACM0")
+    parser.add_argument(
+        "--port", required=True, help="serial port of the board, e.g. COM13 or /dev/ttyACM0"
+    )
     parser.add_argument("--baud", type=int, default=115200, help="monitor baud rate")
-    parser.add_argument("--watch", type=float, default=4.0,
-                        help="seconds of boot output to capture after the reset")
+    parser.add_argument(
+        "--watch", type=float, default=4.0, help="seconds of boot output to capture after the reset"
+    )
     args = parser.parse_args()
 
     try:

@@ -28,6 +28,7 @@ Usage
 
 Requires pyserial (pip install pyserial).
 """
+
 import argparse
 import datetime
 import sys
@@ -42,6 +43,7 @@ def now():
 
 def list_serials():
     from serial.tools import list_ports
+
     return [p.device for p in list_ports.comports()]
 
 
@@ -51,8 +53,10 @@ def present(port):
 
 
 def mode_presence(port, seconds):
-    print(f"watching {port} presence for {seconds:.0f}s "
-          f"(never opening the port; no DTR/RTS, no reset)")
+    print(
+        f"watching {port} presence for {seconds:.0f}s "
+        f"(never opening the port; no DTR/RTS, no reset)"
+    )
     print("  the port is ABSENT while the device deep-sleeps and PRESENT while awake\n")
     start = time.time()
     last = None
@@ -66,8 +70,10 @@ def mode_presence(port, seconds):
         time.sleep(1)
     print(f"\nstate changes in {seconds:.0f}s: {changes}")
     if changes > 2:
-        print("VERDICT: cycling repeatedly - genuine wake storm (or a monitor loop, "
-              "but this mode never opens the port, so it is the firmware)")
+        print(
+            "VERDICT: cycling repeatedly - genuine wake storm (or a monitor loop, "
+            "but this mode never opens the port, so it is the firmware)"
+        )
         return 1
     print("VERDICT: stable - the device slept and stayed asleep (or stayed awake)")
     return 0
@@ -88,7 +94,7 @@ def mode_capture(port, seconds):
     ser = serial.Serial()
     ser.port = port
     ser.baudrate = 115200
-    ser.dtr = False          # set BEFORE open: avoids the reset-on-attach
+    ser.dtr = False  # set BEFORE open: avoids the reset-on-attach
     ser.rts = False
     ser.timeout = 1
     ser.open()
@@ -100,7 +106,7 @@ def mode_capture(port, seconds):
     while time.time() - start < seconds:
         try:
             raw = ser.readline()
-        except Exception as exc:                      # port vanishes when it sleeps
+        except Exception as exc:  # port vanishes when it sleeps
             print(f"  [{now()}] port closed ({type(exc).__name__}) - device slept")
             break
         if not raw:
@@ -128,11 +134,17 @@ def mode_capture(port, seconds):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--port", default=DEFAULT_PORT, help=f"serial port (default {DEFAULT_PORT})")
-    parser.add_argument("--seconds", type=float, default=90.0, help="observation window (default 90)")
+    parser.add_argument(
+        "--port", default=DEFAULT_PORT, help=f"serial port (default {DEFAULT_PORT})"
+    )
+    parser.add_argument(
+        "--seconds", type=float, default=90.0, help="observation window (default 90)"
+    )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--presence", action="store_true", help="poll port presence (no reset)")
-    group.add_argument("--capture", action="store_true", help="wait for wake, then read the boot log")
+    group.add_argument(
+        "--capture", action="store_true", help="wait for wake, then read the boot log"
+    )
     args = parser.parse_args()
 
     try:

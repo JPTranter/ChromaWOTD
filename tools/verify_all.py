@@ -19,6 +19,7 @@ Examples
     python tools/verify_all.py --fix        # resync docs/images after a layout change
     python tools/verify_all.py --skip-firmware   # host-only iteration
 """
+
 import argparse
 import hashlib
 import os
@@ -82,9 +83,12 @@ def build_firmware(clean):
     for line in output.splitlines():
         if line.startswith("Warning! Ignore unknown configuration option"):
             print(f"  !! {line.strip()}")
-    warnings = [l.strip() for l in output.splitlines()
-                if "warning:" in l.lower() and not INTERESTING_WARNING.search(l)]
-    size = [l.strip() for l in output.splitlines() if l.strip().startswith(("RAM:", "Flash:"))]
+    warnings = [
+        line.strip()
+        for line in output.splitlines()
+        if "warning:" in line.lower() and not INTERESTING_WARNING.search(line)
+    ]
+    size = [ln.strip() for ln in output.splitlines() if ln.strip().startswith(("RAM:", "Flash:"))]
     for line in size:
         print(f"  {line}")
     if warnings:
@@ -109,7 +113,7 @@ def run_host_tests():
         return False
 
     result = run(["ctest", "--test-dir", BUILD_DIR, "--output-on-failure"])
-    tail = [l for l in result.stdout.splitlines() if "tests passed" in l or "Failed" in l]
+    tail = [ln for ln in result.stdout.splitlines() if "tests passed" in ln or "Failed" in ln]
     for line in tail:
         print(f"  {line.strip()}")
     ok = result.returncode == 0
@@ -133,9 +137,25 @@ def run_device_font_tests():
     step("3/5 host layout tests (DEVICE font path, CHROMAWOTD_DEVICE_FONTS=ON)")
     build = os.path.join(TEST_DIR, "build-device")
     if not os.path.exists(os.path.join(build, "CMakeCache.txt")):
-        print("$ cmake -S firmware/test -B firmware/test/build-device -G Ninja -DCHROMAWOTD_DEVICE_FONTS=ON")
-        if run(["cmake", "-S", TEST_DIR, "-B", build, "-G", "Ninja",
-                "-DCHROMAWOTD_DEVICE_FONTS=ON"]).returncode != 0:
+        print(
+            "$ cmake -S firmware/test -B firmware/test/build-device -G Ninja "
+            "-DCHROMAWOTD_DEVICE_FONTS=ON"
+        )
+        if (
+            run(
+                [
+                    "cmake",
+                    "-S",
+                    TEST_DIR,
+                    "-B",
+                    build,
+                    "-G",
+                    "Ninja",
+                    "-DCHROMAWOTD_DEVICE_FONTS=ON",
+                ]
+            ).returncode
+            != 0
+        ):
             print("  FAIL: cmake configure (device fonts)")
             return False
     if run(["cmake", "--build", build]).returncode != 0:
@@ -143,7 +163,7 @@ def run_device_font_tests():
         return False
 
     result = run(["ctest", "--test-dir", build, "--output-on-failure"])
-    tail = [l for l in result.stdout.splitlines() if "tests passed" in l or "Failed" in l]
+    tail = [ln for ln in result.stdout.splitlines() if "tests passed" in ln or "Failed" in ln]
     for line in tail:
         print(f"  {line.strip()}")
     ok = result.returncode == 0
@@ -168,14 +188,15 @@ def restore_canonical_renders():
 
 def check_alignment():
     step("5/5 layout alignment (tools/measure_layout.py --check)")
-    result = run([sys.executable, os.path.join(ROOT, "tools", "measure_layout.py"),
-                  "--check", "--all"])
+    result = run(
+        [sys.executable, os.path.join(ROOT, "tools", "measure_layout.py"), "--check", "--all"]
+    )
     output = result.stdout + result.stderr
     # Surface only the problems and the verdict; a clean run is one line.
-    problems = [l.strip() for l in output.splitlines() if l.strip().startswith("FAIL")]
+    problems = [ln.strip() for ln in output.splitlines() if ln.strip().startswith("FAIL")]
     for line in problems:
         print(f"  ! {line}")
-    skipped = any(l.strip().startswith("SKIP") for l in output.splitlines())
+    skipped = any(ln.strip().startswith("SKIP") for ln in output.splitlines())
     ok = result.returncode == 0
     if skipped:
         print("  SKIP: alignment invariants (Pillow not installed)")

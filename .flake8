@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 100
+
+# E203: black formats slices as `a[1 :2]`, flake8 flags the space before ':'. The
+# two tools disagree by design; black is the formatter, so defer to it here.
+extend-ignore = E203
+
+exclude =
+    .git,
+    __pycache__,
+    firmware/test/build,
+    firmware/test/build-device,
+    firmware/test/third_party,
+    firmware/.pio

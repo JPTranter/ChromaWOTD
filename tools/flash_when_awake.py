@@ -10,6 +10,7 @@ fails. The port returns on every wake — a button press or the next scheduled s
 
 Exit 0 when an upload succeeds, 2 if no port appeared inside the window.
 """
+
 import argparse
 import subprocess
 import sys
@@ -24,8 +25,9 @@ PYTHON = sys.executable
 def ports():
     """COM ports currently present (Registry-backed, no pyserial dependency)."""
     try:
-        out = subprocess.run(["reg", "query", r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"],
-                             capture_output=True, text=True).stdout
+        out = subprocess.run(
+            ["reg", "query", r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"], capture_output=True, text=True
+        ).stdout
     except OSError:
         return []
     return [line.split()[-1] for line in out.splitlines() if "REG_SZ" in line]
@@ -52,8 +54,7 @@ def main():
         print("no serial port appeared in the window (device still asleep)")
         return 2
 
-    cmd = [PYTHON, "-m", "platformio", "run", "-e", args.env, "-t", "upload",
-           "--upload-port", seen]
+    cmd = [PYTHON, "-m", "platformio", "run", "-e", args.env, "-t", "upload", "--upload-port", seen]
     print("$ " + " ".join(cmd))
     result = subprocess.run(cmd, cwd=FIRMWARE)
     if result.returncode != 0:

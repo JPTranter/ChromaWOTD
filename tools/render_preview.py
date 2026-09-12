@@ -19,6 +19,7 @@ uses the same draw calls the firmware runs, so the PNG is what the panel refresh
 Renders land in `firmware/test/output/previews/` (gitignored, outside the docs/images
 ledger).
 """
+
 import argparse
 import json
 import os
@@ -74,12 +75,18 @@ def fixture_args(path):
         data = json.load(handle)
     weather = data.get("weather", {})
     args = [
-        "--verse", data.get("verse", ""),
-        "--date", data.get("date", ""),
-        "--reference", data.get("reference", ""),
-        "--temp", str(weather.get("temp", 21)),
-        "--condition", weather.get("condition", ""),
-        "--icon", weather.get("icon", "partly"),
+        "--verse",
+        data.get("verse", ""),
+        "--date",
+        data.get("date", ""),
+        "--reference",
+        data.get("reference", ""),
+        "--temp",
+        str(weather.get("temp", 21)),
+        "--condition",
+        weather.get("condition", ""),
+        "--icon",
+        weather.get("icon", "partly"),
     ]
     if data.get("highlight"):
         args += ["--highlight", data["highlight"]]
@@ -98,11 +105,20 @@ def main():
     parser.add_argument("--temp", type=float, help="temperature in Celsius (negatives fine)")
     parser.add_argument("--condition", help="condition label")
     parser.add_argument("--alert", help="alert banner text (red)")
-    parser.add_argument("--icon", choices=["sun", "cloud", "rain", "partly", "0", "1", "2", "3"],
-                        help="weather icon")
-    parser.add_argument("--out", help="output PNG path (default firmware/test/output/previews/preview.png)")
-    parser.add_argument("--fixture", nargs="?", const=FIXTURE,
-                        help="use the bundled sample_data.json fixture (optionally another path)")
+    parser.add_argument(
+        "--icon",
+        choices=["sun", "cloud", "rain", "partly", "0", "1", "2", "3"],
+        help="weather icon",
+    )
+    parser.add_argument(
+        "--out", help="output PNG path (default firmware/test/output/previews/preview.png)"
+    )
+    parser.add_argument(
+        "--fixture",
+        nargs="?",
+        const=FIXTURE,
+        help="use the bundled sample_data.json fixture (optionally another path)",
+    )
     parser.add_argument("--rebuild", action="store_true", help="force a rebuild of layout_render")
     parser.add_argument("--open", action="store_true", help="open the PNG in the default viewer")
     args = parser.parse_args()
@@ -118,10 +134,15 @@ def main():
         if args.verse_file:
             cmd += ["--verse-file", args.verse_file]
 
-    for flag, value in (("--highlight", args.highlight), ("--reference", args.reference),
-                        ("--date", args.date), ("--condition", args.condition),
-                        ("--alert", args.alert), ("--icon", args.icon),
-                        ("--temp", args.temp)):
+    for flag, value in (
+        ("--highlight", args.highlight),
+        ("--reference", args.reference),
+        ("--date", args.date),
+        ("--condition", args.condition),
+        ("--alert", args.alert),
+        ("--icon", args.icon),
+        ("--temp", args.temp),
+    ):
         if value is not None:
             cmd += [flag, str(value)]
 

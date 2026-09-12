@@ -27,20 +27,20 @@ Usage
 Requires Pillow. If Pillow is missing the tool prints a SKIP notice and exits 0,
 so it can be wired into verify_all.py without becoming a hard dependency.
 """
+
 import argparse
 import glob
 import os
-import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_IMAGE = os.path.join(ROOT, "docs", "images", "layout_landscape.png")
 
 # Panel geometry — mirrors the constants in firmware/src/verse_display.cpp.
 PANEL_W, PANEL_H = 296, 128
-SPLIT_X = 226        # vertical divider
-HEADER_H = 14        # yellow band height (rule sits at HEADER_H - 1)
-MARGIN = 4           # kVerseMargin: body text block left/right margin
-RULE_Y = 109         # kReferenceY
+SPLIT_X = 226  # vertical divider
+HEADER_H = 14  # yellow band height (rule sits at HEADER_H - 1)
+MARGIN = 4  # kVerseMargin: body text block left/right margin
+RULE_Y = 109  # kReferenceY
 
 PAPER = (245, 242, 234)
 YELLOW = (232, 183, 26)
@@ -57,6 +57,7 @@ def is_red(p):
 
 def load(path):
     from PIL import Image
+
     return Image.open(path).convert("RGB")
 
 
@@ -92,8 +93,9 @@ def measure(path):
     # 4. left caption ink (black text below the rule)
     m["caption_left"] = col_min(1, SPLIT_X, RULE_Y + 2, PANEL_H, is_ink)
     m["caption_top"] = None
-    cap_rows = [y for y in range(RULE_Y + 1, PANEL_H)
-                if any(is_ink(px[x, y]) for x in range(1, SPLIT_X))]
+    cap_rows = [
+        y for y in range(RULE_Y + 1, PANEL_H) if any(is_ink(px[x, y]) for x in range(1, SPLIT_X))
+    ]
     if cap_rows:
         m["caption_top"] = cap_rows[0]
     return m
@@ -103,8 +105,12 @@ def check(m):
     """Return a list of (ok, description) for each invariant."""
     out = []
     lt, rt = m["header_left_top"], m["header_right_top"]
-    out.append((lt is not None and lt == rt,
-                f"weather caption level with header date (left top y={lt}, right top y={rt})"))
+    out.append(
+        (
+            lt is not None and lt == rt,
+            f"weather caption level with header date (left top y={lt}, right top y={rt})",
+        )
+    )
 
     rule = m["rule"]
     if rule is None:
@@ -112,20 +118,32 @@ def check(m):
     else:
         left_ok = abs(rule[0] - MARGIN) <= 1
         right_ok = abs(rule[1] - (SPLIT_X - MARGIN)) <= 1
-        out.append((left_ok and right_ok,
-                    f"rule spans body margins (got x{rule[0]}..{rule[1]}, "
-                    f"want x{MARGIN}..{SPLIT_X - MARGIN})"))
+        out.append(
+            (
+                left_ok and right_ok,
+                f"rule spans body margins (got x{rule[0]}..{rule[1]}, "
+                f"want x{MARGIN}..{SPLIT_X - MARGIN})",
+            )
+        )
 
     body = m["body_left"]
-    out.append((body is not None and abs(body - MARGIN) <= 1,
-                f"body text left ink on margin (got x={body}, want x={MARGIN})"))
+    out.append(
+        (
+            body is not None and abs(body - MARGIN) <= 1,
+            f"body text left ink on margin (got x={body}, want x={MARGIN})",
+        )
+    )
 
     cap = m["caption_left"]
     if cap is None:
         out.append((True, "no left caption in this render (nothing to align)"))
     else:
-        out.append((abs(cap - MARGIN) <= 1,
-                    f"left caption ink on body margin (got x={cap}, want x={MARGIN})"))
+        out.append(
+            (
+                abs(cap - MARGIN) <= 1,
+                f"left caption ink on body margin (got x={cap}, want x={MARGIN})",
+            )
+        )
 
     # caption must sit BELOW the rule, not touch it
     if m["caption_top"] is not None:
@@ -136,12 +154,18 @@ def check(m):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("image", nargs="?", default=DEFAULT_IMAGE,
-                        help="render to measure (default: docs/images/layout_landscape.png)")
-    parser.add_argument("--check", action="store_true",
-                        help="exit non-zero if an invariant fails")
-    parser.add_argument("--all", action="store_true",
-                        help="measure every PNG in docs/images (ignores the positional arg)")
+    parser.add_argument(
+        "image",
+        nargs="?",
+        default=DEFAULT_IMAGE,
+        help="render to measure (default: docs/images/layout_landscape.png)",
+    )
+    parser.add_argument("--check", action="store_true", help="exit non-zero if an invariant fails")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="measure every PNG in docs/images (ignores the positional arg)",
+    )
     args = parser.parse_args()
 
     try:
@@ -165,7 +189,9 @@ def main():
             continue
         m = measure(path)
         print(f"\n=== {os.path.basename(path)}  ({m['size'][0]}x{m['size'][1]}) ===")
-        print(f"  header top ink   : left y={m['header_left_top']}  right y={m['header_right_top']}")
+        print(
+            f"  header top ink   : left y={m['header_left_top']}  right y={m['header_right_top']}"
+        )
         print(f"  caption rule     : {('x%d..%d' % m['rule']) if m['rule'] else 'none'}")
         print(f"  body left ink    : x={m['body_left']}")
         print(f"  left caption ink : x={m['caption_left']} (top y={m['caption_top']})")
