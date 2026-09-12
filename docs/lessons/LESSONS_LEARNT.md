@@ -292,3 +292,27 @@ from 19 (4 suites) to 10 (3 suites). This closed REVIEW items D1 (monolith) and 
 - `tools/render_preview.py` lost `--orientation`/`--theme`, `layout_render` no longer
   takes them, and portrait/inverted/dark PNGs were removed from `docs/images/`. Syncing
   these docs is part of the change, not an afterthought.
+
+
+## 26. Reuse empty forecast-column space: grow the weather icon when there's no alert
+
+The 66 px right-hand weather column (icon + temp + condition) hugged the top with a
+fixed 24 px icon, so a no-alert day left ~45-55 px of dead whitespace at the bottom of
+the column. When SPARE, the icon now grows (clamped to 2x = 48 px, shrinking as the
+condition wraps more lines) and the icon/temp/condition stack is re-spread to fill the
+column; the alert branch is unchanged (icon stays 24 px, alert pinned to the bottom).
+Recovers ~30 px of usable bottom space on a 1-line day. Implementation lives in
+`drawLandscapeWeatherColumn()` in `firmware/src/verse_display.cpp`; the growth only
+happens when `w.alert == null`.
+- Before/after renders archived in `docs/images/history/`:
+  `layout_landscape_weather_reflow_{before,after}.png` (partly), `..._rain_{before,after}.png`,
+  and `..._alert_{before,after}.png` (proves the pinned-alert render is unchanged).
+- The weather icons are procedural vector primitives (circles/lines), so growing them is
+  an honest re-render, not a bitmap upscale. Two glyphs had hardcoded pixel offsets that
+  DID NOT scale with `size` and had to be made proportional before large renders looked
+  right: the red rain drops (`cx ± 6/9`, `cy - 4`) and the partly-cloudy sun-stub rays
+  (`-3/-1`) now use `size/4`, `size/6`, `size/8` etc.
+- Lesson: "use the whitespace" layouts should measure the *wrapped content* height first
+  (via `cc_wrappedLineCount`) and give the variable-sized element the leftover; capping
+  the growth (`[24, 48]`) prevents a 2-line condition from being crowded out or a
+  pathological single word from breaking the column.
