@@ -38,10 +38,24 @@ EPaper epaper;
 
 #include "verse_display.h"
 #include "net/net.h"
+#include "sched/wake_schedule.h"
+#include <esp_sleep.h>
 
 #ifdef CHROMAWOTD_NETWORK
 #include "net/net_impl_esp32.h"
 #endif
+
+// POSIX TZ string (Sydney/Melbourne, DST-aware). Shared by the NTP sync and the
+// local-time schedule computation.
+static const char kTzPosix[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
+
+// Fallback sleep when the wall clock isn't trustworthy (no NTP this wake): one
+// hour, so the device retries soon instead of sleeping until a bogus "next slot".
+static const uint64_t kFallbackSleepSec = 3600ULL;
+
+// Never sleep for less than this — guards against a wake loop if the clock
+// lands exactly on a slot or drifts backwards.
+static const int kMinSleepSec = 60;
 
 // --- Sync-task state, shared between the sync task and setup() -------------
 static VerseData   g_verse    = {};
@@ -61,7 +75,18 @@ static void syncTask(void* /*arg*/) {
         Serial.println("sync: wifi FAILED (check secrets.h / signal)");
     } else {
         Serial.printf("sync: wifi OK, ip=%s\n", WiFi.localIP().toString().c_str());
-        configTzTime("AEST-10AEDT,M10.1.0,M4.1.0/3", "pool.ntp.org");
+        configTzTime(kTzPosix, "pool.ntp.org");
+
+        // Wait for SNTP so the schedule below has a valid local time. Bounded:
+        // a slow/unreachable NTP server must not hang the wake.
+        struct tm tmv;
+        if (getLocalTime(&tmv, 6000)) {
+            Serial.printf("sync: time OK %04d-%02d-%02d %02d:%02d:%02d\n",
+                          tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday,
+                          tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
+        } else {
+            Serial.println("sync: WARN ntp time not available");
+        }
 
         static VerseData fv;
         Serial.println("sync: fetching verse...");
@@ -92,7 +117,14 @@ void setup() {
     Serial.begin(115200);
     delay(2000);
     Serial.printf("CHROMAWOTD %s boot\n", CHROMAWOTD_VERSION);
-        delay(2000);   // room to attach a serial monitor before the sync log lines
+    esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
+    Serial.printf("wake cause: %d (%s)\n", (int)wakeCause,
+                  wakeCause == ESP_SLEEP_WAKEUP_TIMER ? "timer" :
+                  wakeCause == ESP_SLEEP_WAKEUP_UNDEFINED ? "power-on/reset" : "other");
+#ifdef CHROMAWOTD_DEBUG_DELAY
+    // Development only: gives a serial monitor time to attach after reset.
+    delay(3000);
+#endif
 
     epaper.begin();
     epaper.setRotation(1);
@@ -148,10 +180,48 @@ void setup() {
     Serial.println("CHROMAWOTD landscape layout pushed to display");
     epaper.sleep();
 
-    // --- Deep sleep (Phase 4 wires a schedule; a robust hour for now). ------
-    // ESP.deepSleep(3600e6);
+    // --- Sleep until the next scheduled slot (Phase 4) ----------------------
+    // The panel is bistable (the image stays with zero power) and the ESP32-S3
+    // RTC keeps wall time across deep sleep, so we sync NTP once per wake and
+    // then sleep straight to the next 06:30 / 12:30 / 18:00 slot.
+#ifdef CHROMAWOTD_DEEP_SLEEP
+    setenv("TZ", kTzPosix, 1);   // ensure localtime() is correct even if NTP failed
+    tzset();
+
+    uint64_t sleepSec = kFallbackSleepSec;
+    struct tm tmNow;
+    if (getLocalTime(&tmNow, 100)) {
+        int s = cc_secondsUntilNextWake(tmNow);
+        if (s < kMinSleepSec) s = kMinSleepSec;
+        sleepSec = (uint64_t)s;
+        Serial.printf("sleep: now %02d:%02d:%02d -> next wake in %llu s (%.2f h)\n",
+                      tmNow.tm_hour, tmNow.tm_min, tmNow.tm_sec,
+                      (unsigned long long)sleepSec, sleepSec / 3600.0);
+    } else {
+        Serial.printf("sleep: clock invalid, fallback %llu s\n",
+                      (unsigned long long)sleepSec);
+    }
+#ifdef CHROMAWOTD_WAKE_TEST_SEC
+    // Bring-up helper: force a short sleep so timer-wake can be observed on the
+    // bench without waiting for the next real slot. Never set in production.
+    sleepSec = CHROMAWOTD_WAKE_TEST_SEC;
+    Serial.printf("sleep: WAKE TEST override -> %llu s\n", (unsigned long long)sleepSec);
+#endif
+    // Printed just before sleeping so a monitor that attaches late still sees how
+    // this cycle was triggered (esp_sleep_wakeup_cause_t; timer == 4).
+    Serial.printf("awake-status: wake_cause=%d (timer=%d), sleeping %llu s\n",
+                  (int)wakeCause, (int)ESP_SLEEP_WAKEUP_TIMER,
+                  (unsigned long long)sleepSec);
+
+    esp_sleep_enable_timer_wakeup(sleepSec * 1000000ULL);
+    Serial.flush();
+    esp_deep_sleep_start();   // does not return
+#else
+    Serial.println("sleep: CHROMAWOTD_DEEP_SLEEP not set - idling (debug build)");
+#endif
 }
 
 void loop() {
-    delay(1000);   // Phase 4 replaces this with timed deep-sleep wakeups
+    // Only reached when deep sleep is disabled (debug): stay idle, never redraw.
+    delay(1000);
 }

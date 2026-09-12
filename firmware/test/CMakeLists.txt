@@ -55,6 +55,7 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/text/wrap.cpp
     ${CC_SRC_DIR}/net/net.cpp
     ${CC_SRC_DIR}/net/net_host_curl.cpp
+    ${CC_SRC_DIR}/sched/wake_schedule.cpp
 )
 target_include_directories(chroma_canvas PUBLIC
     ${CC_HARN_DIR}
@@ -110,6 +111,18 @@ endif()
 # Network module (shared pure mapping + host curl fetch; live-fetch tests are
 # skipped when offline).
 cc_test(test_net tests/test_net.cpp)
+
+# Wake schedule arithmetic (pure; no backend needed).
+add_executable(test_sched tests/test_sched.cpp)
+target_compile_definitions(test_sched PRIVATE CHROMAWOTD_HOST=1)
+target_link_libraries(test_sched PRIVATE chroma_canvas gtest_main)
+add_test(NAME test_sched COMMAND test_sched WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+if(WIN32 AND EXISTS "${_mingw_bin_dir}")
+    add_custom_command(TARGET test_sched POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${_rt_dlls} $<TARGET_FILE_DIR:test_sched>
+        COMMENT "Copying MinGW runtime DLLs for test_sched")
+endif()
 
 # Preview renderer: render an arbitrary fixture through the real layout engine.
 # Driven by tools/render_preview.py.
