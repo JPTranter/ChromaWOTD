@@ -14,9 +14,9 @@ Severity: **P0** security/correctness that must be fixed before shipping network
 
 ---
 
-## Check-off status (2026-09-12, against HEAD `c7a9584`)
+## Check-off status (2026-09-12, against HEAD `8614c0a`)
 
-Each finding re-tested against the current tree. `tools/verify_all.py` **green at HEAD** (commit `24eb94b`).
+Each finding re-tested against the current tree. `tools/verify_all.py` **green at HEAD**.
 
 | ID | Severity | Status | Notes |
 |----|----------|--------|-------|
@@ -25,10 +25,10 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | S3 | P1 | **RESOLVED** | Credential policy documented in `docs/ARCHITECTURE.md`; `firmware/src/secrets.h.example` added. |
 | S4 | P2 | **RESOLVED** | Remote string safety documented in `docs/ARCHITECTURE.md`; buffer comments pending in code. |
 | S5 | P3 | **RESOLVED** | OTA/signed-update posture documented in `docs/ARCHITECTURE.md` §OTA / Signed Updates. |
-| D1 | P1 | **STILL VALID** | `verse_display.cpp` now 796 lines; still holds decode/wrap/icon/backend/layout. |
-| D2 | P1 | **MOSTLY RESOLVED** | 5 layouts collapsed to one; magic-number constants (R1) still inline. |
-| D3 | P1 | **RESOLVED** | Single light/landscape presentation; no theme dispatcher; header documents it. |
-| D4 | P2 | **STILL VALID** | `WeatherData::icon` still a 0–3 `int`; string-matched in 3 places. |
+| D1 | P1 | **STILL VALID** | `verse_display.cpp` still 796-line monolith; module split (text/, draw/) not done. |
+| D2 | P1 | **MOSTLY RESOLVED** | `drawLayout()` constants added (kPanelW, kSplitX, kHeaderH, etc.); `drawLandscapeWeatherColumn()` still has inline magic numbers. |
+| D3 | P1 | **RESOLVED** | Single light/landscape presentation; `Orientation`/`Theme` enums added; header documents it. |
+| D4 | P2 | **RESOLVED** | `WeatherIcon` enum replaces magic `int` 0–3; string tables derive from enum values. |
 | D5 | P2 | **STILL VALID** | `canvas.cpp` `drawChar`/`drawString`/`measureText` UTF-8 handling is dead/bypassed. |
 | D6 | P2 | **STILL VALID** | `dev_*` shims under `#ifdef` grew with the FreeSans glyph path (3rd copy). |
 | D7 | P2 | **RESOLVED** | Application state machine documented in `docs/ARCHITECTURE.md` §Application State Machine. |
@@ -36,7 +36,7 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | C2 | — | **STILL VALID** | `cc_lineBudget` narrow-column → `.` degradation uncommented. |
 | C3 | — | **STILL VALID** | Weather icons untested; heavy integer division. |
 | C4 | — | **RESOLVED** | `+0.5f` idiom remains only as deliberate warnings (verse_display.cpp:210, LESSONS). |
-| R1 | — | **STILL VALID** | Layout geometry still inline magic numbers in `drawLayout`/`drawLandscapeWeatherColumn`. |
+| R1 | — | **MOSTLY RESOLVED** | `drawLayout()` constants added; `drawLandscapeWeatherColumn()` still has inline magic numbers (colW, half, tempH, gap, colTop, colBot). |
 | R2 | — | **RESOLVED** | `verse_display.h` now documents the single presentation + layering. |
 | R3 | — | **RESOLVED** | `C_*` legacy aliases removed; only `CC_*` remain. |
 | R4 | — | **RESOLVED** | Old portrait budget code gone; new column budget is named + commented. |
@@ -56,7 +56,7 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | T2 | P2 | **RESOLVED** | Device branch covered by CI (`pio run -e s3` in GitHub Actions). |
 | T3 | P3 | **RESOLVED** | Ledger gated in CI (`verify_all.py --skip-firmware` in GitHub Actions). |
 
-Resolved: **S1, S3, S4, S5, D3, D7, C4, R2, R3, R4, H1, H2, H3, H4, DOC1, DOC2, DOC3, DOC4, DOC5, T2, T3.** Still valid: **S2, D1, D4, D5, D6, C1, C2, C3, R1, R5, DOC6 (partial), DOC7, T1.**
+Resolved: **S1, S3, S4, S5, D3, D4, D7, C4, R2, R3, R4, H1, H2, H3, H4, DOC1, DOC2, DOC3, DOC4, DOC5, T2, T3.** Mostly resolved: **D2, R1.** Partial: **DOC6, R5.** Still valid: **S2, D1, D5, D6, C1, C2, C3, DOC7, T1.**
 
 ---
 
