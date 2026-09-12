@@ -17,6 +17,73 @@
 #define CC_UNKNOWN '?'
 #define CC_GLYPH_W 6   // built-in font advance in pixels per size unit
 
+static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out);
+
+// ---------------------------------------------------------------------------
+// Font metrics abstraction.
+//
+// The whole layout engine measures text in pixel widths assuming a CONSTANT
+// per-glyph advance (CC_GLYPH_W per size unit). That is true of the built-in
+// 5x7 font but NOT of a proportional GFX font. Under CHROMAWOTD_FONT_FREESANS
+// the FreeSans 8pt GFX font is used: every glyph carries its own xAdvance and
+// the line height is the font's yAdvance. All measurement and line-stepping
+// below routes through cc_advance()/cc_measurePx()/cc_lineHeightPs() so the
+// decision is localised here. Default (no flag) is unchanged: 6px * size.
+// ---------------------------------------------------------------------------
+#ifdef CHROMAWOTD_FONT_FREESANS
+#ifdef CHROMAWOTD_HOST
+// Host has no gfxfont.h (device lib). Provide the two structs + extern the font.
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+typedef struct { uint32_t bitmapOffset; uint8_t width, height, xAdvance; int8_t xOffset, yOffset; } GFXglyph;
+typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; uint8_t yAdvance; } GFXfont;
+#endif
+#include "fonts/FreeSans8pt7b.h"   // needs GFXglyph/GFXfont visible
+#endif
+
+// Pixel advance of ONE decoded ASCII glyph at the given magnification.
+static int cc_advance(unsigned char ascii, int size) {
+#ifdef CHROMAWOTD_FONT_FREESANS
+    static const GFXfont* f = &FreeSans8pt7b;
+    if (ascii >= f->first && ascii <= f->last) {
+        GFXglyph* g = &f->glyph[ascii - f->first];
+        return (g->width || g->height) ? g->xAdvance * size : 6 * size;
+    }
+    return 6 * size;
+#else
+    return CC_GLYPH_W * size;
+#endif
+}
+
+// Pixel width of a decoded string at the given magnification.
+static int cc_measurePx(const char* str, int size) {
+    if (!str) return 0;
+    int w = 0;
+    const unsigned char* p = (const unsigned char*)str;
+    while (*p) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); w += cc_advance(g, size); }
+    return w;
+}
+
+// Same, but for a substring of `len` bytes (word-splitting callers).
+static int cc_measurePxN(const char* str, int len, int size) {
+    if (!str || len <= 0) return 0;
+    int w = 0;
+    const unsigned char* p = (const unsigned char*)str;
+    const unsigned char* end = p + len;
+    while (*p && p < end) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); w += cc_advance(g, size); }
+    return w;
+}
+
+// Vertical distance between successive text baselines.
+static int cc_lineHeight(int size, int fallback) {
+#ifdef CHROMAWOTD_FONT_FREESANS
+    return FreeSans8pt7b.yAdvance * size;
+#else
+    return fallback;
+#endif
+}
+
 // Maps the glyph starting at p to one ASCII byte. Returns bytes consumed (>= 1).
 static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out) {
     unsigned char c = p[0];
@@ -50,17 +117,6 @@ static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out) {
 
 // Glyph (not byte) count of the first len bytes; mirrors cc_utf8ToAscii exactly
 // so measured width always matches drawn width.
-static int cc_countGlyphsN(const char* str, int len) {
-    if (!str) return 0;
-    int n = 0;
-    const unsigned char* p = (const unsigned char*)str;
-    const unsigned char* end = p + len;
-    while (*p && p < end) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); n++; }
-    return n;
-}
-
-static int cc_countGlyphs(const char* str) { return cc_countGlyphsN(str, (int)strlen(str)); }
-
 // Round half away from zero: -0.6 -> -1 (plain (int)(t+0.5f) gives 0).
 static int cc_roundTemp(float t) { return (int)lroundf(t); }
 
@@ -94,6 +150,49 @@ static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { g_canvas.
 static void dev_drawCircle(int x, int y, int r, uint32_t c) { g_canvas.drawCircle(x, y, r, c); }
 static void dev_fillCircle(int x, int y, int r, uint32_t c) { g_canvas.fillCircle(x, y, r, c); }
 
+#ifdef CHROMAWOTD_FONT_FREESANS
+// Render one FreeSans glyph at baseline (x,y), magnification size, honouring the
+// glyph's xOffset/yOffset so descenders hang below the baseline as drawn on-device.
+static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) {
+    const GFXfont* f = &FreeSans8pt7b;
+    if (ch < f->first || ch > f->last) { g_canvas.drawChar(x, y, '?', c, (uint8_t)size); return; }
+    const GFXglyph* g = &f->glyph[ch - f->first];
+    if (!g->width || !g->height) return;   // space etc.
+    // decode packed bitmap: byte offset g->bitmapOffset, MSB-first bitstream
+    int rowbytes = (g->width + 7) / 8;
+    int nbit = 0;
+    for (int r = 0; r < g->height; r++) {
+        for (int col = 0; col < g->width; col++) {
+            int byteaddr = g->bitmapOffset + nbit / 8;
+            uint8_t byte = f->bitmap[byteaddr];
+            if (byte & (0x80 >> (nbit & 7))) {
+                int px = x + g->xOffset * size + col * size;
+                int py = y + g->yOffset * size + r * size;
+                for (int dy = 0; dy < size; dy++)
+                    for (int dx = 0; dx < size; dx++)
+                        g_canvas.setPixel(px + dx, py + dy, c);
+            }
+            nbit++;
+        }
+    }
+}
+
+static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
+    if (!str) return;
+    int cursorX = x;
+    const unsigned char* p = (const unsigned char*)str;
+    while (*p) {
+        unsigned char glyph = 0;
+        p += cc_utf8ToAscii(p, &glyph);
+        if (glyph == CC_DEGREE) {
+            g_canvas.drawChar(cursorX, y, 0xB0, c, (uint8_t)size);
+        } else {
+            dev_drawGlyph(glyph, cursorX, y, c, size);
+        }
+        cursorX += cc_advance(glyph, size);
+    }
+}
+#else
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
     int cursorX = x;
@@ -105,7 +204,8 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
         cursorX += CC_GLYPH_W * size;
     }
 }
-static int dev_measureText(const char* str, int size) { return cc_countGlyphs(str) * CC_GLYPH_W * size; }
+#endif
+static int dev_measureText(const char* str, int size) { return cc_measurePx(str, size); }
 static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
     dev_drawString(rx - dev_measureText(str, size), y, str, c, size);
 }
@@ -133,10 +233,17 @@ static void dev_drawFastVLine(int x, int y, int h, uint32_t c) { epaper.drawFast
 static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { epaper.drawLine(x0, y0, x1, y1, toDeviceColor(c)); }
 static void dev_drawCircle(int x, int y, int r, uint32_t c) { epaper.drawCircle(x, y, r, toDeviceColor(c)); }
 static void dev_fillCircle(int x, int y, int r, uint32_t c) { epaper.fillCircle(x, y, r, toDeviceColor(c)); }
-static int dev_measureText(const char* str, int size) { return cc_countGlyphs(str) * CC_GLYPH_W * size; }
+static int dev_measureText(const char* str, int size) { return cc_measurePx(str, size); }
 
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
+#ifdef CHROMAWOTD_FONT_FREESANS
+    epaper.setTextColor(toDeviceColor(c));
+    epaper.setTextSize(size);
+    epaper.setFreeFont(&FreeSans8pt7b);
+    epaper.drawString(str, x, y);   // y = baseline; GFX path handles advance + descenders
+    return;
+#else
     epaper.setTextSize(size);
     epaper.setTextColor(toDeviceColor(c));
     int cursorX = x;
@@ -151,6 +258,7 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
         }
         cursorX += CC_GLYPH_W * size;
     }
+#endif
 }
 
 static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
@@ -243,7 +351,6 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
 // draw loops exactly, so the truncation decision is made before drawing).
 static int cc_wrappedLineCount(const char* text, int maxW, int size) {
     if (!text || !*text) return 0;
-    int charWidth = CC_GLYPH_W * size;
     int lines = 1, curX = 0;
     const char* p = text;
     while (*p) {
@@ -251,9 +358,10 @@ static int cc_wrappedLineCount(const char* text, int maxW, int size) {
         if (!*p) break;
         const char* wordStart = p;
         while (*p && *p != ' ') p++;
-        int wordPx = cc_countGlyphsN(wordStart, (int)(p - wordStart)) * charWidth;
+        int wordPx = cc_measurePxN(wordStart, (int)(p - wordStart), size);
+        int spx = cc_advance(' ', size);
         if (curX > 0 && curX + wordPx > maxW) { lines++; curX = 0; }
-        curX += wordPx + charWidth;
+        curX += wordPx + spx;
     }
     return lines;
 }
@@ -281,7 +389,7 @@ static int cc_lineBudget(int maxW, int charWidth, bool truncated, int lineIdx, i
 // (without touching the word's ink); falls back to a single "." only when even
 // that cannot be placed.
 static void drawOverflowMarker(int x, int y, int maxRight, uint32_t color, int size) {
-    int w = CC_GLYPH_W * size;
+    int w = cc_advance('.', size);
     if (x + 3 * w <= maxRight) { dev_drawString(x, y, "...", color, size); return; }
     int two = maxRight - 2 * w;
     // Text's ink ends at x - w (the trailing space advance); start the dots there.
@@ -293,8 +401,9 @@ static void drawOverflowMarker(int x, int y, int maxRight, uint32_t color, int s
 static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, const char* text, uint32_t color, int size = 1, int lineHeight = 10) {
     if (!text || !*text) return startY;
 
-    const int charWidth = CC_GLYPH_W * size;
-    const int capacity = cc_lineCapacity(maxH, size, lineHeight);
+    const int charWidth = cc_advance(' ', size);      // reference advance for slack/budget
+    const int lh = cc_lineHeight(size, lineHeight);
+    const int capacity = cc_lineCapacity(maxH, size, lh);
     const bool truncated = cc_wrappedLineCount(text, maxW, size) > capacity;
 
     int curY = startY;
@@ -320,8 +429,9 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 
             const char* wordStart = p;
             while (*p && *p != ' ') p++;
-            int wordPx = cc_countGlyphsN(wordStart, (int)(p - wordStart)) * charWidth;
-            int testPx = (linePx == 0) ? wordPx : (linePx + charWidth + wordPx);
+            int wordPx = cc_measurePxN(wordStart, (int)(p - wordStart), size);
+            int spx = cc_advance(' ', size);
+            int testPx = (linePx == 0) ? wordPx : (linePx + spx + wordPx);
 
             if (testPx > budget && linePx > 0) {
                 break;
@@ -342,7 +452,7 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 
         lastLineWidth = lineWidth;
         lastLineY = curY;
-        curY += lineHeight;
+        curY += lh;
         lineIdx++;
         lineStart = lastWordEnd;
     }
@@ -375,8 +485,8 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     int lastY = startY;
     int lineIdx = 0;
     bool drewAny = false;
-    int lineHeight = 12;
-    int charWidth = CC_GLYPH_W;
+    int lineHeight = cc_lineHeight(1, 12);
+    int charWidth = cc_advance(' ', 1);
     const int capacity = cc_lineCapacity(maxH, 1, lineHeight);
     const bool truncated = cc_wrappedLineCount(vd.verse, maxW, 1) > capacity;
 
@@ -390,7 +500,7 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
         const char* wordStart = ptr;
         while (*ptr && *ptr != ' ') ptr++;
         int wordLen = (int)(ptr - wordStart);
-        int wordPx = cc_countGlyphsN(wordStart, wordLen) * charWidth;
+        int wordPx = cc_measurePxN(wordStart, wordLen, 1);
         int wordIdx = (int)(wordStart - vd.verse);
         int budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
 
