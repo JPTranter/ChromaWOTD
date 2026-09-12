@@ -95,6 +95,27 @@ cc_test(test_layout_landscape tests/test_layout_landscape.cpp)
 cc_test(test_layout_alert     tests/test_layout_alert.cpp)
 cc_test(test_layout_overflow  tests/test_layout_overflow.cpp)
 
+# Verse font auto-size ladder. The ladder itself is compiled only under
+# CHROMAWOTD_FONT_FREESANS (the device build flag in platformio.ini), which the
+# cc_test() targets above do NOT define — so this target adds the flag and is
+# the only local coverage of the selection the panel actually performs.
+add_executable(test_verse_autosize
+    ${CC_SRC_DIR}/verse_display.cpp
+    tests/test_verse_autosize.cpp
+)
+target_compile_definitions(test_verse_autosize PRIVATE
+    CHROMAWOTD_HOST=1 CHROMAWOTD_FONT_FREESANS=1)
+target_link_libraries(test_verse_autosize PRIVATE chroma_canvas gtest_main)
+add_test(NAME test_verse_autosize
+         COMMAND test_verse_autosize
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+if(WIN32 AND EXISTS "${_mingw_bin_dir}")
+    add_custom_command(TARGET test_verse_autosize POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${_rt_dlls} $<TARGET_FILE_DIR:test_verse_autosize>
+        COMMENT "Copying MinGW runtime DLLs for test_verse_autosize")
+endif()
+
 # Pure text modules (text/glyphs, text/wrap) — no layout/backend dependency, so
 # these are tested in isolation (REVIEW T1). chroma_canvas already compiles the
 # two .cpp files.
