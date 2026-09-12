@@ -316,3 +316,45 @@ happens when `w.alert == null`.
   (via `cc_wrappedLineCount`) and give the variable-sized element the leftover; capping
   the growth (`[24, 48]`) prevents a 2-line condition from being crowded out or a
   pathological single word from breaking the column.
+
+## 27. Small proportional font on the panel: mono-hint the TTF, use Roboto 5.5pt
+
+The verse body uses a small (6 pt-class) proportional sans font to get real
+descenders (the built-in 5x7 has none). Two things had to be right.
+
+**1. Rasterize with FT_LOAD_TARGET_MONO | FT_LOAD_RENDER, not gray+threshold.**
+`tools/font_convert.py` initially loaded glyphs in gray mode (`pixel_mode 2`)
+and thresholded at >=128. That produces *muddy, uneven stems* on a 1-bit panel —
+it thresholds an anti-aliasing-optimized outline. Adafruit's `fontconvert` (and
+every shipped GFX Free Font) uses `FT_LOAD_TARGET_MONO` **combined with
+`FT_LOAD_RENDER`**, which yields `pixel_mode 1` — FreeType's native mono
+hinting that snaps stems to pixel boundaries. That alone transformed the small
+FreeSans from muddy to crisp. (Plain `FT_LOAD_TARGET_MONO` *without*
+`FT_LOAD_RENDER` is NOT enough — freetype-py returns a null/empty buffer then,
+so the tool silently fell back to the gray path; this was the root cause.)
+
+**2. A small proportional pixel font basically doesn't exist — mono-hint a TTF.**
+Tested the genuine pixel-designed families (picotype 5x8, picotypepro 5x10,
+picosans 8x16): every one is monospace (uniform advance 7/7/12). At 6-8 px,
+hand-crafted bitmap fonts are essentially always fixed-width, because per-glyph
+variable widths on a tiny grid is the exception. So "proportional AND
+pixel-crisp AND tiny" is a rare combination; the honest answer is a
+mono-hinted TTF (Roboto / FreeSans). Roboto reads best of the monospace-hinted
+candidates.
+
+**3. Fit and degree-sign.** The verse box is 76 px tall. Roboto 6 pt wraps to
+5 lines x 16 = 80 px (overflow 4 px, last line collides the red reference rule);
+**Roboto 5.5 pt wraps to 5 x 14 = 70 px** and fits with clearance. The TTF font
+is ASCII-only (0x20-0x7E), so `drawString()` silently drops the `°` (0xB0);
+the device draw path must special-case `CC_DEGREE` as a vector circle. It must
+be drawn relative to the **baseline** (`y + glyphAscent + 2*size`), NOT the
+top `y` — the two differ by a cap-height and using `y` mispositions/occludes it.
+
+- **Decision (approved):** Roboto 5.5 pt, mono-hinted, `firmware/src/fonts/Roboto55pt7b.h`.
+- **Converter:** `tools/font_convert.py` (DPI 141; `FT_LOAD_TARGET_MONO|FT_LOAD_RENDER`;
+  accepts fractional point sizes, name token drops the dot, e.g. 5.5 -> `55`).
+- Space between "27°C" and the condition was +1 px (`tempH` 18 -> 19).
+- Final render archived: `docs/images/history/layout_landscape_roboto55_final.png`.
+- Before/after of the muddy->crisp change:
+  `docs/images/history/layout_landscape_freesans6_exact_fixture.png` (muddy,
+  gray-threshold) vs `..._roboto55_final.png` (mono-hinted).

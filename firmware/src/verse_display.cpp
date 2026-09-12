@@ -45,7 +45,7 @@ typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; u
 // carry over. Board macros are supplied as global build_flags.
 #include "TFT_eSPI.h"
 #endif
-#include "fonts/FreeSans6pt7b.h"   // needs GFXglyph/GFXfont visible
+#include "fonts/Roboto55pt7b.h"   // needs GFXglyph/GFXfont visible
 #endif
 
 // Font ascent (glyph_ab in TFT_eSPI): largest distance from baseline up to a
@@ -56,7 +56,7 @@ typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; u
 static int cc_glyphAscent(int size) {
 #ifdef CHROMAWOTD_FONT_FREESANS
     int ab = 0;
-    const GFXfont* f = &FreeSans6pt7b;
+    const GFXfont* f = &Roboto55pt7b;
     for (int c = f->first; c <= f->last; c++) {
         const GFXglyph* g = &f->glyph[c - f->first];
         if (g->width && g->height) {
@@ -73,7 +73,7 @@ static int cc_glyphAscent(int size) {
 // Pixel advance of ONE decoded ASCII glyph at the given magnification.
 static int cc_advance(unsigned char ascii, int size) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    static const GFXfont* f = &FreeSans6pt7b;
+    static const GFXfont* f = &Roboto55pt7b;
     if (ascii >= f->first && ascii <= f->last) {
         GFXglyph* g = &f->glyph[ascii - f->first];
         return (g->width || g->height) ? g->xAdvance * size : 6 * size;
@@ -106,7 +106,7 @@ static int cc_measurePxN(const char* str, int len, int size) {
 // Vertical distance between successive text baselines.
 static int cc_lineHeight(int size, int fallback) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    return FreeSans6pt7b.yAdvance * size;
+    return Roboto55pt7b.yAdvance * size;
 #else
     return fallback;
 #endif
@@ -182,7 +182,7 @@ static void dev_fillCircle(int x, int y, int r, uint32_t c) { g_canvas.fillCircl
 // Render one FreeSans glyph at baseline (x,y), magnification size, honouring the
 // glyph's xOffset/yOffset so descenders hang below the baseline as drawn on-device.
 static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) {
-    const GFXfont* f = &FreeSans6pt7b;
+    const GFXfont* f = &Roboto55pt7b;
     if (ch < f->first || ch > f->last) { g_canvas.drawChar(x, y, '?', c, (uint8_t)size); return; }
     const GFXglyph* g = &f->glyph[ch - f->first];
     if (!g->width || !g->height) return;   // space etc.
@@ -272,7 +272,7 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
     // the host path: baseline = y + glyphAscent, glyph drawn at baseline+yOffset.
     epaper.setTextColor(toDeviceColor(c));
     epaper.setTextSize(size);
-    epaper.setFreeFont(&FreeSans6pt7b);
+    epaper.setFreeFont(&Roboto55pt7b);
     int baseline = y + cc_glyphAscent(size);
     int cursorX = x;
     const unsigned char* p = (const unsigned char*)str;
@@ -280,7 +280,9 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
         unsigned char glyph = 0;
         p += cc_utf8ToAscii(p, &glyph);
         if (glyph == CC_DEGREE) {
-            epaper.drawCircle(cursorX + 2 * size, y + 2 * size, size, toDeviceColor(c));
+            // Superscript circle relative to the BASELINE (== host path), so the
+            // degree sits at the top of the digits rather than a cap-height high.
+            epaper.drawCircle(cursorX + 2 * size, baseline + 2 * size, size, toDeviceColor(c));
         } else {
             epaper.drawChar(glyph, cursorX, baseline);
         }
@@ -619,7 +621,7 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     const int colTop = 17;      // below the FORECAST rule
     const int colBot = 126;     // 2 px above the panel bottom
     const int availH = colBot - colTop;             // 109
-    const int tempH  = 18;                          // size-2 temperature block
+    const int tempH  = 19;                          // size-2 temperature block (+1px gap to condition)
     const int gap    = 4;
 
     // Condition height depends on how many lines it wraps to (same estimate the
