@@ -20,7 +20,7 @@
 | Highlight matching | ✅ Case-insensitive fallback + overlap-based word colouring; `verseHighlightFound()` surfaces misses |
 | Build config hygiene | ✅ Inert `lib_build_src_filter` removed (PlatformIO warned on every build); `firmware/build_s3.log` untracked |
 | Repeat-operation tooling | ✅ `tools/verify_all.py` (build + tests + render ledger, `--fix` to resync) and `tools/render_preview.py` (preview any fixture via `layout_render`, no flashing) |
-| Clock / weather fetch | ❌ Phase 2–3 |
+| Clock / weather fetch | ✅ Phase 3 complete: **verified live on hardware** (XIAO ESP32-S3) — Wi-Fi connects, both Open-Meteo + BibleGateway fetches succeed over validated TLS, real content renders and refreshes with no crash |
 | Dual buttons & WOTD toggle | ❌ Phase 2–3 (Mode switch + Refresh/Content toggle) |
 
 ## Next steps
