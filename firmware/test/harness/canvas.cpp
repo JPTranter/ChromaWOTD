@@ -159,11 +159,10 @@ void CcCanvas::fillCircle(int x0, int y0, int r, uint32_t c) {
 }
 
 void CcCanvas::drawChar(int x, int y, unsigned char ch, uint32_t color, uint8_t size) {
-    if (ch >= 128 && ch != 176 && ch != 0xB0) {
-        ch = '?'; // fallback for non-ASCII
-    }
-    // Handle degree symbol (ch == 176 / 0xB0) mapped into glcdfont or drawn manually
-    if (ch == 176 || ch == 0xB0) {
+    // ch is ASCII (0x00..0x7F) or the 0xB0 degree sentinel — see the contract in
+    // canvas.h. UTF-8 decoding happens in the shared decoder before this is called,
+    // so there is no non-ASCII fallback here (that would be a second decoder).
+    if (ch == 0xB0) {
         int r = size;
         drawCircle(x + 2 * size, y + 2 * size, r, color);
         return;
@@ -181,45 +180,6 @@ void CcCanvas::drawChar(int x, int y, unsigned char ch, uint32_t color, uint8_t 
             }
         }
     }
-}
-
-void CcCanvas::drawString(int x, int y, const char* str, uint32_t color, uint8_t size) {
-    if (!str) return;
-    int cursorX = x;
-    for (const unsigned char* p = (const unsigned char*)str; *p; p++) {
-        // Handle utf-8 degree symbol: 0xC2 0xB0
-        if (*p == 0xC2 && *(p + 1) == 0xB0) {
-            drawChar(cursorX, y, 176, color, size);
-            cursorX += 6 * size;
-            p++;
-            continue;
-        }
-        // Handle utf-8 en-dash: 0xE2 0x80 0x93 or em-dash: 0x94
-        if (*p == 0xE2 && *(p + 1) == 0x80 && (*(p + 2) == 0x93 || *(p + 2) == 0x94)) {
-            drawChar(cursorX, y, '-', color, size);
-            cursorX += 6 * size;
-            p += 2;
-            continue;
-        }
-        drawChar(cursorX, y, *p, color, size);
-        cursorX += 6 * size;
-    }
-}
-
-int CcCanvas::measureText(const char* str, uint8_t size) const {
-    if (!str) return 0;
-    int count = 0;
-    for (const unsigned char* p = (const unsigned char*)str; *p; p++) {
-        if (*p == 0xC2 && *(p + 1) == 0xB0) { count++; p++; continue; }
-        if (*p == 0xE2 && *(p + 1) == 0x80 && (*(p + 2) == 0x93 || *(p + 2) == 0x94)) { count++; p += 2; continue; }
-        count++;
-    }
-    return count * 6 * size;
-}
-
-void CcCanvas::drawStringRight(int rightX, int y, const char* str, uint32_t color, uint8_t size) {
-    int w_text = measureText(str, size);
-    drawString(rightX - w_text, y, str, color, size);
 }
 
 bool CcCanvas::dumpPng(const char* path) {
