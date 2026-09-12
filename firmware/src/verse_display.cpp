@@ -495,6 +495,11 @@ static int cc_lineBudget(int maxW, int charWidth, bool truncated, int lineIdx, i
     const int slack = 6;
     if (truncated && capacity > 0 && lineIdx == capacity - 1) {
         int budget = maxW - slack * charWidth;
+        // When the column is so narrow that even the reserved slack can't fit,
+        // we return maxW (no reservation). In that case drawOverflowMarker's
+        // "..." degrades to a single "." — an accepted trade-off: a lone dot is
+        // the only marker that fits a sub-4-glyph column, and silently dropping
+        // the marker entirely would be worse than an ambiguous ".".
         if (budget >= 4 * charWidth) return budget;
     }
     return maxW;
@@ -556,7 +561,11 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
             lastWordEnd = p;
         }
 
-        // Render this line centered
+        // Render this line centered.
+        // lineBuf is the boundary for remote text: it holds at most 95 bytes of a
+        // wrapped line, copied with a bounded memcpy (never sprintf) so a hostile or
+        // over-long remote string cannot overflow. Truncation at 95 bytes cuts the
+        // line mid-word with no marker (see C1); lines are <= ~14 glyphs in practice.
         char lineBuf[96];
         int bytes = (int)(lastWordEnd - lineStart);
         if (bytes > 95) bytes = 95;
@@ -648,6 +657,10 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
         bool isHl = (hlStart >= 0 && wordIdx < hlEnd && wordIdx + wordLen > hlStart);
         uint32_t wordColor = isHl ? CC_RED : CC_BLACK;
 
+        // wordBuf is the other remote-text boundary: a single word copied with a
+        // bounded memcpy into 63 bytes (never sprintf). Words longer than 63 bytes
+        // are silently truncated; verses use ~14-glyph words at most, so this is
+        // latent — the cap is deliberate and never removed without a marker plan.
         char wordBuf[64];
         int copyLen = wordLen < 63 ? wordLen : 63;
         memcpy(wordBuf, wordStart, copyLen);
