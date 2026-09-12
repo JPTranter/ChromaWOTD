@@ -3,7 +3,7 @@
 ChromaWOTD weather icon sprite sheet.
 
 Renders all possible weather icons (0=Sun, 1=Cloud, 2=Rain, 3=Partly Cloudy)
-exactly as `drawWeatherIcon` in firmware/src/verse_display.cpp draws them on the
+exactly as `drawWeatherIcon` in firmware/src/draw/weather_icon.cpp draws them on the
 4-colour BWRY panel, using the same Bresenham primitives as the host harness
 (firmware/test/harness/canvas.cpp) and the same ePaper palette.
 

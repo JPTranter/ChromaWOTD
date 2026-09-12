@@ -12,7 +12,7 @@
 | Dual-target layout engine | ✅ `verse_display.cpp` runs on target (Seeed GFX) & host (CMake test harness) |
 | Layout orientations & themes | ✅ Single light landscape presentation only (portrait + inverted/dark dropped 2026-09-12) |
 | Forecast header & text wrapping | ✅ Centred "FORECAST" section header with underline divider & wrapped condition/alert text |
-| Host layout tests & PNG exports | ✅ 10 tests across 3 suites, all passing (`test_layout_landscape/_alert/_overflow`) |
+| Host layout tests & PNG exports | ✅ 26 tests across 4 suites, all passing (`test_layout_landscape/_alert/_overflow/_text`) |
 | Degree symbol fix | ✅ Decoded `0xC2 0xB0` to vector circle for crisp `27°C` render |
 | UTF-8 → ASCII normalisation | ✅ Shared `cc_utf8ToAscii()` maps curly quotes, dashes, NBSP, ellipsis, `⚠`; host and device now agree |
 | Overflow handling | ✅ Blocks mark swallowed text with an inline `...` marker; region invariants prove nothing spills (archived: `docs/images/layout_overflow_*.png`) |

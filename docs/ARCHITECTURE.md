@@ -46,12 +46,12 @@ The device refreshes **2–4 times per day** (full ~25 s pigment sweep per refre
 │                             ▼                                   │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │  Layout Engine (Phase 1, dual-target)                   │   │
-│  │  verse_display.cpp / .h                                 │   │
-│  │  - UTF-8 → ASCII normalisation (shared decoder)         │   │
+│  │  verse_display.cpp + text/ + draw/ modules              │   │
+│  │  - UTF-8 → ASCII normalisation (text/glyphs)            │   │
 │  │  - Text wrapping + visible overflow markers             │   │
-│  │  - Weather icon vector drawing                          │   │
+│  │  - Weather icon vector drawing (draw/weather_icon)      │   │
 │  │  - Single light/landscape presentation (296×128)        │   │
-│  │  - Host harness (CcCanvas) + device backend (Seeed GFX) │   │
+│  │  - Host harness (CanvasTarget) + device (SeeedTarget)   │   │
 │  └──────────────────────────┬──────────────────────────────┘   │
 │                             │                                   │
 │                             ▼                                   │
@@ -167,25 +167,32 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 
 ---
 
-## Module Map (Proposed, Phase A)
+## Module Map
+
+Implemented 2026-09-12 (REVIEW D1):
 
 ```
 firmware/src/
   verse_display.h           data structs + enums (VerseData, WeatherData, WeatherIcon, Theme, Orientation)
-  verse_display.cpp         the 5 layout view functions only (thin, geometry + zone calls)
+  verse_display.cpp         font metrics + the layout view functions (header, verse block, weather column)
   text/
-    glyphs.{h,cpp}          cc_utf8ToAscii, cc_countGlyphs* — one decoder, length-bounded
-    wrap.{h,cpp}            wrapping, cc_wrappedLineCount, cc_lineCapacity, cc_lineBudget,
-                            drawOverflowMarker, the drawWrappedText* helpers
+    glyphs.{h,cpp}          cc_utf8ToAscii / cc_utf8ToAsciiN — one decoder, length-bounded
+    wrap.{h,cpp}            cc_lineCapacity, cc_lineBudget — pure line/budget math
   draw/
-    weather_icon.{h,cpp}    drawWeatherIcon
+    weather_icon.{h,cpp}    drawWeatherIcon (vector icons, draws through DisplayTarget)
+    font_types.h            GFXglyph/GFXfont/PROGMEM — host shim or device gfxfont.h
     target.h                DisplayTarget interface
-    target_seeed.cpp        Seeed GFX backend (colour mapping, degree circle)
+    target_seeed.cpp        Seeed GFX backend (colour mapping, FreeSans glyph draw)
     target_canvas.cpp       host canvas backend (mock + PNG)
   main.cpp                  application state machine (Phase 2+)
 ```
 
-**Rationale:** Split `verse_display.cpp` (currently 796 lines) along the seams identified in REVIEW D1. The layout functions become a small, reviewable "view" layer on top of stable primitives. The mock canvas then lives only under `firmware/test/` and stops carrying product logic.
+**Rationale:** `verse_display.cpp` was split along the seams identified in REVIEW D1.
+The layout functions are a small "view" layer on top of stable primitives; the UTF-8
+decoder and wrap math are pure, unit-testable units (see `test_text.cpp`); the backend
+is behind the `DisplayTarget` interface so adding a third target means implementing
+one interface, not copying a `#ifdef` block. The mock canvas lives only under
+`firmware/test/` and carries no product logic.
 
 ---
 
@@ -225,7 +232,7 @@ python tools/verify_all.py --fix        # resync docs/images after intentional c
 
 1. **Exact-Power Display Sequencing:** On JD79661 panels, drawing must be completely staged before `update()`. Powering down the panel while busy will cause panel latch-up.
 2. **Flat Library Includes in PlatformIO:** Seeed_GFX root `TFT_eSPI.cpp` includes subfolder source files internally, and PlatformIO compiles only that root directory, so `main.cpp` includes `TFT_eSPI.cpp` directly. There is no subfolder-exclusion option to configure — `lib_build_src_filter` is not a PlatformIO setting and is ignored with a warning.
-3. **Pure View Decoupling:** Isolate rendering math from network/NVS state by passing pure data structs by value.
+3. **Pure View Decoupling:** Isolate rendering math from network/NVS state by passing pure data structs by value; split pure text/decoder math into its own module so it is directly unit-testable.
 4. **No Silent Truncation:** Any content block that can overflow must mark the cut (`...`) rather than dropping words; region invariants in `test_layout_overflow` enforce that nothing leaves its block.
 5. **Dual-Target Discipline:** Host renders must byte-match the device path. The PNG archive + `verify_all.py` ledger make this enforceable.
 
@@ -233,8 +240,9 @@ python tools/verify_all.py --fix        # resync docs/images after intentional c
 
 ## Open Questions
 
-- **Font:** Current layout uses FreeSans 6pt (via `-DCHROMAWOTD_FONT_FREESANS`). Future work may explore 5pt/7pt variants for different content densities.
-- **Weather icons:** Vector drawing in `drawWeatherIcon` is untested (REVIEW C3). Phase A refactor will extract to `draw/weather_icon.{h,cpp}` with dedicated tests.
+- **Font:** The verse body uses Roboto 5.5pt (mono-hinted, `-DCHROMAWOTD_FONT_FREESANS`),
+  with 5pt and 6pt candidates for auto-sizing and a dedicated 10pt temperature font.
+  Future work may explore other densities for different content layouts.
 - **State machine:** Documented here, but implementation deferred to Phase 2 (REVIEW D7).
 
 ---

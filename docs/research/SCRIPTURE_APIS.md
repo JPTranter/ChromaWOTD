@@ -37,7 +37,7 @@ BibleGateway provides an unauthenticated JSON endpoint underlying their custom w
 4. **Lightweight Parsing**: ~1.1 KB payload easily filtered and parsed via `ArduinoJson` on the ESP32-S3.
 
 ### ESP32 Implementation Notes
-1. **HTML Entity Decoding**: Strip or translate HTML entities (`&ldquo;` / `&rdquo;` -> `"`, `&#8212;` -> `—`, `&#8211;` -> `–`, `&amp;` -> `&`). The safest order is: decode entities, then let the layout engine normalise — `cc_utf8ToAscii()` in `verse_display.cpp` already maps `—`/`–` to `-`, curly quotes to straight quotes, `…` to `.` and `⚠` to `!` (documented in `LESSONS_LEARNT.md` §10), so decoded text may safely reach the renderer as UTF-8. Do **not** rely on the panel font to carry any non-ASCII glyph: it cannot.
+1. **HTML Entity Decoding**: Strip or translate HTML entities (`&ldquo;` / `&rdquo;` -> `"`, `&#8212;` -> `—`, `&#8211;` -> `–`, `&amp;` -> `&`). The safest order is: decode entities, then let the layout engine normalise — `cc_utf8ToAscii()` in `firmware/src/text/glyphs.cpp` already maps `—`/`–` to `-`, curly quotes to straight quotes, `…` to `.` and `⚠` to `!` (documented in `LESSONS_LEARNT.md` §10), so decoded text may safely reach the renderer as UTF-8. Do **not** rely on the panel font to carry any non-ASCII glyph: it cannot.
 2. **Memory Safety**: Use `ArduinoJson` deserialization filtering to only parse `text` and `reference`.
 3. **Highlight Extraction**: pick the red phrase and check it with `verseHighlightFound()` before drawing; the source's capitalisation may differ from the bundled fixture (matching is exact-then-case-insensitive, first occurrence only).
 4. **Fallback Hierarchy**:

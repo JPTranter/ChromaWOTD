@@ -87,7 +87,7 @@ SPI boot mode (`boot:0x29 (SPI_FAST_FLASH_BOOT)`).
 `epaper.drawChar()` expects CP437/ASCII single bytes; standard UTF-8 literals like
 `"%d°C"` embed multi-byte sequences and draw one garbage glyph per byte. Rather than
 sprinkle special cases, every draw path now routes text through `cc_utf8ToAscii()` in
-`verse_display.cpp`, which consumes one *glyph* at a time and emits one ASCII byte:
+`text/glyphs.cpp` (was `verse_display.cpp` pre-D1), which consumes one *glyph* at a time and emits one ASCII byte:
 
 | Input glyph | Emitted |
 | :--- | :--- |
@@ -415,3 +415,40 @@ Fine-grained offsets tuned on-device (see render
   y=110->115. (Sufficient clearance above the 128px panel edge; no clipping.)
 - Verbatim note: these are the exact coordinates baked into `drawLayout()` /
   `drawLandscapeWeatherColumn()` — keep them in sync if the split/header change.
+
+## 30. Module split and backend abstraction (REVIEW D1/D6), and why R5 was rejected
+
+The review's core structural finding (D1) was that `verse_display.cpp` was a ~796-line
+monolith mixing five concerns, and D6 was that the host/device `#ifdef` backend was
+duplicated with the FreeSans glyph rasteriser, degree-sign special-casing and colour
+mapping all entangled inside the `dev_*` shims. Both were closed in a single series:
+
+1. **`DisplayTarget` interface (`draw/target.h`)** + two implementations — `SeeedTarget`
+   (`target_seeed.cpp`) and `CanvasTarget` (`target_canvas.cpp`). The layout code draws
+   through one `target()` reference; colour mapping (device) and glyph rasterisation
+   (host bitmap vs device `setFreeFont`+`drawChar`) each live in exactly one target. A
+   shared `draw/font_types.h` supplies the `GFXglyph`/`GFXfont`/`PROGMEM` types (host
+   shim or device `gfxfont.h`) so no TU re-declares them under `#ifdef`.
+2. **Pure text extracted to `text/`** — `glyphs.{h,cpp}` (the single UTF-8 decoder,
+   `cc_utf8ToAscii`/`cc_utf8ToAsciiN`) and `wrap.{h,cpp}` (`cc_lineCapacity`,
+   `cc_lineBudget`). These carry no font/backend state, so they are directly
+   unit-testable (`test_text.cpp`) — which finally closed T1, the last test gap.
+3. **Weather icons to `draw/weather_icon.{h,cpp}`**, taking the `DisplayTarget&`
+   explicitly rather than reaching for the `dev_*` shims.
+
+**The lesson that mattered: preserve the byte-identical render ledger through a
+refactor.** The host harness builds with only `CHROMAWOTD_HOST=1` (5x7 path) while the
+device builds with `CHROMAWOTD_FONT_FREANSANS=1` (FreeSans path), so neither `ctest`
+alone nor `pio build` alone exercises both. `tools/verify_all.py` md5-compares the host
+renders against `docs/images/*.png`; running it after *each* commit is what proved the
+backend abstraction changed nothing pixel-for-pixel. The earlier naive D6 attempt
+failed because it wired the interface without understanding the FreeSans/degree/colour
+entanglement — the correct order was D5 (strip dead decoder) → D6 (interface) → D1
+(split), each landed green.
+
+**R5 (comment-style consistency) was rejected, not fixed.** The codebase mixes terse
+imperative fragments ("Draw the header band") with full-sentence prose. Re-voicing every
+comment to one convention is churn with no behavioural or maintainability payoff — the
+high-value comments (buffer boundaries, degree-sign geometry, the 8px inset) are already
+present. Rejecting a cosmetic finding outright is a legitimate outcome; it keeps the
+check-off table honest instead of leaving an item perpetually "partial".

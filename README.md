@@ -144,17 +144,25 @@ CHROMAWOTD/
 ├── firmware/
 │   ├── platformio.ini           PlatformIO build configuration for XIAO ESP32-S3
 │   ├── include/
-│   │   ├── board_pins.h         Deprecated pin map (Seeed GFX supplies pins now)
 │   │   └── chroma_version.h     Firmware version string
 │   ├── src/
 │   │   ├── main.cpp             Firmware entry point, setup, and display loop
-│   │   ├── driver.h             Seeed GFX board & screen combo definitions
 │   │   ├── verse_display.h      Layout engine public interface and data structures
-│   │   └── verse_display.cpp    Layout rendering implementation (dual-target)
+│   │   ├── verse_display.cpp    Layout view functions + font metrics (dual-target)
+│   │   ├── text/
+│   │   │   ├── glyphs.{h,cpp}   Single UTF-8 → ASCII decoder (cc_utf8ToAscii*)
+│   │   │   └── wrap.{h,cpp}     Line-capacity / width-budget math
+│   │   ├── draw/
+│   │   │   ├── target.h         DisplayTarget interface
+│   │   │   ├── target_canvas.cpp  Host backend (mock canvas + PNG)
+│   │   │   ├── target_seeed.cpp   Device backend (Seeed GFX)
+│   │   │   ├── font_types.h     GFXglyph/GFXfont types (host shim / device gfxfont.h)
+│   │   │   └── weather_icon.{h,cpp}  Vector weather icons
+│   │   └── fonts/               Mono-hinted Roboto GFX fonts (5/5.5/6/10pt)
 │   └── test/
 │       ├── CMakeLists.txt       CMake configuration for native desktop tests
 │       ├── harness/             Mock canvas, font engine, and drawing primitives
-│       ├── tests/               GoogleTest suites: landscape, alert, overflow
+│       ├── tests/               GoogleTest suites: landscape, alert, overflow, text
 │       ├── tools/               layout_render.cpp — CLI preview renderer
 │       └── output/              Generated PNG renders from ctest (gitignored)
 └── tools/

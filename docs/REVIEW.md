@@ -40,7 +40,7 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | R2 | — | **RESOLVED** | `verse_display.h` documents single presentation + layering. |
 | R3 | — | **RESOLVED** | `C_*` aliases removed. |
 | R4 | — | **RESOLVED** | Portrait budget code gone; new budget named + commented. |
-| R5 | — | **PARTIAL** | Comments still mix terse fragments and prose. |
+| R5 | — | **REJECTED** | Comment style mixes terse fragments and prose — accepted; enforcing one voice is churn with no correctness value. |
 | DOC1 | P1 | **RESOLVED** | MIT LICENSE. |
 | DOC2 | P1 | **RESOLVED** | CONTRIBUTING.md, .clang-format, .editorconfig. |
 | DOC3 | P2 | **RESOLVED** | GitHub Actions CI. |
@@ -56,7 +56,7 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | T2 | P2 | **RESOLVED** | Device branch in CI. |
 | T3 | P3 | **RESOLVED** | Ledger gated in CI. |
 
-Resolved: **S1–S5, D1–D7, C1–C4, R1–R4, H1–H4, DOC1–DOC7, T1–T3.** Partial: **R5 (comment-style consistency — cosmetic only).**
+Resolved: **S1–S5, D1–D7, C1–C4, R1–R4, H1–H4, DOC1–DOC7, T1–T3.** Rejected: **R5 (comment-style consistency — consciously not done; see §R5).**
 
 ---
 
@@ -255,6 +255,12 @@ correct for negatives. Sweep any remaining prose/example that suggests the trunc
   condition/alert" — that rationale is invisible.
 - **R5** Settle one comment convention (full sentences, present tense) and apply it; the
   file mixes terse imperative fragments with prose.
+  **Status: REJECTED (2026-09-12).** Not done. Enforcing a single comment voice across
+  the codebase is pure churn — no behavioural or maintainability gain over the current
+  mix, and a mechanical re-voice would inflate the diff and `git blame` noise for the
+  next reader. The valuable comments (buffer boundaries, geometry rationale, degree-sign
+  positioning) are already present; their terse style is acceptable. See
+  LESSONS_LEARNT §30.
 
 ---
 
