@@ -138,6 +138,7 @@ CHROMAWOTD/
 ├── docs/
 │   ├── PROJECT_PLAN.md          Phased implementation plan and milestones
 │   ├── STATUS.md                Current project phase, completed tasks, and next steps
+│   ├── REVIEW.md                Critical code & project review (security, design, hygiene)
 │   ├── hardware/datasheets/     Vendor PDFs (gitignored) + README with download links
 │   ├── images/                  Archived PNG renders produced by the host test harness
 │   ├── lessons/
@@ -172,6 +173,10 @@ CHROMAWOTD/
 ---
 
 ## Building and Running
+
+> A critical review of the code and project structure lives in
+> [`docs/REVIEW.md`](docs/REVIEW.md) — it catalogues security, design and hygiene
+> findings with a recommended priority order.
 
 ### Verify everything in one command
 

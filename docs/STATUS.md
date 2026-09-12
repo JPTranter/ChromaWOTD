@@ -25,6 +25,10 @@
 
 ## Next steps
 
+> A full critical review of the code and project — security, design, readability and
+> hygiene, with a priority order — is in [`docs/REVIEW.md`](REVIEW.md). The items below
+> are the product road map; REVIEW.md is the quality backlog.
+
 1. **Dual Button Controls & Deep Sleep Wakeup**:
    - **Mode Button**: Toggle between visual modes (Light vs Inverted/Dark, Portrait vs Landscape).
    - **Refresh & Content Toggle Button**: Wake up to refresh weather and switch between **Verse of the Day** (Scripture) and **Word of the Day** (Vocabulary).
