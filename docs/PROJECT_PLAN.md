@@ -61,9 +61,12 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
   - Vocabulary Word of the Day pipeline (Wordnik / Merriam-Webster feed).
 
 ### Phase 4 — Daily Wake Schedule & Power Optimization
-- [ ] **Time-Based Wake Schedule**:
-  - Deep sleep scheduled wakeups: Morning (06:30), Midday (12:30), Evening (18:00), and Night low-power sleep (23:00 - 06:30).
-  - RTC drift correction against NTP.
+- [x] **Time-Based Wake Schedule**:
+  - [x] Deep sleep scheduled wakeups: Morning (06:30), Midday (12:30), Evening (18:00);
+        the device sleeps through to the next slot (~3 sweeps/day, not continuous).
+  - [x] RTC drift correction against NTP (`configTzTime` + bounded `getLocalTime` each wake;
+        1 h fallback sleep if the clock is not yet valid).
+  - Pure schedule math in `firmware/src/sched/wake_schedule.{h,cpp}` (`test_sched.cpp`).
 - [ ] **Battery Monitoring & Low-Battery Cutoff**:
   - Analog voltage sampling via divider on RTC ADC pin.
   - Low battery warning icon in header (at < 15% / ~3.55V).

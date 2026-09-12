@@ -416,27 +416,7 @@ Fine-grained offsets tuned on-device (see render
 - Verbatim note: these are the exact coordinates baked into `drawLayout()` /
   `drawLandscapeWeatherColumn()` — keep them in sync if the split/header change.
 
-## 31. Phase 3 network wiring (Open-Meteo + BibleGateway)
-
-The network module (`firmware/src/net/`) provides shared JSON parsing, WMO mapping, and HTML entity decoding for both host and device. The host uses `curl` via `popen()`; the device uses `WiFiClientSecure` with pinned root CAs (Amazon Root CA 1 for BibleGateway, Let's Encrypt YR2 for Open-Meteo).
-
-**Key findings:**
-- Open-Meteo returns only WMO codes + temps (no human condition text) — mapped via `cc_wmoCondition()` to our 4-icon set + condition strings.
-- BibleGateway VotD text is HTML-entity-encoded with bracketed section headings (`"[Final Exhortations]  Rejoice..."`). `cc_stripLeadingBracket()` removes the heading while keeping the verse's opening/closing quotes.
-- The JSON parser must skip mismatched-type values (e.g., `current_units.temperature_2m` is a string `"°C"`, not the numeric `current.temperature_2m`). `parseMember()` scans forward on type mismatch.
-- **TLS stack overflow, and why `sdkconfig` overrides don't work here:** the default ~8 KB `loopTask` stack overflows partway through `WiFiClientSecure::connect()` (`Guru Meditation Error: Stack canary watchpoint triggered (loopTask)`, backtrace through `mbedtls_entropy_func`/`ctr_drbg_seed`/`start_ssl_client`). `-DCONFIG_MAIN_TASK_STACK_SIZE=...` in `build_flags`, and `board_build.sdkconfig_flags = CONFIG_...` in `platformio.ini`, both fail silently or break the link (`cannot find -lboard_build.sdkconfig_flags`) — this project uses the **precompiled** Arduino-ESP32 core (not an IDF component build), so `sdkconfig.h` ships baked into the framework package and nothing in `platformio.ini` can widen it. **Fix:** run the whole Wi-Fi+TLS Sync phase on a dedicated FreeRTOS task created with an explicit stack (`xTaskCreatePinnedToCore(syncTask, "cc_sync", 16384, ...)`), with `setup()` blocking on a binary semaphore until it signals done. This sidesteps the framework's fixed task-stack config entirely and is fully portable. See `main.cpp`'s STACK NOTE and `syncTask()`.
-- **Empty-body / `InvalidInput` JSON parse, despite `HTTP 200`:** a byte-at-a-time `WiFiClient::available()`/`read()` loop returned early — `available()` can be transiently false before all TCP segments for the response have arrived, so the read loop exited with 0 or a truncated buffer, which `deserializeJson()` then reported as `InvalidInput`. Fix: use `HTTPClient::getString()`, which blocks until the full body is read (respects `Content-Length`/chunked encoding) — see `fetchHttpGet()` in `net_impl_esp32.cpp`.
-- **Verified on hardware (XIAO ESP32-S3 / EE05):** Wi-Fi connects, both fetches succeed (`sync: verse OK (Philippians 4:4)`, `sync: weather OK (16.4 C, Partly cloudy)`), and the layout renders + refreshes with no crash. The VotD source is deterministic: the URL hardcodes `&version=NIV`, so every fetch (host and device) requests the same translation explicitly rather than relying on a server-side default.
-
-**Test coverage:** `test_net.cpp` (15 tests) covers WMO mapping, HTML decode, section-heading strip, and live fetch against real endpoints. `layout_render --live` renders real data through the layout engine.
-
-**Firmware build:** RAM 5.9%, Flash 10.4% (up from 5.8%/9.6% due to network stack + ArduinoJson + CA certs). Device flashes successfully; falls back to offline path when `WIFI_SSID` is undefined.
-
-- Live fetch verified on host (curl hook): both endpoints return parseable payloads (Open-Meteo 611 B, BibleGateway 691 B).
-- Live render shows Philippians 4:4 + 17°C partly cloudy (today's data as of 2026-09-12).
-- Device boots and renders offline fallback when WiFi isn't configured (no crash, graceful degradation).
-
-(2026-09-12)
+## 30. Module split and backend abstraction (REVIEW D1/D6), and why R5 was rejected
 
 The review's core structural finding (D1) was that `verse_display.cpp` was a ~796-line
 monolith mixing five concerns, and D6 was that the host/device `#ifdef` backend was
@@ -472,3 +452,88 @@ comment to one convention is churn with no behavioural or maintainability payoff
 high-value comments (buffer boundaries, degree-sign geometry, the 8px inset) are already
 present. Rejecting a cosmetic finding outright is a legitimate outcome; it keeps the
 check-off table honest instead of leaving an item perpetually "partial".
+
+## 31. Phase 3 network wiring (Open-Meteo + BibleGateway)
+
+The network module (`firmware/src/net/`) provides shared JSON parsing, WMO mapping, and
+HTML entity decoding for both host and device. The host uses `curl` via `popen()`; the
+device uses `WiFiClientSecure` with pinned root CAs (Amazon Root CA 1 for BibleGateway,
+Let's Encrypt YR2 for Open-Meteo).
+
+**Key findings:**
+- Open-Meteo returns only WMO codes + temps (no human condition text) — mapped via
+  `cc_wmoCondition()` to our 4-icon set + condition strings.
+- BibleGateway VotD text is HTML-entity-encoded and may carry a bracketed section heading
+  (`"[Final Exhortations]  Rejoice..."`). `cc_stripLeadingBracket()` removes the heading
+  while keeping the verse's own opening/closing quotes (the heading sits *inside* them).
+- The JSON parser must skip mismatched-type values: `current_units.temperature_2m` is the
+  string `"°C"`, not the numeric `current.temperature_2m`. `parseMember()` scans forward on
+  a type mismatch so the numeric `current` member wins.
+- **TLS stack overflow, and why `sdkconfig` overrides don't work here.** The default ~8 KB
+  `loopTask` stack overflows partway through `WiFiClientSecure::connect()` (`Guru Meditation
+  Error: Stack canary watchpoint triggered (loopTask)`, backtrace through
+  `mbedtls_entropy_func` → `ctr_drbg_seed` → `start_ssl_client`). Neither
+  `-DCONFIG_MAIN_TASK_STACK_SIZE=...` in `build_flags` nor
+  `board_build.sdkconfig_flags = CONFIG_...` helps: the former is silently shadowed, the
+  latter breaks the link (`cannot find -lboard_build.sdkconfig_flags`). This project uses the
+  **precompiled** Arduino-ESP32 core, not an IDF component build, so `sdkconfig.h` is baked
+  into the framework package and its task-stack sizes cannot be changed from
+  `platformio.ini`. **Fix:** run the Wi-Fi + TLS Sync phase on a dedicated FreeRTOS task
+  with an explicit stack (`xTaskCreatePinnedToCore(syncTask, "cc_sync", 16384, ...)`), with
+  `setup()` blocking on a binary semaphore until it signals done. Portable, no framework
+  config needed. See `main.cpp`'s STACK NOTE.
+- **Empty-body `InvalidInput` despite `HTTP 200`.** A byte-at-a-time
+  `WiFiClient::available()`/`read()` loop exits early — `available()` can be transiently
+  false before all TCP segments have arrived, so the buffer ended up empty and
+  `deserializeJson()` reported `InvalidInput`. Use `HTTPClient::getString()`, which blocks
+  until the whole body is read (respects `Content-Length`/chunked). See `fetchHttpGet()`.
+
+**Verified on hardware (XIAO ESP32-S3 / EE05):** Wi-Fi connects, both fetches succeed
+(`sync: verse OK (Philippians 4:4)`, `sync: weather OK (16.4 C, Partly cloudy)`), and the
+layout renders + refreshes with no crash. The VotD source is deterministic: the URL
+hardcodes `&version=NIV`, so every fetch (host and device) requests the same translation
+explicitly rather than relying on a server-side default.
+
+**Tests:** `test_net.cpp` (15) covers WMO mapping, HTML decode, section-heading strip, and
+live fetch. `layout_render --live` renders real data through the layout engine.
+
+(2026-09-12)
+
+## 32. Phase 4 — deep sleep, wake schedule, and the USB-port-meets-deep-sleep trap
+
+Refresh schedule: three fixed local slots — **06:30 / 12:30 / 18:00** — with the device
+asleep in between (so ~3 full sweeps/day instead of continuous refresh). The arithmetic is a
+pure module (`firmware/src/sched/wake_schedule.{h,cpp}`, `cc_secondsUntilNextWake`) so it is
+unit-tested (`test_sched.cpp`, 8 tests incl. midnight roll-over and "never returns 0").
+
+- **Wall time survives deep sleep.** The ESP32-S3 RTC domain keeps the system clock across
+  deep sleep, so after one NTP sync the next wake already knows the time; each wake
+  re-syncs anyway (`configTzTime` + a bounded `getLocalTime(…, 6000)`). If the clock is not
+  yet valid (e.g. first boot with no Wi-Fi), the device sleeps a 1 h fallback rather than
+  trusting a bogus "next slot". A 60 s floor prevents a wake loop.
+- **Deep sleep makes the native USB port disappear.** The XIAO ESP32-S3 has no USB-UART
+  bridge — it uses the ESP32-S3's built-in USB Serial/JTAG, which is in the digital domain
+  and is powered down in deep sleep. Consequence: the COM port vanishes the moment the
+  device sleeps, so `pio run -t upload` can only succeed during the brief awake window. To
+  reflash a sleeping board, enter ROM download mode manually (**hold BOOT, tap RESET**) —
+  same class of issue as the eClock DTR/RTS latch (LESSONS §9). Budget for this when
+  iterating on a deep-sleeping device.
+- **Bring-up helper.** `-DCHROMAWOTD_WAKE_TEST_SEC=<n>` forces a short sleep so timer-wake
+  can be observed on the bench without waiting hours; `-DCHROMAWOTD_DEBUG_DELAY=1` adds a
+  3 s post-boot delay for monitor attach. Neither is set in production builds.
+- **Confirmed on hardware.** Entry: the device logs `sleep: now 21:11:42 -> next wake in
+  33498 s (9.30 h)` (exactly the next 06:30) then `esp_deep_sleep_start()` runs to
+  completion. Wake: with a temporary `-DCHROMAWOTD_WAKE_TEST_SEC=90`, polling for COM-port
+  *presence* (never opening it) showed the exact cycle — `21:06:36 AWAKE → 21:07:06 ASLEEP
+  → 21:08:36 AWAKE` — i.e. ~30 s awake (sync+refresh) then a 90 s sleep gap, repeating
+  unattended. Since the timer is the only configured wake source, that cycling *is* the
+  proof of RTC-timer wake.
+- **Caveat: opening the serial monitor resets the ESP32-S3.** `pio device monitor` asserts
+  DTR/RTS on open, which reboots the chip (same DTR/RTS class of effect as LESSONS §9), so
+  every monitor attach produced a fresh `wake_cause=0 (power-on/reset)` cycle and masked the
+  real timer wake. To observe a deep-sleeping board without perturbing it, poll *port
+  presence* (`serial.tools.list_ports`) rather than opening the port; the firmware also
+  re-prints `awake-status: wake_cause=N` immediately before sleeping so a late-attaching
+  monitor can still see how the current cycle was triggered.
+
+(2026-09-12)
