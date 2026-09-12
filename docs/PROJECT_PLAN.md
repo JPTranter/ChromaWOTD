@@ -37,12 +37,13 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 - [ ] **First-Boot Setup Screen**: Display on-screen instructions guide (SSID, AP IP address `192.168.4.1`, setup steps).
 - [ ] **Captive Portal Wi-Fi Wizard**: SoftAP mode + web configuration portal for SSID/password, timezone, location, and preferred content mode.
 - [ ] **Factory Reset**: Long-press button hold (10 seconds) detection to wipe NVS credentials and reboot into setup wizard.
-- [ ] **Dual-Button Hardware Interaction & Deep Sleep Wake**:
-  - `ext1` multi-button deep sleep wake mask (EE05 D0/GPIO1 + BOOT/GPIO0 or external D1/GPIO2).
-  - Refresh / Content Toggle: Force immediate re-sync and toggle between Verse of the Day and Word of the Day.
-  - Lockout during active ~25s screen sweep to ignore switch bounce/spam.
-  - *(2026-09-12: the display has a single light/landscape presentation, so there is no
-    mode-switch button; the second button is solely Refresh/Content.)*
+- [x] **Button Hardware Interaction & Deep Sleep Wake** (Phase 5, 2026-09-12):
+  - [x] `ext1` multi-button deep sleep wake mask — **BUTTON1/2/3 = GPIO2/3/5** (D1/D2/D4),
+        active-low. (Corrected: D0/GPIO1 is `BAT_ADC`, not a button, and GPIO0 is the
+        XIAO BOOT strap — the earlier guess was wrong. See LESSONS §33.)
+  - [x] All three buttons run a full immediate re-sync + refresh (same path as a timer wake).
+  - [x] Content mode is time-based, not toggled: Verse 00:00–11:59, Word 12:00–23:59.
+  - [ ] Lockout during active ~25s screen sweep to ignore switch bounce/spam.
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
   - Wi-Fi credentials, timezone POSIX string, latitude/longitude.
   - Active display layout & content mode.
@@ -52,13 +53,16 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 - [ ] **Syncing & Status Feedback**:
   - Hardware user LED (`LED_BUILTIN` / GPIO 21) active pulse during Wi-Fi connection and API fetch (avoiding unneeded 25s screen updates).
   - Diagnostic LED blink cadences on connection failure.
-  - Graceful failure state: if Wi-Fi / API times out, render cached data with prominent red error banner (`⚠ OFFLINE: [Reason]`).
+  - [x] Graceful failure state: if Wi-Fi / API times out, render fallback content with a
+        prominent red banner (`OFFLINE: [Reason]`).
   - Exponential / 15-minute retry backoff on network failure before re-entering sleep.
-- [ ] **NTP Synchronization**: SNTP sync on wake, POSIX timezone adjustment with automatic DST handling.
-- [ ] **Weather Pipeline**: Open-Meteo REST fetch, ArduinoJson parsing, weather code to BWRY icon mapping, alert detection.
-- [ ] **Content Pipelines**:
-  - Verse of the Day pipeline (daily scripture + highlight extraction).
-  - Vocabulary Word of the Day pipeline (Wordnik / Merriam-Webster feed).
+- [x] **NTP Synchronization**: SNTP sync on wake, POSIX timezone adjustment with automatic DST handling.
+- [x] **Weather Pipeline**: Open-Meteo REST fetch, ArduinoJson parsing, weather code to BWRY icon mapping, alert detection. (Evening syncs pull the *next* day's daily entry.)
+- **Content Pipelines**:
+  - [x] Verse of the Day pipeline (BibleGateway VOTD).
+  - [x] Word of the Day pipeline — **A.Word.A.Day** (`wordsmith.org/words/today.html`):
+        definition + usage example, respelling pronunciation, headword. (Wordnik /
+        Merriam-Webster abandoned: M-W is Cloudflare-walled, Wordnik needs a key.)
 
 ### Phase 4 — Daily Wake Schedule & Power Optimization
 - [x] **Time-Based Wake Schedule**:

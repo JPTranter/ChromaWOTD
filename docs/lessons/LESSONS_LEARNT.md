@@ -537,3 +537,61 @@ unit-tested (`test_sched.cpp`, 8 tests incl. midnight roll-over and "never retur
   monitor can still see how the current cycle was triggered.
 
 (2026-09-12)
+
+## 33. Phase 5 — buttons, time-based Verse/Word switching, and the Word-of-the-Day source
+
+**Buttons (EE05).** The schematic's XIAO pin column labels each net, and it corrects the
+earlier plan guess: **BUTTON1/2/3 = D1/D2/D4 = GPIO2/3/5**, all active-low — while **D0 =
+GPIO1 is `BAT_ADC`** (the battery-sense divider), *not* a button. All three button GPIOs
+are RTC-capable, so one shared `ext1` mask wakes the chip:
+
+```c
+rtc_gpio_pullup_en(pin); rtc_gpio_pulldown_dis(pin);      // digital pulls are lost in sleep
+esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ALL_LOW);
+```
+
+The RTC pull-up call is **required**: the ordinary `pinMode(INPUT_PULLUP)` does not survive
+deep sleep, so without it the pins float and either wake immediately or never wake. A button
+press runs the exact same Sync→Render→Sleep path as a timer wake (`wake_cause ==
+ESP_SLEEP_WAKEUP_EXT1`); no separate handler is needed.
+
+**Time-based content.** `sched/content_policy.{h,cpp}` is pure + unit-tested:
+`cc_contentModeForHour()` (Verse before noon, Word from noon) and `cc_useTomorrowForecast()`
+(18:00 onwards). Both are also applied to button-triggered syncs, and if NTP failed the
+device falls back to Verse/today rather than showing the wrong thing.
+
+**Word-of-the-Day source — what worked and what didn't.** Seeking a keyless feed:
+- Merriam-Webster's WOTD RSS returns **403 behind Cloudflare** ("Just a moment…") — an
+  ESP32 can never pass that challenge. Dead end.
+- `wordsmith.org/words/rss.xml` and friends **404** — but the daily HTML page
+  `https://wordsmith.org/words/today.html` returns 200 and, crucially, carries a
+  **respell pronunciation** `(bre-VIL-uh-kwuhnt)`. That is plain ASCII, so no IPA font work
+  is needed on a panel whose font is ASCII-only. (A keyless JSON alternative,
+  `tinymind.eu/api/word.php`, was rejected precisely because it only offers IPA, which
+  renders as `?`s.)
+- Licensing: A.Word.A.Day content is © Wordsmith.org; it is used here for a personal
+  device and is **not** redistributed in the repo. A bundled fallback word covers fetch
+  failure.
+
+**A.Word.A.Day parser pitfalls** (`cc_parseAwad`, shared host + device):
+- Every section is `<div style=…>LABEL:</div>\n<div …>\nVALUE\n</div>`. The value search
+  must **skip the label's own `</div>` first** — stopping at the first `</div>` after the
+  label yields an empty value (this failed all parser tests until fixed).
+- USAGE carries a `<br>` + attribution after the quote, so the example is cut at the
+  closing curly quote (`&#8221;`); the attribution must not leak into the body.
+- **Whitespace is a real bug source.** The source HTML wraps values across lines; those
+  newlines are ASCII (< 0x80) so they sail past an "is it ASCII?" check but reach the glyph
+  rasteriser as control characters and render as garbage (`you do?'?shrug`). Normalise to
+  single spaces in the extractor and assert **printable** ASCII (0x20–0x7E) in tests — the
+  weaker `< 0x80` assertion would not have caught it.
+- `wordsmith.org` uses the same Let's Encrypt **YE1** (ECDSA) intermediate as tinymind, so
+  it is pinned alongside Amazon Root CA 1 (BibleGateway) and YR2 (Open-Meteo).
+
+**Layout.** The bottom rule now carries two optional captions: a black one at the left (the
+pronunciation respelling) and the red one at the right (the verse reference, or the WOD
+headword). The right caption is placed first and the left is only drawn if it still clears
+it, so a long word + long respelling degrades by dropping the pronunciation instead of
+overprinting. Presentation strings moved into a `LayoutOptions` struct (headerTitle /
+weatherLabel / leftCaption) so adding a label is one field, not another positional argument.
+
+(2026-09-12)
