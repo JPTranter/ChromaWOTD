@@ -105,4 +105,3 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 - [ ] The `drawWrappedText#` and `drawVerseBlock` helpers are only used by the single
       layout now; a block-descriptor type could still remove the remaining repeated
       geometry constants, but it is lower priority than it was with five layouts.
-

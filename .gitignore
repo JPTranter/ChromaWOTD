@@ -6,7 +6,18 @@ build/
 output/
 **/output/*.png
 *.png.tmp
+
+# Never commit Wi-Fi creds, API keys or location settings. The device also takes
+# them from NVS at runtime; the template (secrets.h.example) is the only one that
+# belongs in version control.
 secrets.h
+secrets.ini
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
 .vscode/
 *.log
 *.pdf
@@ -17,3 +28,7 @@ firmware/*.log
 # Python bytecode caches (auto-generated; never commit)
 __pycache__/
 *.py[cod]
+
+# Virtualenvs
+.venv/
+venv/

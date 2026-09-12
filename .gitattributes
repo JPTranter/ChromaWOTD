@@ -1,0 +1,26 @@
+# Normalise line endings in the repo, check out native on Windows.
+# Without this, every commit warns "LF will be replaced by CRLF" and the working
+# tree silently diverges from the index depending on core.autocrlf.
+* text=auto
+
+*.md   text
+*.py   text diff=python
+*.cpp  text
+*.h    text
+*.ini  text
+*.json text
+*.yaml text
+*.yml  text
+*.toml text
+
+# Binary assets — never diff or normalise these.
+*.pdf  binary
+*.zip  binary
+*.bin  binary
+*.elf  binary
+*.png  binary
+*.jpg  binary
+
+# The render ledger is byte-compared by tools/verify_all.py (md5), so its PNGs
+# must never be rewritten on checkout.
+docs/images/*.png binary

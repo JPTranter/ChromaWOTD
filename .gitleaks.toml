@@ -1,0 +1,34 @@
+# gitleaks configuration
+# https://github.com/gitleaks/gitleaks#configuration
+#
+# By default gitleaks reports any detected secret and fails the run. The
+# allowlist below is for KNOWN-SAFE content, not real secrets:
+#   * vendored third-party code and compiled build artifacts, which are not
+#     authored by this project and whose binary blobs frequently trip the
+#     generic lookalike heuristics (a hex string inside a font table or a .a file
+#     is indistinguishable from a credential to an entropy check).
+# The project's own source (firmware/src, firmware/test, tools/, docs/) is NOT
+# allowlisted, so a real secret in authored code is still caught.
+
+[extend]
+# Keep the built-in rule set.
+useDefault = true
+
+[allowlist]
+# Paths gitleaks must not scan: generated/build output and vendored code.
+paths = [
+    # PlatformIO build tree and its library dependencies.
+    '''\.pio/''',
+    # CMake build trees (firmware/test/build and the -DCHROMAWOTD_DEVICE_FONTS
+    # variant under firmware/test/build-device).
+    '''firmware/test/build/''',
+    '''firmware/test/build-.*/''',
+    # Render output (throwaway PNG staging) and the vendored test dependencies.
+    '''firmware/test/output/''',
+    '''firmware/test/third_party/''',
+    # Vendored Seeed_GFX / Adafruit GFX font tables: dense binary blobs.
+    '''firmware/src/fonts/.*\.h''',
+    # The secrets TEMPLATE is safe by construction (placeholders only) and is
+    # meant to be committed. The real secrets.h is gitignored and never tracked.
+    '''firmware/src/secrets\.h\.example''',
+]

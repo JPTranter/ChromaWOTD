@@ -44,4 +44,3 @@ BibleGateway provides an unauthenticated JSON endpoint underlying their custom w
    * Primary: BibleGateway VOTD API
    * Secondary fallback: OurManna API (`https://beta.ourmanna.com/api/v1/get?format=json`) or NET Bible (`https://labs.bible.org/api/?passage=votd&type=json`)
    * Offline emergency fallback: Static array of 14 core verses embedded in flash storage.
-

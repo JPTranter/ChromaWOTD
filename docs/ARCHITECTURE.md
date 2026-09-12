@@ -1,7 +1,7 @@
 # CHROMAWOTD — Architecture
 
-**Last updated:** 2026-09-12  
-**Firmware version:** 0.1.0  
+**Last updated:** 2026-09-12
+**Firmware version:** 0.1.0
 **Phase:** 1 — Display bring-up & Layout Prototype (complete)
 
 ---

@@ -25,6 +25,21 @@ This project follows the [Contributor Covenant](https://www.contributor-covenant
 - **Python 3.8+** (for tooling)
 - **MinGW GCC** on Windows (for host tests)
 - **Pillow** (Python, for render verification)
+- **pre-commit** (for the secret-scanning + hygiene hooks)
+
+### Install the git hooks (once per clone)
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Committed secrets are blocked in two places that mirror the sibling eClock project: gitleaks
+scans **staged content** on every commit (`.pre-commit-config.yaml`), and a CI job rescans **all
+history** on every push (`.github/workflows/ci.yml`). Skipping this step leaves only the CI layer.
+
+The first commit after installing can fail while `end-of-file-fixer` rewrites newly added files —
+`git add -A && git commit` again and it passes.
 
 ### Clone the Repository
 

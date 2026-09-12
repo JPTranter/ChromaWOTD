@@ -87,4 +87,3 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
      ```http
      GET https://api.weather.bom.gov.au/v1/locations/r1r293/warnings
      ```
-

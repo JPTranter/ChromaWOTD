@@ -837,3 +837,46 @@ the reason the failure was worth recording.
   in one artifact defines a count elsewhere, grep the whole repo for the old number.
 
 (2026-09-13)
+
+
+## 41. Secret scanning was absent, not just unconfigured (RESOLVED)
+
+**Audit result (2026-09-13): no secrets leaked.** `git log --all` was scanned over the full
+history — 79 commits, no leaks. In particular `firmware/src/secrets.h` (which DOES hold live
+Wi-Fi credentials on this machine) has never been committed: it is gitignored, and the only
+tracked variant is `secrets.h.example`, whose values are placeholders. No private keys, no
+`.env`, no `.pem`/`.key` in any revision.
+
+**The gap was the guard, not the history.** `secrets.h` was the ONLY entry in `.gitignore` for
+credentials, and there was no pre-commit hook, no gitleaks config, and no scan in CI — unlike the
+sibling eClock project, which has all three. One stray `git add -f` or a differently-named file
+(`.env`, `secrets.ini`) would have committed a credential with nothing to catch it. Ported eClock's
+protections:
+
+- `.gitleaks.toml` — default rule set + an allowlist for vendored/build content (`.pio/`, CMake
+  build trees, `firmware/test/output/`, `firmware/test/third_party/`, the vendored font tables).
+  Authored source is deliberately NOT allowlisted, so a real secret there still fails.
+- `.pre-commit-config.yaml` — gitleaks plus hygiene hooks (`trailing-whitespace`,
+  `end-of-file-fixer`, `check-yaml`, `check-added-large-files`, `check-merge-conflict`,
+  `detect-private-key`). Installed via `pre-commit install`.
+- `.gitignore` — added `secrets.ini`, `.env`, `.env.*`, `*.pem`, `*.key`, `.venv/`, `venv/`.
+- `.gitattributes` — `* text=auto` plus binary rules, so the CRLF/LF churn stops (`docs/images/*.png`
+  is marked binary because `verify_all.py` md5-compares those renders byte-for-byte).
+- CI job `secrets` — `gitleaks detect --source . --config .gitleaks.toml --redact --exit-code 1`
+  with `fetch-depth: 0`, so a push re-scans ALL history, not just the pushed tip.
+
+**Verify a detector, don't assume it.** A scanner that never fires is indistinguishable from a
+scanner that cannot fire. Both directions were tested with a deliberately planted (fake) AWS key:
+`gitleaks detect` reported `leaks found: 1` with exit code 1, and the installed pre-commit hook
+returned exit code 1, blocking the commit. Then the file was removed.
+
+**Pitfalls.**
+- `.clang-format` is YAML-ish but starts with `#` comments and a bare `Language:` preamble that
+  PyYAML rejects, so `check-yaml` fails the whole run. eClock never hit this because it has no
+  `.clang-format`; the fix is `exclude: ^\.clang-format$` on that hook — exclude the file, never
+  delete the check.
+- The hygiene hooks rewrote 27 files on the first `--all-files` run (missing trailing newlines and
+  trailing whitespace). That is expected on a fresh adoption — but re-run the full suite afterwards,
+  because the rewrite touches firmware source: `verify_all.py` came back ALL GREEN after it.
+
+(2026-09-13)

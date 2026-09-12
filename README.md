@@ -11,14 +11,14 @@ the architectural and hardware lessons of the sibling [eClock](../eClock) projec
 ## Technical Reality: Why Not a Minute-by-Minute Clock?
 
 > [!IMPORTANT]
-> **No partial refresh on 4-colour ePaper panels.**  
+> **No partial refresh on 4-colour ePaper panels.**
 > The 2.9" BWRY display panel (JD79661 controller) **does not support partial refresh**
 > (`USE_PARTIAL_EPAPER` in Seeed GFX only applies to monochrome panels). Every screen update
 > executes a full **~25-second multi-pass physical pigment sweep** with noticeable flickering.
-> 
+>
 > Refreshing every minute would destroy the display's lifespan, consume excessive power, and
 > present an annoying visual distraction.
-> 
+>
 > **Architectural Decision:** CHROMAWOTD is purposefully engineered as an **infrequent,
 > glanceable ambient display** that refreshes 2–4 times per day (e.g., morning wake, noon update,
 > evening forecast, night rest). Between refresh intervals, the ESP32-S3 enters deep sleep.
@@ -262,6 +262,34 @@ CHROMAWOTD/
 >   never echoed to serial (S3). Template: `firmware/src/secrets.h.example`.
 > - **Remote text is untrusted input** — the renderer's fixed buffers are the
 >   boundary; `snprintf`/bounded-copy only, never `sprintf` (S4).
+> - **Committing a secret is blocked, not just discouraged.** gitleaks runs on every
+>   commit via a pre-commit hook and again over full history in CI. See below.
+
+### Secret scanning (set this up after cloning)
+
+Credentials are gitignored, but a guard that is never installed cannot guard. Install the hooks
+once per clone:
+
+```powershell
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files    # optional: scan the whole tree now
+```
+
+Two layers, matching the sibling [eClock](../eClock) project:
+
+| Layer | Scope | Config |
+| :--- | :--- | :--- |
+| `pre-commit` hook (local) | staged content on every commit | `.pre-commit-config.yaml` → gitleaks + hygiene hooks |
+| CI job `secrets` (remote) | **all history** on every push/PR | `.github/workflows/ci.yml` → `gitleaks detect --exit-code 1` |
+
+gitleaks' allowlist (`.gitleaks.toml`) covers only vendored and generated content — `.pio/`, CMake
+build trees, `firmware/test/output/`, `firmware/test/third_party/` and the vendored GFX font tables.
+Authored source (`firmware/src`, `tools/`, `docs/`) is deliberately **not** allowlisted, so a real
+secret in project code still fails the scan.
+
+Note the first commit after installing the hooks can fail while `end-of-file-fixer` rewrites newly
+added files; `git add -A && git commit` again and it passes.
 
 ## Building and Running
 
@@ -435,4 +463,3 @@ This repository is indexed by **CodeGraph** (`.codegraph/`). To explore symbols,
 6. **Probe pin maps on the board; don't decode them from a schematic.** A `pdftotext -layout` read of the EE05 schematic scrambled the net-label-to-pin association and put BUTTON3 on D4 — which is `I2C_SDA`. Arming that non-button pad for `ext1` wake produced a deep-sleep wake storm. `pio run -e probe` prints every pad transition so the real map is established in one flash (`LESSONS_LEARNT.md` §33–34).
 7. **Judge alignment on ink, not on the drawing coordinate.** A caption drawn at the same nominal x can still land 1 px off because of a glyph's side bearing; `tools/measure_layout.py` measures the rendered pixels and asserts the invariants (`LESSONS_LEARNT.md` §36).
 8. **Never observe deep-sleep behaviour through `pio device monitor`** — attaching asserts DTR/RTS and resets the board, faking a wake storm. Use `tools/bench_watch.py --presence` (`LESSONS_LEARNT.md` §34).
-

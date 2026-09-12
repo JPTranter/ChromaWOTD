@@ -32,6 +32,7 @@
 | Auto-size local coverage | ✅ `test_verse_autosize` — CMake compiles this target **with** `-DCHROMAWOTD_FONT_FREESANS=1`, closing a blind spot where every other host target exercised only the non-FreeSans path. 7/7 suites pass; `verify_all.py` ALL GREEN |
 | Device-font host suite | ✅ `-DCHROMAWOTD_DEVICE_FONTS=ON` runs the layout invariants on the shipped proportional font path; two font-calibrated tests were corrected (overflow-marker detector, alert-rule probe) after a render proved the product was fine and only the tests were. Wired in as `verify_all.py` stage 3/5 (see LESSONS §39) |
 | Font decision tooling | ✅ `tools/font_size_probe.py --live` reports which body font today's content gets, straight from `cc_verseFontSize()` via `layout_render`; `tools/flash_when_awake.py` retry-loops an upload until the deep-asleep port returns |
+| Secret scanning | ✅ Audited: **no secrets in any of the 79 commits** (verified with gitleaks over full history); `secrets.h` (live Wi-Fi creds) has never been tracked. Gap was the guard, not the history — ported eClock's protections: `.gitleaks.toml`, `.pre-commit-config.yaml` (gitleaks + hygiene hooks, installed), `.gitattributes`, widened `.gitignore`, and a CI `secrets` job scanning all history. Both layers tested against a planted key — correctly blocked (see LESSONS §41) |
 
 ## Next steps
 
