@@ -514,10 +514,19 @@ unit-tested (`test_sched.cpp`, 8 tests incl. midnight roll-over and "never retur
 - **Deep sleep makes the native USB port disappear.** The XIAO ESP32-S3 has no USB-UART
   bridge — it uses the ESP32-S3's built-in USB Serial/JTAG, which is in the digital domain
   and is powered down in deep sleep. Consequence: the COM port vanishes the moment the
-  device sleeps, so `pio run -t upload` can only succeed during the brief awake window. To
-  reflash a sleeping board, enter ROM download mode manually (**hold BOOT, tap RESET**) —
-  same class of issue as the eClock DTR/RTS latch (LESSONS §9). Budget for this when
-  iterating on a deep-sleeping device.
+  device sleeps, so `pio run -t upload` can only succeed during the brief awake window.
+  Budget for this when iterating on a deep-sleeping device.
+  **"Hold BOOT, tap RESET" is the RECOVERY path, not the routine one** (corrected
+  2026-09-13 after the user pointed out that a double-tap of RESET suffices in practice).
+  The native USB Serial/JTAG peripheral can trigger download mode *itself*, so
+  re-enumerating the port — double-tap RESET, or unplug/replug USB — is normally all that
+  is needed and a plain upload then succeeds; this was demonstrated in-session on
+  2026-09-13 (a `-t upload` succeeded with no button sequence at all). Keep the
+  BOOT/RESET sequence for a wedged chip or a port that will not enumerate, e.g. left in
+  download mode by a bad DTR/RTS reset (LESSONS §9). The BOOT and RESET buttons are on the
+  XIAO module beside the USB-C connector and are tiny; the EE05 carrier's `1x Reset, 3x
+  User` buttons are a different set (GPIO2/3/8 — see §33). Prefer
+  `tools/flash_when_awake.py`, which polls for the port and uploads on sight.
 - **Bring-up helper.** `-DCHROMAWOTD_WAKE_TEST_SEC=<n>` forces a short sleep so timer-wake
   can be observed on the bench without waiting hours; `-DCHROMAWOTD_DEBUG_DELAY=1` adds a
   3 s post-boot delay for monitor attach. Neither is set in production builds.

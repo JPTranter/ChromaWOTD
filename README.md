@@ -432,9 +432,22 @@ pio run -e probe -t upload
 > [!IMPORTANT]
 > **While the device is deep-asleep, its serial port does not exist.** The XIAO ESP32-S3's
 > native USB Serial/JTAG lives in the digital power domain, so `COM13` disappears the moment
-> `esp_deep_sleep_start()` runs. To re-flash, put the board into ROM download mode — **hold
-> BOOT, tap RESET, release BOOT** — or unplug/replug USB. A retry loop around `pio run -t
-> upload` also works, since the port returns on every wake.
+> `esp_deep_sleep_start()` runs.
+>
+> **Normal re-flash: just retry the upload.** This board uses the native USB Serial/JTAG
+> peripheral, which can put the ESP32-S3 into download mode *by itself* — no BOOT/RESET
+> button sequence is involved. In practice, double-tapping RESET (or unplug/replug USB)
+> re-enumerates the port and a plain upload then succeeds:
+>
+> ```powershell
+> python tools/flash_when_awake.py --seconds 420   # polls for the port, uploads on sight
+> ```
+>
+> **Recovery, only if that fails:** the ROM-download-mode button sequence — **hold BOOT, tap
+> RESET, release BOOT**. This matters when the chip is wedged or the port will not enumerate at
+> all (e.g. stuck in download mode from a bad DTR/RTS reset, see `LESSONS_LEARNT.md` §9). It is
+> a last resort, not the routine path. Both buttons live on the XIAO module beside the USB-C
+> connector and are tiny; the three user buttons on the EE05 carrier are unrelated.
 
 Useful build flags (`firmware/platformio.ini`): `-DCHROMAWOTD_BUTTON_WAKE=1` enables the
 `ext1` button wake; `-DCHROMAWOTD_DEEP_SLEEP` controls sleeping; `-DCHROMAWOTD_WAKE_TEST_SEC=N`

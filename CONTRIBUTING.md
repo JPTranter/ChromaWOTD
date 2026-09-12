@@ -184,7 +184,14 @@ port returns on every wake — use the retry-loop uploader:
 python tools/flash_when_awake.py --seconds 420
 ```
 
-Or put the board into ROM download mode manually: **hold BOOT, tap RESET, release BOOT**.
+**Most of the time this needs no button press at all.** This board's native USB Serial/JTAG
+peripheral can put the ESP32-S3 into download mode by itself, so double-tapping RESET (or
+unplug/replug USB) to re-enumerate the port is enough and the upload then succeeds normally.
+
+The ROM-download-mode sequence — **hold BOOT, tap RESET, release BOOT** — is the *recovery*
+path for when the port will not enumerate at all or the chip is wedged (e.g. left in download
+mode by a bad DTR/RTS reset). Note both buttons are on the XIAO module beside the USB-C
+connector, not the three user buttons on the EE05 carrier.
 
 ### Host Tests (CMake + GoogleTest)
 
