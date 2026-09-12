@@ -27,6 +27,7 @@
 | Word of the Day source | ✅ Phase 5: A.Word.A.Day (`wordsmith.org/words/today.html`) — definition + example body, respelling pronunciation caption, headword caption; bundled fallback word if the fetch fails |
 | Evening forecast | ✅ Phase 5: 18:00–23:59 shows tomorrow's outlook captioned **TOMORROW** (daily high + code); earlier shows today under **FORECAST** |
 | Dual buttons & WOTD toggle | ✅ superseded — content is time-based, all three buttons sync (no manual toggle) |
+| Weather icon mapping | ⚠️ **known limitation, accepted** — only WMO ≥ 80 get the Rain icon; Drizzle (51-57) and Rain (61-67) fall through to the plain Cloud icon. Text label is correct; decided 2026-09-12 to leave as-is (see LESSONS §35) |
 
 ## Next steps
 

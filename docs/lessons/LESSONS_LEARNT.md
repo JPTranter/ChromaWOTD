@@ -637,3 +637,32 @@ self-inflicted. For wake/sleep work use either the port-presence poll (never ope
 or a pyserial reader that sets `dtr=False`/`rts=False` before `open()`.
 
 (2026-09-12)
+
+## 35. Drizzle (and Rain 61-67) draw the plain Cloud icon — KNOWN LIMITATION, accepted
+
+**Symptom.** A "Drizzle" forecast shows the generic outline cloud, not the rain icon.
+
+**Cause.** Only WMO **≥ 80** (rain showers) map to `WeatherIcon::Rain`; everything at/above 45
+falls through to `WeatherIcon::Cloud`:
+
+- Host: `firmware/src/net/net.cpp` `iconFromWmo()` — `if (code >= 45) return WeatherIcon::Cloud;`
+- Device: `firmware/src/net/net_impl_esp32.cpp` (~line 207) repeats the same table inline.
+
+Both mappers also send **WMO 61/63/65/66/67 ("Rain")** to Cloud, and 71-77 Snow / 45-48 Fog to
+Cloud. The condition *text* is correct in every case (`cc_wmoCondition()`); only the icon is
+coarse. The icon set is deliberately 4 wide (Sun, Cloud, Rain, PartlyCloudy) — there is no
+drizzle/snow/fog glyph.
+
+Drizzle → Cloud vs Drizzle → Rain:
+`docs/images/history/weather_icon_drizzle_current_vs_rain.png`
+
+**DECIDED (2026-09-12): leave the mapping as-is.** Accepted as a known limitation: the text
+label carries the precision, the icon is a coarse weather cue, and re-map/re-designing icons was
+not worth a panel refresh round. Do NOT "fix" it silently — check here first.
+
+**If it is ever revisited**, two things change together: (1) route 51-57 *and* 61-67 to
+`WeatherIcon::Rain` (fixing the text-says-Rain/icon-says-cloud case), and (2) export the mapper
+as a shared `cc_wmoIcon()` from `net.cpp` so the device stops duplicating the table — the two
+copies can drift today because `iconFromWmo()` is `static`.
+
+(2026-09-12)
