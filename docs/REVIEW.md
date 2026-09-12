@@ -14,7 +14,7 @@ Severity: **P0** security/correctness that must be fixed before shipping network
 
 ---
 
-## Check-off status (2026-09-12, against HEAD `20eb3ed`)
+## Check-off status (2026-09-12, against HEAD `4f277ae`)
 
 Each finding re-tested against the current tree. `tools/verify_all.py` **green at HEAD**.
 
@@ -25,8 +25,8 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | S3 | P1 | **RESOLVED** | Credential policy in `docs/ARCHITECTURE.md`; `secrets.h.example` added. |
 | S4 | P2 | **RESOLVED** | Remote-string safety documented + `wordBuf`/`lineBuf` boundary comments added. |
 | S5 | P3 | **RESOLVED** | OTA posture documented in `docs/ARCHITECTURE.md` + `chroma_version.h`. |
-| D1 | P1 | **MOSTLY RESOLVED** | Backend + font types extracted to `draw/`; text/wrap/icon still colocated in `verse_display.cpp`. |
-| D2 | P1 | **MOSTLY RESOLVED** | `drawLayout()` constants added; `drawLandscapeWeatherColumn()` magic numbers remain. |
+| D1 | P1 | **RESOLVED** | Module split done: `text/` (decoder + wrap math), `draw/` (backend + weather icon). |
+| D2 | P1 | **RESOLVED** | `drawLayout()` + `drawLandscapeWeatherColumn()` constants named. |
 | D3 | P1 | **RESOLVED** | Single presentation; `Orientation`/`Theme` enums added. |
 | D4 | P2 | **RESOLVED** | `WeatherIcon` enum replaces magic `int`. |
 | D5 | P2 | **RESOLVED** | Dead UTF-8 decoder stripped from `canvas.cpp`; ASCII-only contract comment added. |
@@ -36,7 +36,7 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | C2 | — | **RESOLVED** | Narrow-column `.` degradation commented in `cc_lineBudget`. |
 | C3 | — | **RESOLVED** | Weather-icon distinctness + yellow-ink tests added. |
 | C4 | — | **RESOLVED** | `+0.5f` idiom remains only as deliberate warnings. |
-| R1 | — | **MOSTLY RESOLVED** | `drawLayout()` constants added; weather-column constants still inline. |
+| R1 | — | **RESOLVED** | All layout constants named (`drawLayout` + weather column). |
 | R2 | — | **RESOLVED** | `verse_display.h` documents single presentation + layering. |
 | R3 | — | **RESOLVED** | `C_*` aliases removed. |
 | R4 | — | **RESOLVED** | Portrait budget code gone; new budget named + commented. |
@@ -52,11 +52,11 @@ Each finding re-tested against the current tree. `tools/verify_all.py` **green a
 | H2 | P2 | **RESOLVED** | `board_pins.h` deleted. |
 | H3 | P2 | **RESOLVED** | `driver.h` deleted; single source of truth is platformio.ini. |
 | H4 | P3 | **RESOLVED** | .editorconfig added. |
-| T1 | P1 | **MOSTLY RESOLVED** | Adversarial UTF-8 + icon tests added; `cc_lineCapacity` unit test needs text module split. |
+| T1 | P1 | **RESOLVED** | `test_text.cpp` directly tests `cc_lineCapacity`/`cc_lineBudget` + decoder. |
 | T2 | P2 | **RESOLVED** | Device branch in CI. |
 | T3 | P3 | **RESOLVED** | Ledger gated in CI. |
 
-Resolved: **S1–S5, D3–D7, C1–C4, R2, R3, R4, H1–H4, DOC1–DOC7, T2, T3.** Mostly: **D1, D2, R1, T1.** Partial: **R5.**
+Resolved: **S1–S5, D1–D7, C1–C4, R1–R4, H1–H4, DOC1–DOC7, T1–T3.** Partial: **R5 (comment-style consistency — cosmetic only).**
 
 ---
 
