@@ -75,33 +75,103 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 1. **Boot** (`setup()`):
    - Initialize serial, display, NVS
    - If first boot or factory reset → enter setup wizard (captive portal)
-   - Otherwise → load cached credentials from NVS
+   - Otherwise → load cached credentials from NVS / secrets
 
-2. **Sync** (Phase 3+):
-   - Connect to WiFi (credentials from NVS or setup wizard)
-   - Sync time via SNTP
-   - Fetch weather (Open-Meteo) + content (BibleGateway / Wordnik)
-   - Parse JSON, extract VerseData / WeatherData
-   - Cache last successful fetch + timestamp in NVS
+2. **Sync**:
+   - Connect to Wi-Fi
+   - Bounded NTP sync (6000 ms timeout) to retrieve local wall time
+   - Evaluate time-based policies:
+     - 00:00–11:59: Verse of the Day (BibleGateway VOTD)
+     - 12:00–23:59: Word of the Day (A.Word.A.Day)
+     - 00:00–17:59: Today's expected maximum + condition (`FORECAST`)
+     - 18:00–23:59: Tomorrow's expected maximum + condition (`TOMORROW`)
+   - Fetch content and weather over CA-validated HTTPS on a dedicated 16 KB FreeRTOS task (`cc_sync`)
+   - Parse JSON/HTML into `VerseData` and `WeatherData` structs
 
 3. **Render**:
-   - Call `drawLayout(VerseData, WeatherData)` → routes to Seeed GFX backend
+   - Assemble `LayoutOptions` (header title, weather label, pronunciation caption)
+   - Call `drawLayout(v, w, opts)` → routes to Seeed GFX backend (`SeeedTarget`)
    - Call `epaper.update()` (full ~25 s pigment sweep)
-   - Wait for BUSY signal (optional, library handles internally)
+   - Call `epaper.sleep()` (power off panel driver)
 
 4. **Sleep**:
-   - Call `epaper.sleep()` (power off panel)
-   - Call `ESP.deepSleep(...)` with button wake mask
-   - Device draws ~10 µA until button press
+   - Compute seconds until next scheduled slot via `cc_secondsUntilNextWake(now)`
+   - Arm RTC timer wakeup
+   - Arm active-low `ext1` wakeup mask on verified buttons (GPIO2, GPIO3, GPIO8)
+   - Enter `esp_deep_sleep_start()` (~10 µA current draw)
 
-5. **Button wake** (Phase 2+):
-   - `ext1` wake mask on EE05 D0 (GPIO1) or external D1 (GPIO2)
-   - Wake → repeat Sync → Render → Sleep
+5. **Button wake**:
+   - Pressing any of the 3 user buttons wakes the chip (`wake_cause == ESP_SLEEP_WAKEUP_EXT1`)
+   - Executes the exact same Sync → Render → Sleep sequence
 
-### Offline / error handling:
-- If network fails, render **cached data** with red error banner: ` OFFLINE: [Reason]`
-- Retry with exponential backoff (15 min → 1 hour → 6 hours)
-- Flash hardware LED during sync (GPIO 21)
+---
+
+## System Behaviour Specification: Weather, Schedule, Content & Failure Modes
+
+### 1. Refresh Frequency & Timing (How often)
+- **Scheduled RTC Timer Slots**: The device wakes at three fixed local times daily:
+  - **06:30** (Morning wake)
+  - **12:30** (Midday update)
+  - **18:00** (Evening forecast)
+  The arithmetic (`cc_secondsUntilNextWake` in `sched/wake_schedule.cpp`) rolls over midnight and enforces a strict > 0 progression.
+- **On-Demand User Button Wake**: Any press of BUTTON1 (GPIO2), BUTTON2 (GPIO3), or BUTTON3 (GPIO8) immediately wakes the chip from deep sleep and runs a full sync cycle.
+- **Wake Storm Protection**: If 5 consecutive ext1 button wakes occur without an intervening timer wake or power cycle (`g_ext1Streak >= 5`), button wake is suppressed for one sleep interval to prevent battery exhaustion from stuck/noisy lines.
+- **Clock Failure Retry**: If NTP fails to acquire local time, the device sleeps for a fallback interval of **1 hour** (`kFallbackSleepSec = 3600s`, clamped to a minimum guard of 60s) before retrying.
+
+### 2. Weather Data Source & Transport (Where from)
+- **API Provider**: [Open-Meteo](https://open-meteo.com/) REST API.
+- **Query URL**:
+  ```text
+  https://api.open-meteo.com/v1/forecast?latitude=<LAT>&longitude=<LON>&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=<TZ>&forecast_days=2
+  ```
+- **Default Location**: Lat `-37.8528`, Lon `145.1633`, Timezone `"Australia/Melbourne"` (Burwood East, Victoria). Overridable per-build or in `secrets.h`.
+- **TLS Security**: Pinned Let's Encrypt **YR2** intermediate CA (`ROOT_CA_YR2`) chaining to ISRG Root YR. Calls never use `setInsecure()`.
+- **Stack Allocation**: Executed on a dedicated FreeRTOS task (`cc_sync`) with an explicit **16 KB stack** pinned to core 1, bypassing the fixed 8 KB Arduino loopTask limitation.
+
+### 3. Data Selection & Mapping (What data)
+The weather subsystem populates `WeatherData` (`temp`, `condition`, `alert`, `icon`) and `LayoutOptions::weatherLabel`:
+- **00:00–17:59 (Daytime outlook)**:
+  - Temperature: Today's expected maximum (`daily.temperature_2m_max[0]`).
+  - Condition: Today's expected forecast condition (`daily.weather_code[0]`).
+  - Label: `"FORECAST"`.
+- **18:00–23:59 (Evening / next day outlook)**:
+  - Temperature: Tomorrow's expected maximum (`daily.temperature_2m_max[1]`).
+  - Condition: Tomorrow's expected forecast condition (`daily.weather_code[1]`).
+  - Label: `"TOMORROW"`.
+- **WMO Code Mapping (`cc_wmoCondition`)**:
+  - `0` → "Clear"
+  - `1, 2, 3` → "Partly cloudy"
+  - `45, 48` → "Fog"
+  - `51, 53, 55, 56, 57` → "Drizzle"
+  - `61, 63, 65, 66, 67, 80, 81, 82` → "Rain"
+  - `71, 73, 75, 77, 85, 86` → "Snow"
+  - `95, 96, 99` → "Thunderstorm" (triggers alert)
+  - All other codes → "Cloudy"
+- **Vector Icons (`WeatherIcon`)**: Coarse 4-icon vector engine (`Sun` = 0, `Cloud` = 1, `Rain` = 2, `PartlyCloudy` = 3). WMO 0 maps to Sun; 1–3 to PartlyCloudy; ≥80 to Rain; remainder to Cloud.
+- **Alert Text**: WMO codes 95, 96, 99 produce `"Severe weather warning"`.
+
+### 4. Failure Modes & Degradation Hierarchy (Failure behaviour)
+The device prioritizes maintaining a coherent ePaper image with visible diagnostics rather than failing silently or hanging:
+- **Wi-Fi Connection Failure (`cc_wifiConnect() != 0`)**:
+  - Sets `g_offlineReason = "no wifi"`.
+  - Skips network fetches. Uses fallback scripture text and default weather (`temp = 0.0f`, `icon = PartlyCloudy`, condition `"Temp 0"`).
+  - Weather column displays red alert banner: `OFFLINE: no wifi`.
+- **NTP Time Sync Failure (`getLocalTime` timeout)**:
+  - Header date displays `"Offline"`.
+  - Content mode defaults to Verse of the Day; weather outlook defaults to daytime (`g_tomorrow = false`, `"FORECAST"`).
+  - Sleep duration falls back to 1 hour (`kFallbackSleepSec`) instead of an invalid slot rollover.
+- **Weather API / TLS / JSON Parse Failure (`cc_fetchWeather` returns false)**:
+  - Leaves existing `WeatherData` untouched (or initializes to defaults).
+  - Sets `g_offlineReason = "weather API"`.
+  - Condition synthesizes `"Temp 0"` if empty.
+  - Weather column displays red alert banner: `OFFLINE: weather API`.
+  - Verse or Word content still renders normally if its separate fetch succeeded.
+- **Network Disabled in Build (`#ifndef CHROMAWOTD_NETWORK`)**:
+  - Sets `g_offlineReason = "network disabled in build"`.
+  - Renders offline banner and bundled fallback content.
+- **Visual Column Reflow on Alert vs Normal**:
+  - **With Alert or Offline Banner**: Weather icon drops to minimum size (`kIconMin = 24px`) pinned at top; red divider and red `ALERT:` label are drawn; alert text wraps at bottom in compact 5pt font.
+  - **Without Alert**: Icon dynamically expands (up to `kIconMax = 48px`) to fill the vertical whitespace in the weather column.
 
 ---
 

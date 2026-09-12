@@ -404,7 +404,6 @@ bool cc_fetchWeather(WeatherData* out, bool tomorrow) {
     char url[520];
     snprintf(url, sizeof(url),
         "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
-        "&current=temperature_2m,weather_code"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min"
         "&timezone=%s&forecast_days=2",
         CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE, CHROMAWOTD_TIMEZONE);
@@ -412,14 +411,9 @@ bool cc_fetchWeather(WeatherData* out, bool tomorrow) {
     if (!cc_fetchJson(url, json, sizeof(json))) return false;
 
     double temp = 0.0, wmo = -1.0;
-    if (tomorrow) {
-        // No "current" reading exists for a future day: use the day's high.
-        if (!parseArrayNumber(json, "temperature_2m_max", 1, &temp)) return false;
-        if (!parseArrayNumber(json, "weather_code",       1, &wmo))  return false;
-    } else {
-        if (!parseMember(json, "temperature_2m", false, nullptr, 0, &temp)) return false;
-        if (!parseMember(json, "weather_code",  false, nullptr, 0, &wmo))   return false;
-    }
+    const int dayIdx = tomorrow ? 1 : 0;
+    if (!parseArrayNumber(json, "temperature_2m_max", dayIdx, &temp)) return false;
+    if (!parseArrayNumber(json, "weather_code",       dayIdx, &wmo))  return false;
     if (wmo < 0.0) return false;
 
     static char cond[NET_TEXT_MAX];

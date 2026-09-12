@@ -700,8 +700,25 @@ cannot distinguish a 1 px bearing from a rounding error; the pixel scan can.
   `--capture` waits for the device to wake and reads the boot log with DTR/RTS
   deasserted so it does not reset the board.
 
-**Reminder:** the archived renders in `docs/images/` are md5-compared by the ledger,
-so an intentional layout change requires `python tools/verify_all.py --fix` to
-resync them — otherwise stage 3 fails (as it correctly did here).
-
 (2026-09-12)
+
+## 37. Weather policy: expected daily maximum instead of instantaneous temperature
+
+**Change & Rationale.**
+Previously, daytime syncs (< 18:00) extracted `current.temperature_2m` and `current.weather_code`. On an ePaper device refreshing only at 06:30 and 12:30, displaying the instantaneous temperature at 06:30 (e.g. 8°C) is unhelpful for planning the day when the forecast high is 22°C.
+
+The policy now consistently presents daily forecast expectations:
+- **00:00–17:59 (Today / `FORECAST`)**:
+  - Maximum temperature: `daily.temperature_2m_max[0]`
+  - Expected weather condition & icon: `daily.weather_code[0]`
+- **18:00–23:59 (Tomorrow / `TOMORROW`)**:
+  - Maximum temperature: `daily.temperature_2m_max[1]`
+  - Expected weather condition & icon: `daily.weather_code[1]`
+
+**Network & Parser Optimization.**
+- The Open-Meteo URL query dropped `&current=temperature_2m,weather_code` completely, requesting only `&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=2`. This reduces the JSON payload size and removes any ambiguity between current vs daily members.
+- Both host (`net.cpp` using `parseArrayNumber`) and device (`net_impl_esp32.cpp` using `ArduinoJson`) index into `daily.temperature_2m_max[dayIdx]` and `daily.weather_code[dayIdx]`, where `dayIdx = tomorrow ? 1 : 0`.
+- Verified live on hardware: morning sync fetched 22.9°C (today's high) and "Drizzle" (today's forecast code), matching daytime expectations.
+
+(2026-09-13)
+

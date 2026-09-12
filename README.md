@@ -169,9 +169,7 @@ the **headword** in red at the right.
   handshake needs more stack than the default Arduino `loopTask` provides (see the STACK NOTE
   in `main.cpp`).
 
-| Data | Endpoint | Notes |
-| :--- | :--- | :--- |
-| Weather | `api.open-meteo.com/v1/forecast` | `forecast_days=2`; the **evening** sync (18:00–23:59) reads the *next* day's daily entry and captions it **TOMORROW** instead of **FORECAST** |
+| Weather | `api.open-meteo.com/v1/forecast` | `forecast_days=2`; daytime (< 18:00) shows today's expected maximum + condition captioned **FORECAST**; evening (18:00–23:59) shows tomorrow's expected maximum + condition captioned **TOMORROW** |
 | Verse | `biblegateway.com/votd/get/?format=json&version=NIV` | `docs/research/SCRIPTURE_APIS.md` |
 | Word | `wordsmith.org/words/today.html` | A.Word.A.Day respelling pronunciation; `docs/research/WORD_APIS.md` |
 

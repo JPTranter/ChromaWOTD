@@ -109,11 +109,19 @@ TEST(StripBracket, UnclosedBracket_Unchanged) {
 // ---------------------------------------------------------------------------
 // Live fetch (skipped when offline) -----------------------------------------
 // ---------------------------------------------------------------------------
-TEST(Fetch, Weather_Live) {
+TEST(Fetch, Weather_Live_Today) {
     WeatherData w;
-    if (!cc_fetchWeather(&w)) { GTEST_SKIP() << "network unavailable (no curl)"; }
+    if (!cc_fetchWeather(&w, false)) { GTEST_SKIP() << "network unavailable (no curl)"; }
     // Sanity: a real temperature and a condition string from the WMO map; alert
     // may be null (no severe weather right now).
+    EXPECT_GT(w.temp, -50.0f);
+    EXPECT_LT(w.temp, 60.0f);
+    EXPECT_TRUE(w.condition && w.condition[0]);
+}
+
+TEST(Fetch, Weather_Live_Tomorrow) {
+    WeatherData w;
+    if (!cc_fetchWeather(&w, true)) { GTEST_SKIP() << "network unavailable (no curl)"; }
     EXPECT_GT(w.temp, -50.0f);
     EXPECT_LT(w.temp, 60.0f);
     EXPECT_TRUE(w.condition && w.condition[0]);

@@ -60,7 +60,7 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
         prominent red banner (`OFFLINE: [Reason]`).
   - Exponential / 15-minute retry backoff on network failure before re-entering sleep.
 - [x] **NTP Synchronization**: SNTP sync on wake, POSIX timezone adjustment with automatic DST handling.
-- [x] **Weather Pipeline**: Open-Meteo REST fetch, ArduinoJson parsing, weather code to BWRY icon mapping, alert detection. (Evening syncs pull the *next* day's daily entry.)
+- [x] **Weather Pipeline**: Open-Meteo REST daily forecast fetch, ArduinoJson parsing, weather code to BWRY icon mapping, alert detection. Daytime (< 18:00) pulls today's expected maximum + condition; evening (≥ 18:00) pulls tomorrow's expected maximum + condition.
 - **Content Pipelines**:
   - [x] Verse of the Day pipeline (BibleGateway VOTD).
   - [x] Word of the Day pipeline — **A.Word.A.Day** (`wordsmith.org/words/today.html`):

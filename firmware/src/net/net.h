@@ -46,9 +46,8 @@ struct ProofWeather {
 int cc_wmoCondition(int code, char* buf, size_t bufsz, bool* outNeedAlert);
 
 // Fetch + parse Open-Meteo for the configured location into a WeatherData.
-// `tomorrow` selects the daily entry: false = today's current temperature and
-// code, true = tomorrow's forecast (daily max temp + code, since there is no
-// "current" reading for a future day).
+// `tomorrow` selects the daily entry: false = today's expected maximum and
+// code, true = tomorrow's forecast (daily max temp + code).
 // On success returns true and fills *out (alert may be null). On any failure
 // returns false and leaves *out untouched.
 bool cc_fetchWeather(WeatherData* out, bool tomorrow = false);

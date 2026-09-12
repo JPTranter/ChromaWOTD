@@ -168,7 +168,6 @@ bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
     char url[520];
     snprintf(url, sizeof(url),
         "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
-        "&current=temperature_2m,weather_code"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min"
         "&timezone=%s&forecast_days=2",
         CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE, CHROMAWOTD_TIMEZONE);
@@ -181,19 +180,12 @@ bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
 
     double temp = 0.0;
     int wmo = -1;
-    if (tomorrow) {
-        // No "current" reading exists for a future day: use the day's high.
-        JsonArray tmax  = doc["daily"]["temperature_2m_max"];
-        JsonArray codes = doc["daily"]["weather_code"];
-        if (tmax.size() < 2 || codes.size() < 2) return false;
-        temp = tmax[1].as<double>();
-        wmo  = codes[1].as<int>();
-    } else {
-        JsonObject current = doc["current"];
-        if (!current) return false;
-        temp = current["temperature_2m"].as<double>();
-        wmo  = current["weather_code"].as<int>();
-    }
+    JsonArray tmax  = doc["daily"]["temperature_2m_max"];
+    JsonArray codes = doc["daily"]["weather_code"];
+    size_t dayIdx = tomorrow ? 1 : 0;
+    if (tmax.size() <= dayIdx || codes.size() <= dayIdx) return false;
+    temp = tmax[dayIdx].as<double>();
+    wmo  = codes[dayIdx].as<int>();
     if (wmo < 0) return false;
 
     static char cond[NET_TEXT_MAX];

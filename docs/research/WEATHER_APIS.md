@@ -21,7 +21,7 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
 ## Source Analysis
 
 ### 1. Open-Meteo (Recommended Global & Universal Engine)
-* **Endpoint**: `https://api.open-meteo.com/v1/forecast?latitude=-33.8688&longitude=151.2093&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1`
+* **Endpoint**: `https://api.open-meteo.com/v1/forecast?latitude=-33.8688&longitude=151.2093&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2`
 * **Pros**:
   * Clean, minimal payload (< 500 bytes) specifically designed for microcontrollers and embedded devices.
   * Standardized WMO weather codes (0=Clear, 1-3=Partly Cloudy, 51-67=Rain, etc.) which map directly to our 4-icon vector engine (`drawWeatherIcon`).
@@ -71,7 +71,7 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
 
 1. **Open-Meteo (Burwood East Coordinates)**:
    ```http
-   GET https://api.open-meteo.com/v1/forecast?latitude=-37.8528&longitude=145.1633&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Australia%2FMelbourne&forecast_days=1
+   GET https://api.open-meteo.com/v1/forecast?latitude=-37.8528&longitude=145.1633&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Australia%2FMelbourne&forecast_days=2
    ```
 
 2. **BoM v1 API (Scoresby `r1r293`)**:
