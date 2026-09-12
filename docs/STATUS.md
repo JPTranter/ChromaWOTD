@@ -30,6 +30,8 @@
 | Weather icon mapping | ⚠️ **known limitation, accepted** — only WMO ≥ 80 get the Rain icon; Drizzle (51-57) and Rain (61-67) fall through to the plain Cloud icon. Text label is correct; decided 2026-09-12 to leave as-is (see LESSONS §35) |
 | Verse font auto-size | ✅ Ladder (`Roboto 6pt → 5.5pt → 5pt`, largest that fits the block) extracted to `cc_pickVerseFont()`/`cc_verseFontSize()`; block geometry now lives once in `verse_display.h` (`kVerseMaxW`/`kVerseMaxH`). Live 2026-09-13 VOTD (Phil 4:4) verified selecting **6pt** (see LESSONS §38) |
 | Auto-size local coverage | ✅ `test_verse_autosize` — CMake compiles this target **with** `-DCHROMAWOTD_FONT_FREESANS=1`, closing a blind spot where every other host target exercised only the non-FreeSans path. 7/7 suites pass; `verify_all.py` ALL GREEN |
+| Device-font host suite | ✅ `-DCHROMAWOTD_DEVICE_FONTS=ON` runs the layout invariants on the shipped proportional font path; two font-calibrated tests were corrected (overflow-marker detector, alert-rule probe) after a render proved the product was fine and only the tests were. Wired in as `verify_all.py` stage 3/5 (see LESSONS §39) |
+| Font decision tooling | ✅ `tools/font_size_probe.py --live` reports which body font today's content gets, straight from `cc_verseFontSize()` via `layout_render`; `tools/flash_when_awake.py` retry-loops an upload until the deep-asleep port returns |
 
 ## Next steps
 

@@ -762,3 +762,50 @@ text selects 6pt. Render archived as
 `docs/images/history/layout_landscape_verse_autosize_6pt_rejoice.png`.
 
 (2026-09-13)
+
+
+## 39. Font-specific test calibration: the same ink means different things per font (RESOLVED)
+
+**Context.** Adding `-DCHROMAWOTD_DEVICE_FONTS=ON` (`firmware/test/CMakeLists.txt`) to run the
+host suite on the shipped proportional font path immediately failed two layout invariants that
+had passed for months. Both were **test calibration**, not product defects — but only a render
+proved it, and the distinction matters:
+
+1. `WeatherAlert.TruncatedAlertStaysInsideColumn` and
+   `VerseOverflow.LandscapeMarksOverflowAndKeepsDividerIntact` looked for the `...` overflow
+   marker with `cellIsDotGlyph()`, a signature hardcoded to the **5x7** `'.'` (2x2 ink at
+   columns 2..3, rows 5..6 of a 6x8 cell, 6 px pitch). In Roboto `'.'` is a **1x1 dot** with a
+   3 px advance, so the detector could never match. Measured alternative: isolated single-pixel
+   dots 3 px apart.
+2. `LayoutAlert.LandscapeWithAlert` probed the single pixel `(251, 94)` for the red alert
+   divider. `drawLandscapeWeatherColumn()` computes `divY = labelY - 3` from the **wrapped line
+   count** of the alert text, so fewer lines in the proportional font pin the rule higher —
+   measured **y=101** on the device path vs **y=94** on 5x7, with the rule and the red
+   `ALERT:`/text present in both. The test had encoded one font's wrap count as geometry.
+
+**Rules.**
+- **Never hardcode a glyph's ink shape or a font-dependent coordinate in an invariant.** Detect
+  the marker/feature by a property that survives the font (a run length, an isolation test, a
+  colour predicate over a region) and assert the RELATION (rule below the temperature, above the
+  alert text), not one pixel's address. This is the second time a single-pixel probe has passed
+  for the wrong reason (`§36` is the first).
+- **A dot detector needs isolation on all four sides.** Requiring clean pixels above/below admits
+  the END of any baseline-terminating stroke: the bottom of `s`/`u`/`n` presents a last pixel
+  that is dot-shaped with clean above/below, and at Roboto's 3 px advance it lands exactly 3 px
+  from its neighbour — a false `...`. Adding left/right isolation rejects those horizontal runs.
+  Verify a detector against a KNOWN-NEGATIVE render (a short verse that fits) before trusting it.
+- **Mind the region bounds when a marker sits near an edge.** The alert's `...` lands on the
+  panel's second-to-last row, so a search loop bounded by `y + 2 <= y1` skips it. `CcCanvas::
+  getPixel()` is bounds-safe, so the neighbour reads may fall outside the region — only the dot's
+  own row must be inside it. `rectAllColor(227, 0, 230, ...)` also over-claimed: x=230 is not
+  gutter, it carries the centred condition line once the proportional font stops wrapping it.
+- **Run the suite on the font path you ship.** Both failures were invisible because the flag that
+  selects the shipped font never reached the host build; `verify_all.py` now runs the device-font
+  suite as stage 3/5, then re-runs the canonical suite so the ledger still compares 5x7 renders
+  (the layout tests write to fixed `output/` paths and would otherwise clobber the baseline).
+
+**Tools.** `python tools/font_size_probe.py --live` answers "which body font did today's content
+get?" by calling `cc_verseFontSize()` through `layout_render --live` — the answer comes from the
+real engine, never a re-derivation.
+
+(2026-09-13)

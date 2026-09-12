@@ -43,8 +43,11 @@ python tools/verify_all.py
 
 This command:
 1. Builds the firmware for XIAO ESP32-S3 (`pio run -e s3`)
-2. Runs the host test suite (CMake + GoogleTest)
-3. Verifies the render ledger (PNGs in `docs/images/` match ctest output)
+2. Runs the host test suite (CMake + GoogleTest) on the **5x7 fallback** font path
+3. Runs the same suite on the **device** font path (`-DCHROMAWOTD_DEVICE_FONTS=ON`, the
+   proportional Roboto set the firmware actually ships)
+4. Verifies the render ledger (PNGs in `docs/images/` match ctest output)
+5. Measures the layout alignment invariants
 
 **Exit code is non-zero on any failure.** If this passes, your setup is ready.
 
@@ -141,7 +144,32 @@ pio device monitor -b 115200
 **Notes:**
 - Build takes ~13 seconds on a clean tree.
 - Flash uses USB CDC serial (not DFU).
-- See `docs/LESSONS_LEARNT.md` for hardware-specific gotchas.
+- See `docs/lessons/LESSONS_LEARNT.md` for hardware-specific gotchas. (Note the
+  directory: `docs/LESSONS_LEARNT.md` no longer exists.)
+
+#### If `pio` is not on PATH
+
+On this Windows host PlatformIO is installed as a Python module rather than a
+`pio.exe` on `PATH`, so invoke it explicitly:
+
+```bash
+/c/Python314/python.exe -m platformio run -e s3
+```
+
+`tools/verify_all.py` detects this automatically and falls back to
+`python -m platformio`.
+
+#### Flashing a device that is deep-asleep
+
+While the XIAO ESP32-S3 deep-sleeps, its native USB Serial/JTAG port does **not exist**
+(`pio device list` is empty), so a one-shot `-t upload` fails with no port to attach to. The
+port returns on every wake — use the retry-loop uploader:
+
+```bash
+python tools/flash_when_awake.py --seconds 420
+```
+
+Or put the board into ROM download mode manually: **hold BOOT, tap RESET, release BOOT**.
 
 ### Host Tests (CMake + GoogleTest)
 

@@ -352,12 +352,36 @@ The suites are:
 | Suite | Covers |
 | :--- | :--- |
 | `test_layout_landscape` | Single-layout geometry, header band, divider, weather column |
-| `test_layout_alert` | Alert banner pinned to the bottom of the weather column |
-| `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers, temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
+| `test_layout_alert` | Alert banner pinned to the bottom of the weather column; locates the (dynamic) red divider rule by its run-length signature and asserts its relation to the temperature block and alert text |
+| `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers (per font family), temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
+| `test_verse_autosize` | The verse body auto-size ladder (Roboto 6/5.5/5pt) — compiled **with** `-DCHROMAWOTD_FONT_FREESANS=1` so the selection the panel makes is actually covered |
 | `test_net` | WMO code → condition/icon/alert mapping, JSON extraction, A.Word.A.Day HTML parsing (incl. printable-ASCII and newline-collapse guards), plus live-fetch smoke tests that skip when there is no network |
 | `test_sched` | Next-wake slot math (midnight roll-over, slot boundaries, never 0) and the time-based content/forecast policy |
 
 Fixtures used by the suites are mirrored in `tools/preview/sample_data.json` / `verse_template.html`.
+
+#### Testing the font path the device actually ships
+
+The firmware builds with `-DCHROMAWOTD_FONT_FREESANS=1`, but the host targets compile the
+fallback 5x7 path by default. The proportional glyph, degree, measurement and auto-size code the
+panel executes therefore needs its own run:
+
+```powershell
+cmake -S firmware/test -B firmware/test/build-device -G Ninja -DCHROMAWOTD_DEVICE_FONTS=ON
+cmake --build firmware/test/build-device
+ctest --test-dir firmware/test/build-device --output-on-failure
+```
+
+`tools/verify_all.py` runs this as stage 3/5 automatically. Always use a **separate build
+directory**: the layout tests write to fixed paths under `firmware/test/output/`, so a
+device-font run overwrites the 5x7 renders the ledger compares against `docs/images/`.
+
+To ask which body font a given text gets (the auto-size ladder picks by measured fit):
+
+```powershell
+python tools/font_size_probe.py --live                      # today's real content
+python tools/font_size_probe.py --verse "Trust in the Lord with all your heart."
+```
 
 ### Firmware Build & Flashing
 
