@@ -21,6 +21,15 @@
 
 namespace {
 
+const char* verseFontName(VerseFontSize s) {
+    switch (s) {
+        case VerseFontSize::Pt5:  return "Pt5";
+        case VerseFontSize::Pt55: return "Pt55";
+        case VerseFontSize::Pt6:  return "Pt6";
+    }
+    return "Pt55";
+}
+
 const char* kUsage =
     "usage: layout_render [options]\n"
     "\n"
@@ -197,6 +206,10 @@ int main(int argc, char** argv) {
     }
 
     printf("rendered 296x128 landscape/light -> %s\n", a.out.c_str());
+    // Report the auto-size decision the layout just made, straight from the real
+    // selector — this is what tools/font_size_probe.py reads, so "which font did
+    // today's text get?" is answered by the engine rather than by re-deriving it.
+    printf("verse_font=%s\n", verseFontName(cc_verseFontSize(v.verse, kVerseMaxW, kVerseMaxH)));
     printf("temp %.1f C | icon %d | highlight %s\n", a.temp, a.icon,
            !a.haveHighlight ? "n/a" : (verseHighlightFound(v) ? "matched" : "NOT FOUND - no red accent"));
     return 0;
