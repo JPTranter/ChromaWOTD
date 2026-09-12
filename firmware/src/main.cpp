@@ -64,6 +64,13 @@ static const int      kMinSleepSec      = 60;
 static const gpio_num_t kButtonPins[] = { GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_5 };
 static const int        kButtonCount  = sizeof(kButtonPins) / sizeof(kButtonPins[0]);
 
+// Safety net: consecutive button-wake cycles observed, kept in RTC memory so it
+// survives deep sleep. If a button line misbehaves (floats, or is stuck low) the
+// device would otherwise wake -> sync -> wake forever; after kExt1StreakLimit
+// such cycles we stop arming ext1 for one cycle and fall back to timer-only.
+RTC_DATA_ATTR static uint32_t g_ext1Streak = 0;
+static const uint32_t kExt1StreakLimit = 5;
+
 // --- Sync-task state, shared between the sync task and setup() -------------
 static VerseData   g_verse    = {};
 static WordData    g_word     = {};
@@ -257,15 +264,49 @@ void setup() {
     sleepSec = CHROMAWOTD_WAKE_TEST_SEC;
 #endif
 
-    // Button wake: enable RTC pull-ups (digital pulls are lost in deep sleep)
-    // and arm the shared ext1 mask. A press then wakes us for a normal sync.
+    // Button wake: BUTTON1/2/3 = GPIO2/3/5, active-low.
+    //
+    // EXPERIMENTAL — gated behind CHROMAWOTD_BUTTON_WAKE (off by default) until
+    // the pin behaviour is confirmed on real hardware. Enabling it on a board
+    // where these pads do not idle high produces a wake storm (boot -> sync ->
+    // wake instantly -> repeat), because a level-triggered ext1 ALL_LOW wake
+    // fires immediately if any armed pin already reads low.
+    //
+    // Correct configuration requires ALL of:
+    //   * rtc_gpio_init() + RTC_GPIO_MODE_INPUT_ONLY so the pad is owned by the
+    //     RTC domain (rtc_gpio_pullup_en() is a no-op otherwise),
+    //   * reading the level via rtc_gpio_get_level() — NOT digitalRead(), since
+    //     pinMode() hands the pad back to the digital domain and undoes the RTC
+    //     pull-up,
+    //   * arming only pins that actually idle HIGH.
+#ifdef CHROMAWOTD_BUTTON_WAKE
     uint64_t btnMask = 0;
-    for (int i = 0; i < kButtonCount; i++) {
-        rtc_gpio_pullup_en(kButtonPins[i]);
-        rtc_gpio_pulldown_dis(kButtonPins[i]);
-        btnMask |= (1ULL << (int)kButtonPins[i]);
+    if (wakeCause == ESP_SLEEP_WAKEUP_EXT1) g_ext1Streak++;
+    else                                    g_ext1Streak = 0;
+    if (g_ext1Streak >= kExt1StreakLimit) {
+        Serial.printf("button wake suppressed for one cycle (%lu consecutive button wakes) - timer only\n",
+                      (unsigned long)g_ext1Streak);
+        g_ext1Streak = 0;
     }
-    esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ALL_LOW);
+    for (int i = 0; i < kButtonCount && g_ext1Streak < kExt1StreakLimit; i++) {
+        gpio_num_t pin = kButtonPins[i];
+        rtc_gpio_init(pin);
+        rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
+        rtc_gpio_pulldown_dis(pin);
+        rtc_gpio_pullup_en(pin);
+        bool released = (rtc_gpio_get_level(pin) == 1);
+        Serial.printf("button GPIO%d idle=%s\n", (int)pin,
+                      released ? "HIGH (armed)" : "LOW (floating? NOT armed)");
+        if (released) btnMask |= (1ULL << (int)pin);
+    }
+    if (btnMask) {
+        esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ALL_LOW);
+    } else {
+        Serial.println("button wake disabled (no pin idles HIGH) - timer only");
+    }
+#else
+    Serial.println("button wake: not enabled in this build (timer-only sleep)");
+#endif
     esp_sleep_enable_timer_wakeup(sleepSec * 1000000ULL);
     Serial.printf("awake-status: wake_cause=%d, sleeping %llu s (or on button)\n",
                   (int)wakeCause, (unsigned long long)sleepSec);
