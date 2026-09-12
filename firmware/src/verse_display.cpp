@@ -4,21 +4,10 @@
 #include <cstring>
 #include <cmath>
 
-// ---------------------------------------------------------------------------
-// Shared UTF-8 -> single-byte decoding.
-//
-// TFT_eSPI's built-in font is ASCII/CP437 and must never receive multi-byte
-// UTF-8: it would draw one garbage glyph per byte. Real API text (BibleGateway,
-// Open-Meteo) carries curly quotes, en/em dashes, non-breaking spaces, ellipsis
-// and warning signs, so every draw path funnels through cc_utf8ToAscii().
-// 0xB0 is the degree sign sentinel and is drawn as a vector circle, not a glyph.
-// ---------------------------------------------------------------------------
-#define CC_DEGREE  0xB0
-#define CC_UNKNOWN '?'
-#define CC_GLYPH_W 6   // built-in font advance in pixels per size unit
-
-static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out);
-static int cc_utf8ToAsciiN(const unsigned char* p, const unsigned char* end, unsigned char* out);
+// Shared UTF-8 -> single-byte decoder and wrapping math live in text/ (D1) so
+// they are pure, unit-testable units rather than hidden in this monolith.
+#include "text/glyphs.h"
+#include "text/wrap.h"
 
 // ---------------------------------------------------------------------------
 // Backend abstraction (D6). All drawing routes through the DisplayTarget
@@ -179,85 +168,6 @@ static int cc_lineHeight(int size, int fallback) {
 #endif
 }
 
-// Maps the glyph starting at p to one ASCII byte. Returns bytes consumed (>= 1).
-// NUL-terminated variant: relies on the string's terminator to stop reads, so it
-// is only safe for full C strings. Bounded callers must use cc_utf8ToAsciiN.
-static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out) {
-    unsigned char c = p[0];
-    if (c < 0x80) { *out = c; return 1; }
-
-    // 2-byte sequences (U+0080..U+07FF)
-    if (c == 0xC2 && p[1]) {
-        if (p[1] == 0xB0) { *out = CC_DEGREE; return 2; }  // ° degree sign
-        if (p[1] == 0xA0) { *out = ' ';       return 2; }  // non-breaking space
-        *out = CC_UNKNOWN; return 2;
-    }
-    // 3-byte sequences (U+2000..U+2FFF)
-    if (c == 0xE2 && p[1] && p[2]) {
-        if (p[1] == 0x80) {
-            switch (p[2]) {
-                case 0x93: case 0x94: case 0x95: *out = '-';  return 3;  // – — ―
-                case 0x98: case 0x99:            *out = '\''; return 3;  // ‘ ’
-                case 0x9C: case 0x9D:            *out = '"';  return 3;  // “ ”
-                case 0xA2:                       *out = '\''; return 3;  // ′ prime
-                case 0xA6:                       *out = '.';  return 3;  // … ellipsis
-                default: break;
-            }
-        }
-        if (p[1] == 0x9A && p[2] == 0xA0) { *out = '!'; return 3; }  // ⚠ warning sign
-        *out = CC_UNKNOWN; return 3;
-    }
-    // 4-byte sequences (emoji etc.) collapse to a single replacement glyph.
-    if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) { *out = CC_UNKNOWN; return 4; }
-    *out = CC_UNKNOWN; return 1;
-}
-
-// Length-bounded variant of cc_utf8ToAscii: reads at most (end - p) bytes, never
-// past `end`. A multi-byte sequence cut short by `end` collapses to a single
-// CC_UNKNOWN replacement and consumes only its lead byte (>= 1), so the decoder
-// can never read out of bounds regardless of input. Byte-identical to
-// cc_utf8ToAscii whenever the full sequence is present within the bound — which is
-// every well-formed word in practice, since word-split boundaries (ASCII space)
-// never land inside a UTF-8 continuation sequence.
-static int cc_utf8ToAsciiN(const unsigned char* p, const unsigned char* end, unsigned char* out) {
-    if (p >= end) { *out = CC_UNKNOWN; return 1; }  // defensive; callers loop on p < end
-    unsigned char c = p[0];
-    if (c < 0x80) { *out = c; return 1; }
-    const int avail = (int)(end - p);
-
-    // 2-byte sequences (U+0080..U+07FF)
-    if (c == 0xC2) {
-        if (avail < 2) { *out = CC_UNKNOWN; return 1; }  // truncated lead byte
-        if (p[1] == 0xB0) { *out = CC_DEGREE; return 2; }  // ° degree sign
-        if (p[1] == 0xA0) { *out = ' ';       return 2; }  // non-breaking space
-        *out = CC_UNKNOWN; return 2;
-    }
-    // 3-byte sequences (U+2000..U+2FFF)
-    if (c == 0xE2) {
-        if (avail < 3) { *out = CC_UNKNOWN; return 1; }  // truncated lead byte
-        if (p[1] == 0x80) {
-            switch (p[2]) {
-                case 0x93: case 0x94: case 0x95: *out = '-';  return 3;  // – — ―
-                case 0x98: case 0x99:            *out = '\''; return 3;  // ‘ ’
-                case 0x9C: case 0x9D:            *out = '"';  return 3;  // “ ”
-                case 0xA2:                       *out = '\''; return 3;  // ′ prime
-                case 0xA6:                       *out = '.';  return 3;  // … ellipsis
-                default: break;
-            }
-        }
-        if (p[1] == 0x9A && p[2] == 0xA0) { *out = '!'; return 3; }  // ⚠ warning sign
-        *out = CC_UNKNOWN; return 3;
-    }
-    // 4-byte sequences (emoji etc.) collapse to a single replacement glyph.
-    if ((c & 0xF8) == 0xF0) {
-        if (avail < 4) { *out = CC_UNKNOWN; return 1; }  // truncated lead byte
-        *out = CC_UNKNOWN; return 4;
-    }
-    *out = CC_UNKNOWN; return 1;
-}
-
-// Glyph (not byte) count of the first len bytes; mirrors cc_utf8ToAscii exactly
-// so measured width always matches drawn width.
 // Round half away from zero: -0.6 -> -1 (plain (int)(t+0.5f) gives 0).
 static int cc_roundTemp(float t) { return (int)lroundf(t); }
 
@@ -445,27 +355,7 @@ static int cc_wrappedLineCount(const char* text, int maxW, int size) {
 }
 
 // How many lines fit in maxH at this line height.
-static int cc_lineCapacity(int maxH, int size, int lineHeight) {
-    if (maxH < 8 * size) return 0;
-    return (maxH - 8 * size) / lineHeight + 1;
-}
-
-// Width budget for one line. When the text will be cut off, the final line is kept
-// short enough that the "..." marker still fits inline: 6 glyph widths of slack for
-// centred text (the line floats, so both margins count).
-static int cc_lineBudget(int maxW, int charWidth, bool truncated, int lineIdx, int capacity) {
-    const int slack = 6;
-    if (truncated && capacity > 0 && lineIdx == capacity - 1) {
-        int budget = maxW - slack * charWidth;
-        // When the column is so narrow that even the reserved slack can't fit,
-        // we return maxW (no reservation). In that case drawOverflowMarker's
-        // "..." degrades to a single "." — an accepted trade-off: a lone dot is
-        // the only marker that fits a sub-4-glyph column, and silently dropping
-        // the marker entirely would be worse than an ambiguous ".".
-        if (budget >= 4 * charWidth) return budget;
-    }
-    return maxW;
-}
+// (cc_lineCapacity and cc_lineBudget moved to text/wrap.cpp — pure math.)
 
 // Marks text the block could not hold. Prefers "..." right after the last word;
 // when that does not fit, right-aligns ".." into the free gap at the block edge

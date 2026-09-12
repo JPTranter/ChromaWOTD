@@ -46,10 +46,12 @@ set(CC_INC_DIR   "${CC_FW_DIR}/include")
 set(CC_HARN_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/harness")
 set(CC_STB_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
-# Mock canvas library + host DisplayTarget backend
+# Mock canvas library + host DisplayTarget backend + pure text modules
 add_library(chroma_canvas STATIC
     ${CC_HARN_DIR}/canvas.cpp
     ${CC_SRC_DIR}/draw/target_canvas.cpp
+    ${CC_SRC_DIR}/text/glyphs.cpp
+    ${CC_SRC_DIR}/text/wrap.cpp
 )
 target_include_directories(chroma_canvas PUBLIC
     ${CC_HARN_DIR}
