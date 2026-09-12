@@ -196,7 +196,9 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
             break;
         }
         case 2: { // Rain
-            int cyShift = cy - 4;
+            // cyShift and the drop x-offset must scale with size so the glyph stays
+            // proportional when the icon is reflowed larger (see drawLandscapeWeatherColumn).
+            int cyShift = cy - size / 6;   // == cy-4 at size 24
             dev_fillCircle(cx - size / 4, cyShift + size / 10, size / 5, cloudFill);
             dev_drawCircle(cx - size / 4, cyShift + size / 10, size / 5, cloudOutline);
             dev_fillCircle(cx + size / 5, cyShift + size / 10, size / 6, cloudFill);
@@ -205,18 +207,24 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
             dev_drawCircle(cx, cyShift - size / 10, size / 4, cloudOutline);
             dev_fillRect(cx - size / 4, cyShift - size / 10, size / 2, size / 3, cloudFill);
             dev_drawFastHLine(cx - size / 3, cyShift + size / 4, (size * 2) / 3, cloudOutline);
-            // Red rain drops
-            dev_drawLine(cx - 6, cyShift + size / 4 + 3, cx - 9, cyShift + size / 2 + 3, CC_RED);
-            dev_drawLine(cx,     cyShift + size / 4 + 3, cx - 3, cyShift + size / 2 + 3, CC_RED);
-            dev_drawLine(cx + 6, cyShift + size / 4 + 3, cx + 3, cyShift + size / 2 + 3, CC_RED);
+            // Red rain drops (offsets proportional to size; == 6/3/9 at size 24)
+            int dx = size / 4;
+            int dropTop = cyShift + size / 4 + 3;
+            int dropBot = cyShift + size / 2 + 3;
+            dev_drawLine(cx - dx, dropTop, cx - dx - 3, dropBot, CC_RED);
+            dev_drawLine(cx,      dropTop, cx - 3,       dropBot, CC_RED);
+            dev_drawLine(cx + dx, dropTop, cx + dx - 3, dropBot, CC_RED);
             break;
         }
         case 3: // Partly cloudy
         default: {
-            // Sun peeking behind cloud
+            // Sun peeking behind cloud (stub rays scale with size so the glyph
+            // stays proportional on the larger reflowed icon)
+            int ray = size / 8;   // == 3 at size 24
+            if (ray < 3) ray = 3;
             dev_fillCircle(cx - size / 4, cy - size / 5, size / 4, CC_YELLOW);
-            dev_drawLine(cx - size / 4, cy - size / 5 - size / 4 - 3, cx - size / 4, cy - size / 5 - size / 4 - 1, CC_YELLOW);
-            dev_drawLine(cx - size / 4 - size / 4 - 3, cy - size / 5, cx - size / 4 - size / 4 - 1, cy - size / 5, CC_YELLOW);
+            dev_drawLine(cx - size / 4, cy - size / 5 - size / 4 - ray, cx - size / 4, cy - size / 5 - size / 4 - ray + 2, CC_YELLOW);
+            dev_drawLine(cx - size / 4 - size / 4 - ray, cy - size / 5, cx - size / 4 - size / 4 - ray + 2, cy - size / 5, CC_YELLOW);
             // Masking cloud in foreground
             dev_fillCircle(cx - size / 6, cy + size / 8, size / 5, cloudFill);
             dev_drawCircle(cx - size / 6, cy + size / 8, size / 5, cloudOutline);
@@ -416,9 +424,11 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     }
 }
 
-// 72 px-wide weather column (20% smaller than the original 90 px). The alert block
-// — rule, ALERT: label and wrapped text — is pinned to the BOTTOM of the view; the
-// condition fills whatever space remains above it.
+// 66 px-wide weather column. The alert block — rule, ALERT: label and wrapped
+// text — is pinned to the BOTTOM when present (icon stays at the fixed 24px
+// size). Without an alert the icon GROWS (up to 2x) and the temperature +
+// condition push down, so the stack fills the column height instead of hugging
+// the top and leaving a band of whitespace at the bottom.
 static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     const int colW = 66;
     const int half = 28;
@@ -426,29 +436,63 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     int fcWidth = dev_measureText("FORECAST", 1);
     dev_drawString(cx - fcWidth / 2, 6, "FORECAST", CC_BLACK, 1);
     dev_drawFastHLine(cx - half, 17, 2 * half, CC_BLACK);
-    drawWeatherIcon(cx, 32, 24, w.icon);
 
     char tbuf[16];
     snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
-    int tWidth = dev_measureText(tbuf, 2);
-    dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
 
-    const int condTop = 65;
     if (w.alert) {
+        // --- Alert pinned to bottom; icon + temp at the fixed top layout. -----
+        drawWeatherIcon(cx, 32, 24, w.icon);
+        int tWidth = dev_measureText(tbuf, 2);
+        dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
+
         int lines = cc_wrappedLineCount(w.alert, colW, 1);
         if (lines > 3) lines = 3;
         int textY  = 128 - 2 - 8 - (lines - 1) * 10;   // last line ends 2 px above bottom
         int labelY = textY - 11;
         int divY   = labelY - 3;
         if (w.condition) {
-            drawWrappedTextCentered(cx, condTop, colW, divY - 2 - condTop, w.condition, CC_BLACK, 1, 10);
+            drawWrappedTextCentered(cx, 65, colW, divY - 2 - 65, w.condition, CC_BLACK, 1, 10);
         }
         dev_drawFastHLine(cx - half, divY, 2 * half, CC_RED);
         int alWidth = dev_measureText("ALERT:", 1);
         dev_drawString(cx - alWidth / 2, labelY, "ALERT:", CC_RED, 1);
         drawWrappedTextCentered(cx, textY, colW, 128 - 2 - textY, w.alert, CC_RED, 1, 10);
-    } else if (w.condition) {
-        drawWrappedTextCentered(cx, condTop, colW, 128 - 2 - condTop, w.condition, CC_BLACK, 1, 10);
+        return;
+    }
+
+    // --- No alert: grow the icon to use the freed space, stack fills the column.
+    const int colTop = 17;      // below the FORECAST rule
+    const int colBot = 126;     // 2 px above the panel bottom
+    const int availH = colBot - colTop;             // 109
+    const int tempH  = 18;                          // size-2 temperature block
+    const int gap    = 4;
+
+    // Condition height depends on how many lines it wraps to (same estimate the
+    // renderer uses), so the icon yields space as the condition grows.
+    int condLines = w.condition ? cc_wrappedLineCount(w.condition, colW, 1) : 0;
+    if (condLines > 5) condLines = 5;
+    const int condH = condLines * 10 + 8;           // wrapped condition + 8px inset
+
+    // Icon size = leftover column after temp + condition, clamped to [24, 48].
+    int iconS = availH - tempH - condH - 2 * gap;
+    if (iconS < 24) iconS = 24;
+    else if (iconS > 48) iconS = 48;
+
+    // Top-align under the header (2px pad). Any remaining whitespace collects
+    // below the condition, so the column reads "filled".
+    int topPad = 2;
+
+    int iconCY = colTop + topPad + iconS / 2;
+    drawWeatherIcon(cx, iconCY, iconS, w.icon);
+
+    int tempY = colTop + topPad + iconS + gap;
+    int tWidth = dev_measureText(tbuf, 2);
+    dev_drawString(cx - tWidth / 2, tempY, tbuf, CC_BLACK, 2);
+
+    if (w.condition) {
+        int condStart = tempY + tempH + gap;
+        drawWrappedTextCentered(cx, condStart, colW, colBot - condStart, w.condition, CC_BLACK, 1, 10);
     }
 }
 
