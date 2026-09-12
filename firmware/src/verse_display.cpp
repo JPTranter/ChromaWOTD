@@ -280,6 +280,41 @@ static int cc_wrappedLineCount(const char* text, int maxW, int size) {
 // How many lines fit in maxH at this line height.
 // (cc_lineCapacity and cc_lineBudget moved to text/wrap.cpp — pure math.)
 
+// Auto-size the verse body font: the largest of Roboto 6 / 5.5 / 5pt whose
+// wrapped line count still fits the block height. Extracted from
+// drawVerseBlock() so the host suite can assert the selection directly
+// instead of pixel-probing the render (LESSONS §38).
+#ifdef CHROMAWOTD_FONT_FREESANS
+static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
+    static const GFXfont* const candidates[3] = { &Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b };
+    // The wrap measurement routes through cc_advance(), which reads the global
+    // g_bodyFont — so the candidate must BE the active body font while its line
+    // count is measured (measuring every candidate at one font collapses the
+    // ladder; see LESSONS §38).
+    const GFXfont* prev = g_bodyFont;
+    const GFXfont* pick = &Roboto5pt7b;   // nothing fit: smallest font
+    for (int i = 0; i < 3; i++) {
+        g_bodyFont = candidates[i];
+        const int cap = cc_lineCapacity(maxH, 1, candidates[i]->yAdvance);
+        if (cc_wrappedLineCount(verse, maxW, 1) <= cap) { pick = candidates[i]; break; }
+    }
+    g_bodyFont = prev;
+    return pick;
+}
+
+VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH) {
+    const GFXfont* f = cc_pickVerseFont(verse, maxW, maxH);
+    if (f == &Roboto6pt7b) return VerseFontSize::Pt6;
+    if (f == &Roboto5pt7b) return VerseFontSize::Pt5;
+    return VerseFontSize::Pt55;
+}
+#else
+VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH) {
+    (void)verse; (void)maxW; (void)maxH;
+    return VerseFontSize::Pt55;   // auto-size compiled out: fixed default body font
+}
+#endif
+
 // Marks text the block could not hold. Prefers "..." right after the last word;
 // when that does not fit, right-aligns ".." into the free gap at the block edge
 // (without touching the word's ink); falls back to a single "." only when even
@@ -373,13 +408,7 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     // the default 5.5pt via g_bodyFont.
 #ifdef CHROMAWOTD_FONT_FREESANS
     const GFXfont* prevFont = g_bodyFont;
-    const GFXfont* candidates[3] = { &Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b };
-    for (int i = 0; i < 3; i++) {
-        g_bodyFont = candidates[i];
-        int lh = g_bodyFont->yAdvance;
-        int cap = cc_lineCapacity(maxH, 1, lh);
-        if (cc_wrappedLineCount(vd.verse, maxW, 1) <= cap) { break; }   // fits
-    }
+    g_bodyFont = cc_pickVerseFont(vd.verse, maxW, maxH);
 #endif
 
     // Locate the highlighted phrase: exact match first, then case-insensitive so a
@@ -566,8 +595,6 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
     static constexpr int kHeaderH = 14;       // was 20; smaller 5pt body needs less header height
     static constexpr int kWeatherCx = (kSplitX + 1 + kPanelW) / 2;  // center of weather column
     static constexpr int kVerseMargin = 4;    // verse block left margin
-    static constexpr int kVerseMaxW = kSplitX - 2 * kVerseMargin;   // verse block width
-    static constexpr int kVerseMaxH = 82;     // verse block height (fits 5 lines at 5.5pt)
     static constexpr int kReferenceY = 109;   // reference line y-position
     static constexpr int kWeatherColW = 66;   // weather column width (66px fits FORECAST + 3-line alert)
     static constexpr int kWeatherColHalf = 28; // half of kWeatherColW (for FORECAST rule)

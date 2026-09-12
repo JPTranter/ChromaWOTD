@@ -61,3 +61,16 @@ void drawLayout(const VerseData& v, const WeatherData& w,
 // True when v.highlight was located inside v.verse (exact or case-insensitive).
 // Callers should surface a false result rather than silently losing the red accent.
 bool verseHighlightFound(const VerseData& v);
+
+// Which body font the verse-block auto-size ladder selects for `verse` in a
+// block of maxW x maxH px (the layout's kVerseMaxW / kVerseMaxH). Under
+// CHROMAWOTD_FONT_FREESANS this is the real Roboto 6/5.5/5pt selection; without
+// the flag the ladder is compiled out and the fixed default (5.5pt) is reported.
+enum class VerseFontSize { Pt5, Pt55, Pt6 };
+VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH);
+
+// Verse text-block geometry — single source of truth shared by drawLayout()
+// and the auto-size tests (kSplitX 226 - 2 * kVerseMargin 4 = 218 wide; 82 px
+// tall fits 5 lines at the 5.5pt default).
+constexpr int kVerseMaxW = 218;
+constexpr int kVerseMaxH = 82;
