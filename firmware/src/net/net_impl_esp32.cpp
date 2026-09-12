@@ -26,7 +26,9 @@
 //   - Let's Encrypt "YR2" inter.  -> api.open-meteo.com (leaf O=Let's Encrypt CN=YR2;
 //                                   served by the new ISRG Root YR). We pin YR2 so
 //                                   the bundle stays small; it chains to ISRG Root YR.
-// These are deliberately NOT a system CA bundle: only these two hosts are used.
+//   - Let's Encrypt "YE1" inter.  -> wordsmith.org (A.Word.A.Day), same new ECDSA
+//                                   hierarchy (chains to ISRG Root YE / X2).
+// These are deliberately NOT a system CA bundle: only the hosts we use.
 static const char ROOT_CA_AMAZON[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIEkjCCA3qgAwIBAgITBn+USionzfP6wq4rAfkI7rnExjANBgkqhkiG9w0BAQsF
@@ -88,11 +90,31 @@ LRFgxIAphIukwTGSMZZR+AI+Qnp0BYTWovHXozOf3H8r6hozEoT02JHn0AeTfA==
 -----END CERTIFICATE-----
 )EOF";
 
+static const char ROOT_CA_YE1[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIICizCCAhGgAwIBAgIQXd1w3TH4AchcGGp6BLgK/jAKBggqhkjOPQQDAzAuMQsw
+CQYDVQQGEwJVUzENMAsGA1UEChMESVNSRzEQMA4GA1UEAxMHUm9vdCBZRTAeFw0y
+NTA5MDMwMDAwMDBaFw0yODA5MDIyMzU5NTlaMDMxCzAJBgNVBAYTAlVTMRYwFAYD
+VQQKEw1MZXQncyBFbmNyeXB0MQwwCgYDVQQDEwNZRTEwdjAQBgcqhkjOPQIBBgUr
+gQQAIgNiAAQHZVB1/mimla2hfSurylScjPMZaOJXLz/NnAc2sylm8WDyhU9Ccp+z
+ASQi5vSwGGJjSGklkD9fdPR8GpyDIOIjCEfrnbt/v+ZSEPLLEGbaM6EccDbN7p9x
+teIm2Avf+ryjge4wgeswDgYDVR0PAQH/BAQDAgGGMBMGA1UdJQQMMAoGCCsGAQUF
+BwMBMBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFLsgykcL/tflnPmPCSqj
+jDdFsbzYMB8GA1UdIwQYMBaAFKPIJlqOoUzQNWP8myPIOq5W809WMDIGCCsGAQUF
+BwEBBCYwJDAiBggrBgEFBQcwAoYWaHR0cDovL3llLmkubGVuY3Iub3JnLzATBgNV
+HSAEDDAKMAgGBmeBDAECATAnBgNVHR8EIDAeMBygGqAYhhZodHRwOi8veWUuYy5s
+ZW5jci5vcmcvMAoGCCqGSM49BAMDA2gAMGUCMQDgjUEahFT/h3DRakqiPZpLvPgf
+Zwkt6K2EOMmh1nvEzl83eMLYcod4GCl3b0J1Nn0CMBNYmEQJb4CEG5WoOe7aRn/L
+VKu6saHmHEynI7ysIPd8zQsK1HdmhlHKlw9Z5GpGvA==
+-----END CERTIFICATE-----
+)EOF";
+
 namespace {
 
-// Pick the root CA for a host: Amazon for BibleGateway, YR2 for open-meteo.
+// Pick the root CA for a host.
 const char* caForHost(const char* host) {
     if (strstr(host, "open-meteo.com")) return ROOT_CA_YR2;
+    if (strstr(host, "wordsmith.org"))  return ROOT_CA_YE1;
     return ROOT_CA_AMAZON;   // default: biblegateway
 }
 
@@ -142,13 +164,13 @@ bool cc_fetchJsonThrottled(const char* url, char* out, size_t outsz) {
 }
 
 // --- Weather fetch (device): real HTTP + ArduinoJson parse -----------------
-bool cc_fetchWeather(WeatherData* w) {
+bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
     char url[520];
     snprintf(url, sizeof(url),
         "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
         "&current=temperature_2m,weather_code"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-        "&timezone=%s&forecast_days=1",
+        "&timezone=%s&forecast_days=2",
         CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE, CHROMAWOTD_TIMEZONE);
 
     char json[4096];
@@ -156,10 +178,23 @@ bool cc_fetchWeather(WeatherData* w) {
 
     JsonDocument doc;
     if (deserializeJson(doc, json)) return false;
-    JsonObject current = doc["current"];
-    if (!current) return false;
-    double temp = current["temperature_2m"].as<double>();
-    int wmo = current["weather_code"].as<int>();
+
+    double temp = 0.0;
+    int wmo = -1;
+    if (tomorrow) {
+        // No "current" reading exists for a future day: use the day's high.
+        JsonArray tmax  = doc["daily"]["temperature_2m_max"];
+        JsonArray codes = doc["daily"]["weather_code"];
+        if (tmax.size() < 2 || codes.size() < 2) return false;
+        temp = tmax[1].as<double>();
+        wmo  = codes[1].as<int>();
+    } else {
+        JsonObject current = doc["current"];
+        if (!current) return false;
+        temp = current["temperature_2m"].as<double>();
+        wmo  = current["weather_code"].as<int>();
+    }
+    if (wmo < 0) return false;
 
     static char cond[NET_TEXT_MAX];
     static char alert[NET_TEXT_MAX];
@@ -174,6 +209,16 @@ bool cc_fetchWeather(WeatherData* w) {
             : (wmo >= 80) ? WeatherIcon::Rain
             : WeatherIcon::Cloud;
     return true;
+}
+
+// --- Word of the Day (device): fetch the A.Word.A.Day page + shared parse ---
+// The page is ~10 KB, so the buffer is static (BSS) rather than a stack frame —
+// the sync task only owns 16 KB of stack.
+bool cc_fetchWord(WordData* out) {
+    static char html[16384];
+    if (!cc_fetchJsonThrottled("https://wordsmith.org/words/today.html",
+                               html, sizeof(html))) return false;
+    return cc_parseAwad(html, out);
 }
 
 // --- Verse fetch (device): real HTTP + ArduinoJson parse -------------------

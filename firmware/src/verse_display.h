@@ -38,10 +38,25 @@ struct WeatherData {
     WeatherIcon icon;        // 0=sun, 1=cloud, 2=rain, 3=partly
 };
 
+// Optional presentation strings for the single landscape layout. Grouped in a
+// struct so adding another label is one field, not another positional argument.
+struct LayoutOptions {
+    // Yellow-band title ("Verse of the Day" / "Word of the Day").
+    const char* headerTitle  = "Verse of the Day";
+    // Caption above the weather column ("FORECAST" / "TOMORROW").
+    const char* weatherLabel = "FORECAST";
+    // Black caption drawn at the LEFT end of the bottom rule — used for the
+    // Word-of-the-Day pronunciation respelling, e.g. "(bre-VIL-uh-kwuhnt)".
+    // Null means nothing is drawn on the left.
+    const char* leftCaption  = nullptr;
+};
+
 // Render the one and only layout (landscape, light theme) into the target canvas.
 // The (Orientation, Theme) pair is currently (Landscape, Light) only; the dispatcher
 // is written to accept the full enum set so adding a new presentation is mechanical.
-void drawLayout(const VerseData& v, const WeatherData& w);
+// `verseHighlightFound()` is called by the caller, not here.
+void drawLayout(const VerseData& v, const WeatherData& w,
+                const LayoutOptions& opts = {});
 
 // True when v.highlight was located inside v.verse (exact or case-insensitive).
 // Callers should surface a false result rather than silently losing the red accent.

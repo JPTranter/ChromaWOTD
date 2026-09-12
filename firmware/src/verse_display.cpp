@@ -462,7 +462,7 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
 // size). Without an alert the icon GROWS (up to 2x) and the temperature +
 // condition push down, so the stack fills the column height instead of hugging
 // the top and leaving a band of whitespace at the bottom.
-static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
+static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char* label) {
     // Column geometry (was magic numbers; named here so a design change is one edit).
     static constexpr int kColW    = 66;   // wrapped-text width (fits FORECAST + 3-line alert)
     static constexpr int kHalf    = 28;   // half of the FORECAST/alert rule span
@@ -473,9 +473,10 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     static constexpr int kIconMin = 24;   // fixed alert-layout icon size / reflow lower clamp
     static constexpr int kIconMax = 48;   // reflow upper clamp (2x the fixed size)
 
-    // FORECAST header aligned with the yellow header box's bottom rule (y=13).
-    int fcWidth = dev_measureText("FORECAST", 1);
-    dev_drawString(cx - fcWidth / 2, 4, "FORECAST", CC_BLACK, 1);
+    // Section caption ("FORECAST" / "TOMORROW"), centred and aligned with the
+    // yellow header box's bottom rule (y=13).
+    int fcWidth = dev_measureText(label, 1);
+    dev_drawString(cx - fcWidth / 2, 4, label, CC_BLACK, 1);
     dev_drawFastHLine(cx - kHalf, 13, 2 * kHalf, CC_BLACK);   // aligns with header bottom (headerH-1)
 
     char tbuf[16];
@@ -554,7 +555,7 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     }
 }
 
-void drawLayout(const VerseData& v, const WeatherData& w) {
+void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& opts) {
     // Layout constants — single source of truth for geometry.
     // These replace the magic numbers scattered throughout drawLayout() and
     // drawLandscapeWeatherColumn(). Each constant has a one-line rationale.
@@ -572,7 +573,7 @@ void drawLayout(const VerseData& v, const WeatherData& w) {
 
     // 1. Header (Yellow band)
     dev_fillRect(0, 0, kSplitX, kHeaderH, CC_YELLOW);
-    dev_drawString(6, 2, "Verse of the Day", CC_BLACK, 1);   // lifted 1px
+    dev_drawString(6, 2, opts.headerTitle, CC_BLACK, 1);   // lifted 1px
     if (v.date) {
         dev_drawStringRight(kSplitX - 6, 2, v.date, CC_BLACK, 1);   // lifted 1px
     }
@@ -582,10 +583,24 @@ void drawLayout(const VerseData& v, const WeatherData& w) {
     dev_fillRect(0, kHeaderH, kSplitX, kPanelH - kHeaderH, CC_WHITE);
     drawVerseBlock(kVerseMargin, kHeaderH + kVerseMargin, kVerseMaxW, kVerseMaxH, v);
 
-    // 3. Reference line (Red) — moved 5px lower
-    if (v.reference) {
+    // 3. Caption line: red rule with an optional black caption at the left
+    //    (Word-of-the-Day pronunciation) and an optional red caption at the
+    //    right (verse reference, or the Word-of-the-Day headword).
+    if (v.reference || opts.leftCaption) {
         dev_drawFastHLine(10, kReferenceY, kSplitX - 20, CC_RED);
-        dev_drawStringRight(kSplitX - 8, kReferenceY + 6, v.reference, CC_RED, 1);
+        // Right caption (red) is placed first; the left caption (black) is only
+        // drawn if it still clears it, so a long word + long respelling degrades
+        // by dropping the pronunciation rather than overprinting.
+        int rightEdge = kSplitX - 8;
+        if (v.reference) {
+            dev_drawStringRight(rightEdge, kReferenceY + 6, v.reference, CC_RED, 1);
+            rightEdge -= dev_measureText(v.reference, 1);
+        }
+        if (opts.leftCaption) {
+            int leftW = dev_measureText(opts.leftCaption, 1);
+            if (10 + leftW + 8 <= rightEdge)
+                dev_drawString(10, kReferenceY + 6, opts.leftCaption, CC_BLACK, 1);
+        }
     }
 
     // 4. Vertical divider
@@ -593,5 +608,5 @@ void drawLayout(const VerseData& v, const WeatherData& w) {
 
     // 5. Right-hand weather column (alert pinned to bottom)
     dev_fillRect(kSplitX + 1, 0, kPanelW - kSplitX - 1, kPanelH, CC_WHITE);
-    drawLandscapeWeatherColumn(kWeatherCx, w);
+    drawLandscapeWeatherColumn(kWeatherCx, w, opts.weatherLabel);
 }

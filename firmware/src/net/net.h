@@ -46,9 +46,12 @@ struct ProofWeather {
 int cc_wmoCondition(int code, char* buf, size_t bufsz, bool* outNeedAlert);
 
 // Fetch + parse Open-Meteo for the configured location into a WeatherData.
+// `tomorrow` selects the daily entry: false = today's current temperature and
+// code, true = tomorrow's forecast (daily max temp + code, since there is no
+// "current" reading for a future day).
 // On success returns true and fills *out (alert may be null). On any failure
 // returns false and leaves *out untouched.
-bool cc_fetchWeather(WeatherData* out);
+bool cc_fetchWeather(WeatherData* out, bool tomorrow = false);
 
 // --- Verse (BibleGateway) ---
 // Decode common HTML entities in place in `s` (safe: every sequence maps to a
@@ -65,6 +68,25 @@ void cc_stripLeadingBracket(char* s);
 // fills *out (highlight chosen per verse text; reference + date filled). On
 // failure returns false and leaves *out untouched.
 bool cc_fetchVerse(VerseData* out);
+
+// --- Word of the Day (Wordsmith A.Word.A.Day) ---
+// Fields point at internal static storage; valid until the next fetch/parse call.
+struct WordData {
+    const char* word;           // "breviloquent"
+    const char* pronunciation;  // respelling incl. parens: "(bre-VIL-uh-kwuhnt)"
+    const char* definition;     // "adjective: Using few words."
+    const char* example;        // quoted usage sentence, or nullptr
+};
+
+// Parse an A.Word.A.Day page (wordsmith.org/words/today.html) into a WordData.
+// Pure: operates on the fetched HTML buffer, so it is shared by host and device.
+// Section values are located by their label markers (PRONUNCIATION / MEANING /
+// USAGE); returns false if the page shape is not recognised.
+bool cc_parseAwad(const char* html, WordData* out);
+
+// Fetch + parse the Word of the Day. On failure returns false and leaves *out
+// untouched (the caller falls back to a bundled word).
+bool cc_fetchWord(WordData* out);
 
 // --- Alerts ---
 // Map a WMO code onto an alert string in `buf` (or empty string = no alert).

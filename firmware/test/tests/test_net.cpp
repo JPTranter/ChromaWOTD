@@ -130,3 +130,104 @@ TEST(Fetch, Verse_Live) {
         EXPECT_LT(*p, 0x80) << "non-ASCII byte 0x" << std::hex << (int)*p << " reached the renderer";
     EXPECT_TRUE(v.highlight == nullptr);  // not set this phase
 }
+
+// ---------------------------------------------------------------------------
+// Word of the Day (A.Word.A.Day parser) -------------------------------------
+// ---------------------------------------------------------------------------
+// A trimmed but structurally faithful slice of wordsmith.org/words/today.html:
+// each section is <div style="...">LABEL:</div>\n<div ...>\nVALUE\n</div><br>.
+static const char kAwadPage[] = R"HTML(<html><head>
+<TITLE>A.Word.A.Day --breviloquent</TITLE>
+<meta property="og:title" content="breviloquent" />
+</head><body>
+<h3>
+breviloquent
+</h3>
+<p>
+
+<div style="font-family:Verdana; color:#555555; font-size:13px;">PRONUNCIATION:</div>
+<div style="margin-left: 20px;">
+(bre-VIL-uh-kwuhnt)
+<a href="https://wordsmith.org/words/breviloquent.mp3"><img src="x.png"></a>
+</div><br>
+
+<div style="font-family:Verdana; color:#555555; font-size:13px;">MEANING:</div>
+<div style="margin-left: 20px;">
+<i>adjective</i>: Using few words.
+</div><br>
+
+<div style="font-family:Verdana; color:#555555; font-size:13px;">ETYMOLOGY:</div>
+<div style="margin-left: 20px;">
+ From Latin brevis (short) + loqui (to speak).
+</div><br>
+
+<div style="font-family:Verdana; color:#555555; font-size:13px;">USAGE:</div>
+<div style="margin-left: 20px;">
+&#8220;[The driver] raised his hands from the wheel.&#8221;<br>
+Tara Gallagher; Town &amp; Country; Nov 2012.
+</div><br>
+
+</body></html>)HTML";
+
+TEST(AwadParse, ExtractsAllFields) {
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(kAwadPage, &w));
+    EXPECT_STREQ(w.word, "breviloquent");
+    EXPECT_STREQ(w.pronunciation, "(bre-VIL-uh-kwuhnt)");
+    EXPECT_STREQ(w.definition, "adjective: Using few words.");
+}
+
+TEST(AwadParse, ExampleIsTheQuotedSentence_AttributionDropped) {
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(kAwadPage, &w));
+    ASSERT_NE(w.example, nullptr);
+    EXPECT_STREQ(w.example, "\"[The driver] raised his hands from the wheel.\"");
+    // The attribution that follows the closing quote must not leak in.
+    EXPECT_EQ(strstr(w.example, "Tara Gallagher"), nullptr);
+}
+
+TEST(AwadParse, RenderedFieldsArePrintableAscii) {
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(kAwadPage, &w));
+    // Not merely < 0x80: control characters (newlines from the source HTML)
+    // would pass that check yet render as garbage on the panel.
+    for (const char* f : {w.word, w.pronunciation, w.definition, w.example}) {
+        ASSERT_NE(f, nullptr);
+        for (const unsigned char* p = (const unsigned char*)f; *p; ++p)
+            EXPECT_GE(*p, 0x20) << "control char 0x" << std::hex << (int)*p << " in '" << f << "'";
+        for (const unsigned char* p = (const unsigned char*)f; *p; ++p)
+            EXPECT_LE(*p, 0x7E) << "non-ASCII byte 0x" << std::hex << (int)*p << " in '" << f << "'";
+    }
+}
+
+TEST(AwadParse, NewlinesInSourceAreCollapsedToSpaces) {
+    // The real page wraps long sections across lines; the value must come out as
+    // one normalised line, not with embedded newlines.
+    static const char kPage[] = R"HTML(
+<h3>
+wordy
+</h3>
+<div style="x">MEANING:</div>
+<div style="margin-left: 20px;">
+adjective: Spread
+across
+lines.
+</div><br>
+)HTML";
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(kPage, &w));
+    EXPECT_STREQ(w.definition, "adjective: Spread across lines.");
+    EXPECT_EQ(strchr(w.definition, '\n'), nullptr);
+}
+
+TEST(AwadParse, MalformedPageFails) {
+    WordData w{};
+    EXPECT_FALSE(cc_parseAwad("<html><body>no sections here</body></html>", &w));
+}
+
+TEST(Fetch, Word_Live) {
+    WordData w{};
+    if (!cc_fetchWord(&w)) { GTEST_SKIP() << "network unavailable (no curl) / page shape changed"; }
+    EXPECT_TRUE(w.word && w.word[0]);
+    EXPECT_TRUE(w.definition && w.definition[0]);
+}

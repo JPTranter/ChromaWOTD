@@ -137,6 +137,122 @@ void cc_stripLeadingBracket(char* s) {
 }
 
 // ---------------------------------------------------------------------------
+// Word of the Day — A.Word.A.Day HTML parser (SHARED host + device).
+//
+// The page wraps each section identically:
+//   <div style="...">LABEL:</div>\n<div style="margin-left: 20px;">\nVALUE\n</div><br>
+// so values are found by their label and bounded by the following </div>.
+// The USAGE value additionally carries a <br> + attribution after the quote,
+// so the example is cut at the closing curly quote.
+// ---------------------------------------------------------------------------
+static const char* cc_findFrom(const char* from, const char* needle) {
+    return from ? strstr(from, needle) : nullptr;
+}
+
+// Copy [begin,end) into out with HTML tags removed, whitespace normalised
+// (newlines/tabs -> single spaces, runs collapsed) and outer whitespace trimmed.
+// The panel font only carries printable ASCII (0x20..0x7E); control characters
+// like the newlines that wrap the source HTML would otherwise reach the glyph
+// rasteriser and render as garbage.
+static void cc_copyStripped(const char* begin, const char* end, char* out, size_t outsz) {
+    size_t n = 0;
+    bool inTag = false;
+    bool lastSpace = true;   // start true so leading whitespace is dropped
+    for (const char* p = begin; p < end && *p; p++) {
+        if (*p == '<') { inTag = true; continue; }
+        if (*p == '>') { inTag = false; continue; }
+        if (inTag) continue;
+        char c = *p;
+        if (c == '\n' || c == '\r' || c == '\t' || c == ' ') {
+            if (lastSpace) continue;      // collapse runs
+            c = ' ';
+            lastSpace = true;
+        } else {
+            lastSpace = false;
+        }
+        if (n + 1 >= outsz) break;
+        out[n++] = c;
+    }
+    out[n] = '\0';
+    // trim trailing space
+    size_t len = strlen(out);
+    while (len && out[len-1] == ' ') out[--len] = '\0';
+}
+
+// Locate the value that follows `label` (e.g. "MEANING:") and copy it into out,
+// tag-stripped and bounded by the value div's closing "</div>". The label itself
+// is wrapped in its own <div>LABEL:</div>, so the label's closing tag is skipped
+// first — otherwise the value would come out empty.
+static bool cc_sectionValue(const char* html, const char* label, char* out, size_t outsz) {
+    const char* p = cc_findFrom(html, label);
+    if (!p) return false;
+    p += strlen(label);
+    const char* labelClose = strstr(p, "</div>");
+    if (!labelClose) return false;
+    const char* vstart = labelClose + 6;            // past the label's </div>
+    const char* vclose = strstr(vstart, "</div>");  // end of the value div
+    if (!vclose) return false;
+    cc_copyStripped(vstart, vclose, out, outsz);
+    return true;
+}
+
+bool cc_parseAwad(const char* html, WordData* out) {
+    if (!html || !out) return false;
+
+    static char wbuf[64];
+    static char pbuf[64];
+    static char dbuf[NET_TEXT_MAX];
+    static char ebuf[NET_TEXT_MAX];
+
+    // --- word: <h3>\nbreviloquent\n</h3>
+    const char* h3 = cc_findFrom(html, "<h3>");
+    if (!h3) return false;
+    const char* h3end = strstr(h3, "</h3>");
+    if (!h3end) return false;
+    cc_copyStripped(h3 + 4, h3end, wbuf, sizeof(wbuf));
+    if (!wbuf[0]) return false;
+
+    // --- pronunciation: first "(...)" after the PRONUNCIATION label
+    pbuf[0] = '\0';
+    if (const char* pr = cc_findFrom(html, "PRONUNCIATION:")) {
+        const char* open = strchr(pr, '(');
+        if (open) {
+            const char* close = strchr(open, ')');
+            if (close && (size_t)(close - open) + 1 < sizeof(pbuf)) {
+                size_t len = (size_t)(close - open) + 1;
+                memcpy(pbuf, open, len);
+                pbuf[len] = '\0';
+            }
+        }
+    }
+
+    // --- definition: MEANING value ("adjective: Using few words.")
+    if (!cc_sectionValue(html, "MEANING:", dbuf, sizeof(dbuf))) return false;
+
+    // --- example: the quoted sentence in USAGE, cut at the closing curly quote.
+    ebuf[0] = '\0';
+    if (const char* us = cc_findFrom(html, "USAGE:")) {
+        const char* labelClose = strstr(us, "</div>");
+        if (labelClose) {
+            const char* vstart  = labelClose + 6;            // past the label's </div>
+            const char* vclose  = strstr(vstart, "</div>");  // end of the value div
+            const char* quoteEnd = cc_findFrom(vstart, "&#8221;");
+            const char* end = (quoteEnd && (!vclose || quoteEnd < vclose)) ? quoteEnd + 7 : vclose;
+            if (end) cc_copyStripped(vstart, end, ebuf, sizeof(ebuf));
+        }
+    }
+
+    cc_htmlDecode(dbuf);
+    cc_htmlDecode(ebuf);
+
+    out->word          = wbuf[0] ? wbuf : nullptr;
+    out->pronunciation = pbuf[0] ? pbuf : nullptr;
+    out->definition    = dbuf[0] ? dbuf : nullptr;
+    out->example       = ebuf[0] ? ebuf : nullptr;
+    return out->definition != nullptr;
+}
+
+// ---------------------------------------------------------------------------
 // HOST-ONLY: JSON extractor + fetch (curl hook). The device parses with
 // ArduinoJson in net_impl_esp32.cpp; it never includes this section.
 // ---------------------------------------------------------------------------
@@ -242,6 +358,39 @@ static bool parseMember(const char* buf, const char* key,
     return false;
 }
 
+// Parse the `index`-th element of a JSON number-array member `key`, e.g.
+//   "temperature_2m_max":[21.5,22.1]  with index 1 -> 22.1
+// Used for the daily forecast arrays (index 0 = today, 1 = tomorrow).
+static bool parseArrayNumber(const char* buf, const char* key, int index, double* outVal) {
+    const size_t klen = strlen(key);
+    const char* p = buf;
+    while ((p = strstr(p, key)) != nullptr) {
+        bool open = (p == buf) ? true : (p[-1] == '"');
+        if (open && p[klen] == '"') {
+            const char* q = skipWs(p + klen + 1);
+            if (*q == ':') {
+                const char* arr = skipWs(q + 1);
+                if (*arr == '[') {
+                    arr = skipWs(arr + 1);
+                    for (int i = 0; ; i++) {
+                        char nb[24]; double v;
+                        const char* r = parseJsonNumber(arr, nb, sizeof(nb), &v);
+                        if (!r) break;
+                        if (i == index) { *outVal = v; return true; }
+                        arr = skipWs(r);
+                        if (*arr == ',') { arr = skipWs(arr + 1); continue; }
+                        break;
+                    }
+                }
+                p = q + 1;
+                continue;
+            }
+        }
+        p += klen;
+    }
+    return false;
+}
+
 static WeatherIcon iconFromWmo(int code) {
     if (code == 0)                return WeatherIcon::Sun;
     if (code >= 1 && code <= 3)   return WeatherIcon::PartlyCloudy;
@@ -250,21 +399,27 @@ static WeatherIcon iconFromWmo(int code) {
     return WeatherIcon::PartlyCloudy;
 }
 
-bool cc_fetchWeather(WeatherData* out) {
+bool cc_fetchWeather(WeatherData* out, bool tomorrow) {
     if (!out) return false;
     char url[520];
     snprintf(url, sizeof(url),
         "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
         "&current=temperature_2m,weather_code"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-        "&timezone=%s&forecast_days=1",
+        "&timezone=%s&forecast_days=2",
         CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE, CHROMAWOTD_TIMEZONE);
     char json[4096];
     if (!cc_fetchJson(url, json, sizeof(json))) return false;
 
     double temp = 0.0, wmo = -1.0;
-    if (!parseMember(json, "temperature_2m", false, nullptr, 0, &temp)) return false;
-    if (!parseMember(json, "weather_code",  false, nullptr, 0, &wmo))   return false;
+    if (tomorrow) {
+        // No "current" reading exists for a future day: use the day's high.
+        if (!parseArrayNumber(json, "temperature_2m_max", 1, &temp)) return false;
+        if (!parseArrayNumber(json, "weather_code",       1, &wmo))  return false;
+    } else {
+        if (!parseMember(json, "temperature_2m", false, nullptr, 0, &temp)) return false;
+        if (!parseMember(json, "weather_code",  false, nullptr, 0, &wmo))   return false;
+    }
     if (wmo < 0.0) return false;
 
     static char cond[NET_TEXT_MAX];
@@ -311,6 +466,15 @@ bool cc_fetchVerse(VerseData* out) {
     out->reference = ref;
     out->date      = date;
     return true;
+}
+
+// Word of the Day (A.Word.A.Day page). The buffer is static (not stack) because
+// the page is ~10 KB — far too large for the 16 KB sync-task stack.
+bool cc_fetchWord(WordData* out) {
+    if (!out) return false;
+    static char html[16384];
+    if (!cc_fetchJson("https://wordsmith.org/words/today.html", html, sizeof(html))) return false;
+    return cc_parseAwad(html, out);
 }
 
 #endif  // CHROMAWOTD_HOST

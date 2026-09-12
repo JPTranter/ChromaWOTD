@@ -56,6 +56,7 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/net/net.cpp
     ${CC_SRC_DIR}/net/net_host_curl.cpp
     ${CC_SRC_DIR}/sched/wake_schedule.cpp
+    ${CC_SRC_DIR}/sched/content_policy.cpp
 )
 target_include_directories(chroma_canvas PUBLIC
     ${CC_HARN_DIR}
