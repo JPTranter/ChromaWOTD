@@ -42,6 +42,28 @@ typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; u
 #include "fonts/FreeSans6pt7b.h"   // needs GFXglyph/GFXfont visible
 #endif
 
+// Baseline shift for the GFX font. The layout passes y as the glyph TOP (the
+// 5x7 convention, where all glyphs sit in rows 0..6 and the caller's y is the
+// top edge). A proportional GFX font draws with y interpreted as the BASELINE,
+// and its capitals sit cap-ascent px above it -- so without a shift the whole
+// line rides upward by roughly a cap height. This returns the amount to add to
+// the draw y so the visual top of the text lands where the caller intended.
+static int cc_baselineShift(int size) {
+#ifdef CHROMAWOTD_FONT_FREESANS
+    // cap top = min glyph yOffset (most negative). Shift baseline down by that
+    // magnitude so caps sit flush where the layout's top-anchor expects.
+    int minYo = 0;
+    const GFXfont* f = &FreeSans6pt7b;
+    for (int c = f->first; c <= f->last; c++) {
+        const GFXglyph* g = &f->glyph[c - f->first];
+        if (g->width && g->height && g->yOffset < minYo) minYo = g->yOffset;
+    }
+    return -minYo * size;
+#else
+    return 0;
+#endif
+}
+
 // Pixel advance of ONE decoded ASCII glyph at the given magnification.
 static int cc_advance(unsigned char ascii, int size) {
 #ifdef CHROMAWOTD_FONT_FREESANS
@@ -180,14 +202,15 @@ static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) 
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
     int cursorX = x;
+    int base = y + cc_baselineShift(size);   // layout y is TOP; GFX wants baseline
     const unsigned char* p = (const unsigned char*)str;
     while (*p) {
         unsigned char glyph = 0;
         p += cc_utf8ToAscii(p, &glyph);
         if (glyph == CC_DEGREE) {
-            g_canvas.drawChar(cursorX, y, 0xB0, c, (uint8_t)size);
+            g_canvas.drawChar(cursorX, base, 0xB0, c, (uint8_t)size);
         } else {
-            dev_drawGlyph(glyph, cursorX, y, c, size);
+            dev_drawGlyph(glyph, cursorX, base, c, size);
         }
         cursorX += cc_advance(glyph, size);
     }
@@ -241,7 +264,7 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
     epaper.setTextColor(toDeviceColor(c));
     epaper.setTextSize(size);
     epaper.setFreeFont(&FreeSans6pt7b);
-    epaper.drawString(str, x, y);   // y = baseline; GFX path handles advance + descenders
+    epaper.drawString(str, x, y + cc_baselineShift(size));   // y is TOP; add baseline shift
     return;
 #else
     epaper.setTextSize(size);
