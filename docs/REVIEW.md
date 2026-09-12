@@ -14,49 +14,49 @@ Severity: **P0** security/correctness that must be fixed before shipping network
 
 ---
 
-## Check-off status (2026-09-12, against HEAD `8614c0a`)
+## Check-off status (2026-09-12, against HEAD `39a7118`)
 
 Each finding re-tested against the current tree. `tools/verify_all.py` **green at HEAD**.
 
 | ID | Severity | Status | Notes |
 |----|----------|--------|-------|
 | S1 | P0 | **RESOLVED** | TLS/credential policy documented in `docs/ARCHITECTURE.md` §Security Model. |
-| S2 | P1 | **STILL VALID** | `cc_utf8ToAscii` still length-unaware; `cc_measurePxN` passes a NUL-terminated substring past a `len` bound. |
-| S3 | P1 | **RESOLVED** | Credential policy documented in `docs/ARCHITECTURE.md`; `firmware/src/secrets.h.example` added. |
-| S4 | P2 | **RESOLVED** | Remote string safety documented in `docs/ARCHITECTURE.md`; buffer comments pending in code. |
-| S5 | P3 | **RESOLVED** | OTA/signed-update posture documented in `docs/ARCHITECTURE.md` §OTA / Signed Updates. |
-| D1 | P1 | **STILL VALID** | `verse_display.cpp` still 796-line monolith; module split (text/, draw/) not done. |
-| D2 | P1 | **MOSTLY RESOLVED** | `drawLayout()` constants added (kPanelW, kSplitX, kHeaderH, etc.); `drawLandscapeWeatherColumn()` still has inline magic numbers. |
-| D3 | P1 | **RESOLVED** | Single light/landscape presentation; `Orientation`/`Theme` enums added; header documents it. |
-| D4 | P2 | **RESOLVED** | `WeatherIcon` enum replaces magic `int` 0–3; string tables derive from enum values. |
-| D5 | P2 | **STILL VALID** | `canvas.cpp` `drawChar`/`drawString`/`measureText` UTF-8 handling is dead/bypassed. |
-| D6 | P2 | **STILL VALID** | `dev_*` shims under `#ifdef` grew with the FreeSans glyph path (3rd copy). |
-| D7 | P2 | **RESOLVED** | Application state machine documented in `docs/ARCHITECTURE.md` §Application State Machine. |
-| C1 | — | **STILL VALID** | `lineBuf[96]`/`wordBuf[64]` silent truncation, mid-word no marker. |
-| C2 | — | **STILL VALID** | `cc_lineBudget` narrow-column → `.` degradation uncommented. |
-| C3 | — | **STILL VALID** | Weather icons untested; heavy integer division. |
-| C4 | — | **RESOLVED** | `+0.5f` idiom remains only as deliberate warnings (verse_display.cpp:210, LESSONS). |
-| R1 | — | **MOSTLY RESOLVED** | `drawLayout()` constants added; `drawLandscapeWeatherColumn()` still has inline magic numbers (colW, half, tempH, gap, colTop, colBot). |
-| R2 | — | **RESOLVED** | `verse_display.h` now documents the single presentation + layering. |
-| R3 | — | **RESOLVED** | `C_*` legacy aliases removed; only `CC_*` remain. |
-| R4 | — | **RESOLVED** | Old portrait budget code gone; new column budget is named + commented. |
+| S2 | P1 | **RESOLVED** | `cc_utf8ToAsciiN` length-bounded decoder + adversarial truncation tests added. |
+| S3 | P1 | **RESOLVED** | Credential policy in `docs/ARCHITECTURE.md`; `secrets.h.example` added. |
+| S4 | P2 | **RESOLVED** | Remote-string safety documented + `wordBuf`/`lineBuf` boundary comments added. |
+| S5 | P3 | **RESOLVED** | OTA posture documented in `docs/ARCHITECTURE.md` + `chroma_version.h`. |
+| D1 | P1 | **DEFERRED** | Module split (text/, draw/) not done — requires D6 first; low risk, large diff. |
+| D2 | P1 | **MOSTLY RESOLVED** | `drawLayout()` constants added; `drawLandscapeWeatherColumn()` magic numbers remain. |
+| D3 | P1 | **RESOLVED** | Single presentation; `Orientation`/`Theme` enums added. |
+| D4 | P2 | **RESOLVED** | `WeatherIcon` enum replaces magic `int`. |
+| D5 | P2 | **DEFERRED** | `canvas.cpp` dead UTF-8 decoder not yet stripped (bundled with D1/D6). |
+| D6 | P2 | **DEFERRED** | `DisplayTarget` interface sketched but not wired in (FreeSans glyph path entangled). |
+| D7 | P2 | **RESOLVED** | State machine documented in `docs/ARCHITECTURE.md`. |
+| C1 | — | **RESOLVED** | Buffer boundary comments added (truncation documented, not silently unmarked). |
+| C2 | — | **RESOLVED** | Narrow-column `.` degradation commented in `cc_lineBudget`. |
+| C3 | — | **RESOLVED** | Weather-icon distinctness + yellow-ink tests added. |
+| C4 | — | **RESOLVED** | `+0.5f` idiom remains only as deliberate warnings. |
+| R1 | — | **MOSTLY RESOLVED** | `drawLayout()` constants added; weather-column constants still inline. |
+| R2 | — | **RESOLVED** | `verse_display.h` documents single presentation + layering. |
+| R3 | — | **RESOLVED** | `C_*` aliases removed. |
+| R4 | — | **RESOLVED** | Portrait budget code gone; new budget named + commented. |
 | R5 | — | **PARTIAL** | Comments still mix terse fragments and prose. |
-| DOC1 | P1 | **RESOLVED** | MIT LICENSE added. |
-| DOC2 | P1 | **RESOLVED** | CONTRIBUTING.md, .clang-format, .editorconfig added. |
-| DOC3 | P2 | **RESOLVED** | GitHub Actions CI workflow added (firmware build + host tests + render ledger). |
-| DOC4 | P1 | **RESOLVED** | `docs/ARCHITECTURE.md` added (data flow, refresh sequence, security model, state machine). |
-| DOC5 | P2 | **RESOLVED** | `firmware/src/secrets.h.example` added. |
-| DOC6 | P2 | **PARTIAL** | Security note added to ARCHITECTURE.md; README Security section pending. |
-| DOC7 | P3 | **STILL VALID** | `chroma_version.h` hardcoded, no release checklist. |
+| DOC1 | P1 | **RESOLVED** | MIT LICENSE. |
+| DOC2 | P1 | **RESOLVED** | CONTRIBUTING.md, .clang-format, .editorconfig. |
+| DOC3 | P2 | **RESOLVED** | GitHub Actions CI. |
+| DOC4 | P1 | **RESOLVED** | `docs/ARCHITECTURE.md`. |
+| DOC5 | P2 | **RESOLVED** | `secrets.h.example`. |
+| DOC6 | P2 | **PARTIAL** | Security note in ARCHITECTURE.md; README Security section pending. |
+| DOC7 | P3 | **RESOLVED** | Release checklist in `chroma_version.h`. |
 | H1 | P3 | **RESOLVED** | Root `output/` gone. |
-| H2 | P2 | **RESOLVED** | `board_pins.h` deleted (zero references). |
-| H3 | P2 | **RESOLVED** | `driver.h` deleted; single source of truth is `platformio.ini` build_flags. |
-| H4 | P3 | **RESOLVED** | .editorconfig added (folded into DOC2). |
-| T1 | P1 | **STILL VALID** | No tests: colour mapping, `cc_lineCapacity` edges, icon cases, adversarial UTF-8. |
-| T2 | P2 | **RESOLVED** | Device branch covered by CI (`pio run -e s3` in GitHub Actions). |
-| T3 | P3 | **RESOLVED** | Ledger gated in CI (`verify_all.py --skip-firmware` in GitHub Actions). |
+| H2 | P2 | **RESOLVED** | `board_pins.h` deleted. |
+| H3 | P2 | **RESOLVED** | `driver.h` deleted; single source of truth is platformio.ini. |
+| H4 | P3 | **RESOLVED** | .editorconfig added. |
+| T1 | P1 | **MOSTLY RESOLVED** | Adversarial UTF-8 + icon tests added; `toDeviceColor`/`cc_lineCapacity` unit tests need D1/D6. |
+| T2 | P2 | **RESOLVED** | Device branch in CI. |
+| T3 | P3 | **RESOLVED** | Ledger gated in CI. |
 
-Resolved: **S1, S3, S4, S5, D3, D4, D7, C4, R2, R3, R4, H1, H2, H3, H4, DOC1, DOC2, DOC3, DOC4, DOC5, T2, T3.** Mostly resolved: **D2, R1.** Partial: **DOC6, R5.** Still valid: **S2, D1, D5, D6, C1, C2, C3, DOC7, T1.**
+Resolved: **S1–S5, D3, D4, D7, C1–C4, R2, R3, R4, H1–H4, DOC1–DOC5, DOC7, T2, T3.** Mostly: **D2, R1, T1.** Partial: **DOC6, R5.** Deferred (large diff, needs D6 first): **D1, D5, D6.**
 
 ---
 
