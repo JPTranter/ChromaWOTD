@@ -1,7 +1,87 @@
 #include "verse_display.h"
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <cmath>
+
+// ---------------------------------------------------------------------------
+// Shared UTF-8 -> single-byte decoding.
+//
+// TFT_eSPI's built-in font is ASCII/CP437 and must never receive multi-byte
+// UTF-8: it would draw one garbage glyph per byte. Real API text (BibleGateway,
+// Open-Meteo) carries curly quotes, en/em dashes, non-breaking spaces, ellipsis
+// and warning signs, so every draw path funnels through cc_utf8ToAscii().
+// 0xB0 is the degree sign sentinel and is drawn as a vector circle, not a glyph.
+// ---------------------------------------------------------------------------
+#define CC_DEGREE  0xB0
+#define CC_UNKNOWN '?'
+#define CC_GLYPH_W 6   // built-in font advance in pixels per size unit
+
+// Maps the glyph starting at p to one ASCII byte. Returns bytes consumed (>= 1).
+static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out) {
+    unsigned char c = p[0];
+    if (c < 0x80) { *out = c; return 1; }
+
+    // 2-byte sequences (U+0080..U+07FF)
+    if (c == 0xC2 && p[1]) {
+        if (p[1] == 0xB0) { *out = CC_DEGREE; return 2; }  // ° degree sign
+        if (p[1] == 0xA0) { *out = ' ';       return 2; }  // non-breaking space
+        *out = CC_UNKNOWN; return 2;
+    }
+    // 3-byte sequences (U+2000..U+2FFF)
+    if (c == 0xE2 && p[1] && p[2]) {
+        if (p[1] == 0x80) {
+            switch (p[2]) {
+                case 0x93: case 0x94: case 0x95: *out = '-';  return 3;  // – — ―
+                case 0x98: case 0x99:            *out = '\''; return 3;  // ‘ ’
+                case 0x9C: case 0x9D:            *out = '"';  return 3;  // “ ”
+                case 0xA2:                       *out = '\''; return 3;  // ′ prime
+                case 0xA6:                       *out = '.';  return 3;  // … ellipsis
+                default: break;
+            }
+        }
+        if (p[1] == 0x9A && p[2] == 0xA0) { *out = '!'; return 3; }  // ⚠ warning sign
+        *out = CC_UNKNOWN; return 3;
+    }
+    // 4-byte sequences (emoji etc.) collapse to a single replacement glyph.
+    if ((c & 0xF8) == 0xF0 && p[1] && p[2] && p[3]) { *out = CC_UNKNOWN; return 4; }
+    *out = CC_UNKNOWN; return 1;
+}
+
+// Glyph (not byte) count of the first len bytes; mirrors cc_utf8ToAscii exactly
+// so measured width always matches drawn width.
+static int cc_countGlyphsN(const char* str, int len) {
+    if (!str) return 0;
+    int n = 0;
+    const unsigned char* p = (const unsigned char*)str;
+    const unsigned char* end = p + len;
+    while (*p && p < end) { unsigned char g = 0; p += cc_utf8ToAscii(p, &g); n++; }
+    return n;
+}
+
+static int cc_countGlyphs(const char* str) { return cc_countGlyphsN(str, (int)strlen(str)); }
+
+// Round half away from zero: -0.6 -> -1 (plain (int)(t+0.5f) gives 0).
+static int cc_roundTemp(float t) { return (int)lroundf(t); }
+
+// Case-insensitive substring search (fallback for highlight phrases whose
+// capitalisation is changed by the content source).
+static const char* cc_findIgnoreCase(const char* hay, const char* needle) {
+    if (!hay || !needle || !*needle) return nullptr;
+    size_t nlen = strlen(needle);
+    for (const char* p = hay; *p; p++) {
+        size_t i = 0;
+        while (i < nlen && p[i] &&
+               tolower((unsigned char)p[i]) == tolower((unsigned char)needle[i])) i++;
+        if (i == nlen) return p;
+    }
+    return nullptr;
+}
+
+bool verseHighlightFound(const VerseData& vd) {
+    if (!vd.verse || !vd.highlight || !vd.highlight[0]) return false;
+    return cc_findIgnoreCase(vd.verse, vd.highlight) != nullptr;
+}
 
 #ifdef CHROMAWOTD_HOST
 #include "../test/harness/canvas.h"
@@ -13,9 +93,22 @@ static void dev_drawFastVLine(int x, int y, int h, uint32_t c) { g_canvas.drawFa
 static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { g_canvas.drawLine(x0, y0, x1, y1, c); }
 static void dev_drawCircle(int x, int y, int r, uint32_t c) { g_canvas.drawCircle(x, y, r, c); }
 static void dev_fillCircle(int x, int y, int r, uint32_t c) { g_canvas.fillCircle(x, y, r, c); }
-static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) { g_canvas.drawString(x, y, str, c, size); }
-static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) { g_canvas.drawStringRight(rx, y, str, c, size); }
-static int  dev_measureText(const char* str, int size) { return g_canvas.measureText(str, size); }
+
+static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
+    if (!str) return;
+    int cursorX = x;
+    const unsigned char* p = (const unsigned char*)str;
+    while (*p) {
+        unsigned char glyph = 0;
+        p += cc_utf8ToAscii(p, &glyph);
+        g_canvas.drawChar(cursorX, y, glyph, c, (uint8_t)size);
+        cursorX += CC_GLYPH_W * size;
+    }
+}
+static int dev_measureText(const char* str, int size) { return cc_countGlyphs(str) * CC_GLYPH_W * size; }
+static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
+    dev_drawString(rx - dev_measureText(str, size), y, str, c, size);
+}
 
 #else
 #include <Arduino.h>
@@ -40,46 +133,28 @@ static void dev_drawFastVLine(int x, int y, int h, uint32_t c) { epaper.drawFast
 static void dev_drawLine(int x0, int y0, int x1, int y1, uint32_t c) { epaper.drawLine(x0, y0, x1, y1, toDeviceColor(c)); }
 static void dev_drawCircle(int x, int y, int r, uint32_t c) { epaper.drawCircle(x, y, r, toDeviceColor(c)); }
 static void dev_fillCircle(int x, int y, int r, uint32_t c) { epaper.fillCircle(x, y, r, toDeviceColor(c)); }
-static int dev_measureText(const char* str, int size) {
-    if (!str) return 0;
-    int count = 0;
-    for (const unsigned char* p = (const unsigned char*)str; *p; p++) {
-        if (*p == 0xC2 && *(p + 1) == 0xB0) { count++; p++; continue; }
-        if (*p == 0xE2 && *(p + 1) == 0x80 && (*(p + 2) == 0x93 || *(p + 2) == 0x94)) { count++; p += 2; continue; }
-        count++;
-    }
-    return count * 6 * size;
-}
+static int dev_measureText(const char* str, int size) { return cc_countGlyphs(str) * CC_GLYPH_W * size; }
 
 static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) {
     if (!str) return;
     epaper.setTextSize(size);
     epaper.setTextColor(toDeviceColor(c));
     int cursorX = x;
-    for (const unsigned char* p = (const unsigned char*)str; *p; p++) {
-        // Handle utf-8 degree symbol: 0xC2 0xB0
-        if (*p == 0xC2 && *(p + 1) == 0xB0) {
-            int r = size;
-            epaper.drawCircle(cursorX + 2 * size, y + 2 * size, r, toDeviceColor(c));
-            cursorX += 6 * size;
-            p++;
-            continue;
+    const unsigned char* p = (const unsigned char*)str;
+    while (*p) {
+        unsigned char glyph = 0;
+        p += cc_utf8ToAscii(p, &glyph);
+        if (glyph == CC_DEGREE) {
+            epaper.drawCircle(cursorX + 2 * size, y + 2 * size, size, toDeviceColor(c));
+        } else {
+            epaper.drawChar(glyph, cursorX, y);
         }
-        // Handle utf-8 en-dash: 0xE2 0x80 0x93 or em-dash: 0x94
-        if (*p == 0xE2 && *(p + 1) == 0x80 && (*(p + 2) == 0x93 || *(p + 2) == 0x94)) {
-            epaper.drawChar('-', cursorX, y);
-            cursorX += 6 * size;
-            p += 2;
-            continue;
-        }
-        epaper.drawChar(*p, cursorX, y);
-        cursorX += 6 * size;
+        cursorX += CC_GLYPH_W * size;
     }
 }
 
 static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
-    int w = dev_measureText(str, size);
-    dev_drawString(rx - w, y, str, c, size);
+    dev_drawString(rx - dev_measureText(str, size), y, str, c, size);
 }
 #endif
 
@@ -156,27 +231,84 @@ static void drawWeatherIcon(int cx, int cy, int size, int iconType, bool inverte
     }
 }
 
+// Lines the greedy wrapper below needs for a given width budget (mirrors the
+// draw loops exactly, so the truncation decision is made before drawing).
+static int cc_wrappedLineCount(const char* text, int maxW, int size) {
+    if (!text || !*text) return 0;
+    int charWidth = CC_GLYPH_W * size;
+    int lines = 1, curX = 0;
+    const char* p = text;
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        const char* wordStart = p;
+        while (*p && *p != ' ') p++;
+        int wordPx = cc_countGlyphsN(wordStart, (int)(p - wordStart)) * charWidth;
+        if (curX > 0 && curX + wordPx > maxW) { lines++; curX = 0; }
+        curX += wordPx + charWidth;
+    }
+    return lines;
+}
+
+// How many lines fit in maxH at this line height.
+static int cc_lineCapacity(int maxH, int size, int lineHeight) {
+    if (maxH < 8 * size) return 0;
+    return (maxH - 8 * size) / lineHeight + 1;
+}
+
+// Width budget for one line. When the text will be cut off, the final line is kept
+// short enough that the "..." marker still fits inline: 3 glyph widths of slack for
+// a left-aligned block, 6 for a centred one (the line floats, so both margins count).
+static int cc_lineBudget(int maxW, int charWidth, int slack, bool truncated, int lineIdx, int capacity) {
+    if (truncated && capacity > 0 && lineIdx == capacity - 1) {
+        int budget = maxW - slack * charWidth;
+        if (budget >= 4 * charWidth) return budget;
+    }
+    return maxW;
+}
+
+// Marks text the block could not hold: "..." when the reserved space allows it,
+// degrading to ".." rather than pushing characters off the block.
+static void drawOverflowMarker(int x, int y, int maxRight, uint32_t color, int size) {
+    int w = CC_GLYPH_W * size;
+    if (x + 3 * w <= maxRight) { dev_drawString(x, y, "...", color, size); return; }
+    if (x + 2 * w <= maxRight) { dev_drawString(x, y, "..", color, size); return; }
+    dev_drawString(x, y, ".", color, size);
+}
+
 static int drawWrappedText(int startX, int startY, int maxW, int maxH, const char* text, uint32_t color, int size = 1, int lineHeight = 10) {
     if (!text || !*text) return startY;
 
-    int charWidth = 6 * size;
+    const int charWidth = CC_GLYPH_W * size;
+    const int capacity = cc_lineCapacity(maxH, size, lineHeight);
+    const bool truncated = cc_wrappedLineCount(text, maxW, size) > capacity;
+
     int curX = startX;
     int curY = startY;
+    int lastX = startX;
+    int lastY = startY;
+    int lineIdx = 0;
+    bool drewAny = false;
 
     const char* ptr = text;
     while (*ptr) {
         while (*ptr == ' ') ptr++;
         if (!*ptr) break;
 
+        if (curY + 8 * size > startY + maxH) break;
+
         const char* wordStart = ptr;
         while (*ptr && *ptr != ' ') ptr++;
         int wordLen = (int)(ptr - wordStart);
-        int wordPx = wordLen * charWidth;
+        int wordPx = cc_countGlyphsN(wordStart, wordLen) * charWidth;
+        int budget = cc_lineBudget(maxW, charWidth, 3, truncated, lineIdx, capacity);
 
-        if (curX > startX && (curX + wordPx > startX + maxW)) {
+        if (curX > startX && (curX + wordPx > startX + budget)) {
             curX = startX;
             curY += lineHeight;
+            lineIdx++;
             if (curY + 8 * size > startY + maxH) break;
+            budget = cc_lineBudget(maxW, charWidth, 3, truncated, lineIdx, capacity);
         }
 
         char wordBuf[64];
@@ -186,24 +318,38 @@ static int drawWrappedText(int startX, int startY, int maxW, int maxH, const cha
 
         dev_drawString(curX, curY, wordBuf, color, size);
         curX += wordPx + charWidth;
+        lastX = curX;
+        lastY = curY;
+        drewAny = true;
     }
+
+    if (truncated && drewAny) drawOverflowMarker(lastX, lastY, startX + maxW, color, size);
     return curY + lineHeight;
 }
 
 static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, const char* text, uint32_t color, int size = 1, int lineHeight = 10) {
     if (!text || !*text) return startY;
 
-    int charWidth = 6 * size;
+    const int charWidth = CC_GLYPH_W * size;
+    const int capacity = cc_lineCapacity(maxH, size, lineHeight);
+    const bool truncated = cc_wrappedLineCount(text, maxW, size) > capacity;
+
     int curY = startY;
+    int lineIdx = 0;
+    int lastLineWidth = 0;
+    int lastLineY = startY;
 
     const char* lineStart = text;
     while (*lineStart) {
         while (*lineStart == ' ') lineStart++;
         if (!*lineStart) break;
 
+        if (curY + 8 * size > startY + maxH) break;
+
+        int budget = cc_lineBudget(maxW, charWidth, 6, truncated, lineIdx, capacity);
         const char* p = lineStart;
         const char* lastWordEnd = lineStart;
-        int lineLen = 0;
+        int linePx = 0;
 
         while (*p) {
             while (*p == ' ') p++;
@@ -211,17 +357,15 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 
             const char* wordStart = p;
             while (*p && *p != ' ') p++;
-            int wordLen = (int)(p - wordStart);
-            int testLen = (lineLen == 0) ? wordLen : (lineLen + 1 + wordLen);
+            int wordPx = cc_countGlyphsN(wordStart, (int)(p - wordStart)) * charWidth;
+            int testPx = (linePx == 0) ? wordPx : (linePx + charWidth + wordPx);
 
-            if (testLen * charWidth > maxW && lineLen > 0) {
+            if (testPx > budget && linePx > 0) {
                 break;
             }
-            lineLen = testLen;
+            linePx = testPx;
             lastWordEnd = p;
         }
-
-        if (curY + 8 * size > startY + maxH) break;
 
         // Render this line centered
         char lineBuf[96];
@@ -233,9 +377,17 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
         int lineWidth = dev_measureText(lineBuf, size);
         dev_drawString(centerX - lineWidth / 2, curY, lineBuf, color, size);
 
+        lastLineWidth = lineWidth;
+        lastLineY = curY;
         curY += lineHeight;
+        lineIdx++;
         lineStart = lastWordEnd;
     }
+
+    if (truncated && lastLineWidth > 0) {
+        drawOverflowMarker(centerX + lastLineWidth / 2 + charWidth, lastLineY, centerX + maxW / 2, color, size);
+    }
+
     return curY;
 }
 
@@ -244,9 +396,12 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const VerseData& vd, bool inverted = false) {
     if (!vd.verse) return;
 
+    // Locate the highlighted phrase: exact match first, then case-insensitive so a
+    // capitalisation change in the source does not silently drop the red accent.
     int hlStart = -1, hlEnd = -1;
     if (vd.highlight && vd.highlight[0]) {
         const char* p = strstr(vd.verse, vd.highlight);
+        if (!p) p = cc_findIgnoreCase(vd.verse, vd.highlight);
         if (p) {
             hlStart = (int)(p - vd.verse);
             hlEnd = hlStart + (int)strlen(vd.highlight);
@@ -255,27 +410,40 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
 
     int curX = startX;
     int curY = startY;
+    int lastX = startX;
+    int lastY = startY;
+    int lineIdx = 0;
+    bool drewAny = false;
     int lineHeight = 12;
-    int charWidth = 6;
+    int charWidth = CC_GLYPH_W;
+    const int capacity = cc_lineCapacity(maxH, 1, lineHeight);
+    const bool truncated = cc_wrappedLineCount(vd.verse, maxW, 1) > capacity;
 
     const char* ptr = vd.verse;
     while (*ptr) {
         while (*ptr == ' ') ptr++;
         if (!*ptr) break;
 
+        if (curY + 8 > startY + maxH) break;
+
         const char* wordStart = ptr;
         while (*ptr && *ptr != ' ') ptr++;
         int wordLen = (int)(ptr - wordStart);
-        int wordPx = wordLen * charWidth;
+        int wordPx = cc_countGlyphsN(wordStart, wordLen) * charWidth;
         int wordIdx = (int)(wordStart - vd.verse);
+        int budget = cc_lineBudget(maxW, charWidth, 4, truncated, lineIdx, capacity);
 
-        if (curX > startX && (curX + wordPx > startX + maxW)) {
+        if (curX > startX && (curX + wordPx > startX + budget)) {
             curX = startX;
             curY += lineHeight;
+            lineIdx++;
             if (curY + 8 > startY + maxH) break;
+            budget = cc_lineBudget(maxW, charWidth, 4, truncated, lineIdx, capacity);
         }
 
-        bool isHl = (hlStart >= 0 && wordIdx >= hlStart && wordIdx < hlEnd);
+        // A word is highlighted when it overlaps the phrase range at all — not
+        // merely when the phrase starts inside it.
+        bool isHl = (hlStart >= 0 && wordIdx < hlEnd && wordIdx + wordLen > hlStart);
         uint32_t wordColor = isHl ? (inverted ? CC_YELLOW : CC_RED) : (inverted ? CC_WHITE : CC_BLACK);
 
         char wordBuf[64];
@@ -285,6 +453,13 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
 
         dev_drawString(curX, curY, wordBuf, wordColor, 1);
         curX += wordPx + charWidth;
+        lastX = curX;
+        lastY = curY;
+        drewAny = true;
+    }
+
+    if (truncated && drewAny) {
+        drawOverflowMarker(lastX, lastY, startX + maxW, inverted ? CC_WHITE : CC_BLACK, 1);
     }
 }
 
@@ -317,7 +492,7 @@ void drawLayoutPortrait(const VerseData& v, const WeatherData& w) {
     drawWeatherIcon(22, 276, 26, w.icon);
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", (int)(w.temp + 0.5f));
+    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
     dev_drawString(44, 258, tbuf, CC_BLACK, 2);
 
     int curY = 274;
@@ -362,7 +537,7 @@ void drawLayoutPortraitInverted(const VerseData& v, const WeatherData& w) {
     drawWeatherIcon(22, 276, 26, w.icon, true);
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", (int)(w.temp + 0.5f));
+    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
     dev_drawString(44, 258, tbuf, CC_WHITE, 2);
 
     int curY = 274;
@@ -413,7 +588,7 @@ void drawLayoutLandscape(const VerseData& v, const WeatherData& w) {
     drawWeatherIcon(251, 32, 24, w.icon);
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", (int)(w.temp + 0.5f));
+    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
     int tWidth = dev_measureText(tbuf, 2);
     dev_drawString(251 - tWidth / 2, 47, tbuf, CC_BLACK, 2);
 
@@ -468,7 +643,7 @@ void drawLayoutLandscapeInverted(const VerseData& v, const WeatherData& w) {
     drawWeatherIcon(251, 32, 24, w.icon, true);
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", (int)(w.temp + 0.5f));
+    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
     int tWidth = dev_measureText(tbuf, 2);
     dev_drawString(251 - tWidth / 2, 47, tbuf, CC_WHITE, 2);
 
@@ -522,7 +697,7 @@ void drawLayoutLandscapeDark(const VerseData& v, const WeatherData& w) {
     drawWeatherIcon(251, 32, 24, w.icon, true);
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", (int)(w.temp + 0.5f));
+    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
     int tWidth = dev_measureText(tbuf, 2);
     dev_drawString(251 - tWidth / 2, 47, tbuf, CC_WHITE, 2);
 

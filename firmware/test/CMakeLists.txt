@@ -11,14 +11,24 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# GoogleTest setup
+# GoogleTest setup. A pre-populated checkout can be reused to keep builds
+# offline-friendly; override with -DCHROMAWOTD_GTEST_DIR=<path> (or set it to
+# "auto" to always fetch). No hard dependency on any other project's tree.
 include(FetchContent)
-if(EXISTS "C:/Users/jptra/Projects/eClock/firmware/test/build/_deps/googletest-src")
+set(CHROMAWOTD_GTEST_DIR "$ENV{CHROMAWOTD_GTEST_DIR}" CACHE PATH
+    "Local googletest source dir to reuse instead of fetching")
+if(NOT CHROMAWOTD_GTEST_DIR AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest")
+    set(CHROMAWOTD_GTEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest")
+endif()
+
+if(CHROMAWOTD_GTEST_DIR AND EXISTS "${CHROMAWOTD_GTEST_DIR}")
+    message(STATUS "Using local googletest at ${CHROMAWOTD_GTEST_DIR}")
     FetchContent_Declare(
         googletest
-        SOURCE_DIR "C:/Users/jptra/Projects/eClock/firmware/test/build/_deps/googletest-src"
+        SOURCE_DIR "${CHROMAWOTD_GTEST_DIR}"
     )
 else()
+    message(STATUS "Fetching googletest v1.14.0 from GitHub")
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
@@ -76,6 +86,22 @@ endfunction()
 cc_test(test_layout_portrait  tests/test_layout_portrait.cpp)
 cc_test(test_layout_landscape tests/test_layout_landscape.cpp)
 cc_test(test_layout_alert     tests/test_layout_alert.cpp)
+cc_test(test_layout_overflow  tests/test_layout_overflow.cpp)
+
+# Preview renderer: render an arbitrary fixture through the real layout engine.
+# Driven by tools/render_preview.py.
+add_executable(layout_render
+    ${CC_SRC_DIR}/verse_display.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tools/layout_render.cpp
+)
+target_compile_definitions(layout_render PRIVATE CHROMAWOTD_HOST=1)
+target_link_libraries(layout_render PRIVATE chroma_canvas)
+if(WIN32 AND EXISTS "${_mingw_bin_dir}")
+    add_custom_command(TARGET layout_render POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${_rt_dlls} $<TARGET_FILE_DIR:layout_render>
+        COMMENT "Copying MinGW runtime DLLs for layout_render")
+endif()
 
 # Ensure output directory exists
 add_custom_command(TARGET test_layout_portrait POST_BUILD

@@ -32,6 +32,9 @@ struct WeatherData {
 #define C_YELLOW CC_YELLOW
 
 void drawLayout(const VerseData& v, const WeatherData& w, bool landscape, bool inverted = false);
+// True when v.highlight was located inside v.verse (exact or case-insensitive).
+// Callers should surface a false result rather than silently losing the red accent.
+bool verseHighlightFound(const VerseData& v);
 void drawLayoutPortrait(const VerseData& v, const WeatherData& w);
 void drawLayoutPortraitInverted(const VerseData& v, const WeatherData& w);
 void drawLayoutLandscape(const VerseData& v, const WeatherData& w);
