@@ -473,10 +473,11 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char*
     static constexpr int kIconMin = 24;   // fixed alert-layout icon size / reflow lower clamp
     static constexpr int kIconMax = 48;   // reflow upper clamp (2x the fixed size)
 
-    // Section caption ("FORECAST" / "TOMORROW"), centred and aligned with the
-    // yellow header box's bottom rule (y=13).
+    // Section caption ("FORECAST" / "TOMORROW"), centred and baseline-aligned
+    // with the header title/date (y=2) so it sits level with the date and keeps
+    // clear of the rule below.
     int fcWidth = dev_measureText(label, 1);
-    dev_drawString(cx - fcWidth / 2, 4, label, CC_BLACK, 1);
+    dev_drawString(cx - fcWidth / 2, 2, label, CC_BLACK, 1);
     dev_drawFastHLine(cx - kHalf, 13, 2 * kHalf, CC_BLACK);   // aligns with header bottom (headerH-1)
 
     char tbuf[16];
@@ -585,21 +586,26 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
 
     // 3. Caption line: red rule with an optional black caption at the left
     //    (Word-of-the-Day pronunciation) and an optional red caption at the
-    //    right (verse reference, or the Word-of-the-Day headword).
+    //    right (verse reference, or the Word-of-the-Day headword). The rule and
+    //    both captions share the body text block's left/right margins
+    //    (kVerseMargin) so the whole caption line lines up with the text above.
     if (v.reference || opts.leftCaption) {
-        dev_drawFastHLine(10, kReferenceY, kSplitX - 20, CC_RED);
+        dev_drawFastHLine(kVerseMargin, kReferenceY, kSplitX - 2 * kVerseMargin, CC_RED);
         // Right caption (red) is placed first; the left caption (black) is only
         // drawn if it still clears it, so a long word + long respelling degrades
         // by dropping the pronunciation rather than overprinting.
-        int rightEdge = kSplitX - 8;
+        int rightEdge = kSplitX - kVerseMargin;
         if (v.reference) {
             dev_drawStringRight(rightEdge, kReferenceY + 6, v.reference, CC_RED, 1);
             rightEdge -= dev_measureText(v.reference, 1);
         }
         if (opts.leftCaption) {
             int leftW = dev_measureText(opts.leftCaption, 1);
-            if (10 + leftW + 8 <= rightEdge)
-                dev_drawString(10, kReferenceY + 6, opts.leftCaption, CC_BLACK, 1);
+            // The caption always starts with '(' , which carries a 1 px left side
+            // bearing; nudge 1 px left so its INK lines up with the rule start and
+            // the body text's left edge rather than sitting 1 px inside them.
+            if (kVerseMargin + leftW + 8 <= rightEdge)
+                dev_drawString(kVerseMargin - 1, kReferenceY + 6, opts.leftCaption, CC_BLACK, 1);
         }
     }
 
