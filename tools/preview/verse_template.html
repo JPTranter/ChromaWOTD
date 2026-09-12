@@ -1,8 +1,11 @@
 <!DOCTYPE html>
-<!-- CHROMAWOTD PC preview template — mirrors the firmware draw layout 1:1.
-     Edit the DATA object below; layout code mirrors the firmware draw calls
-     (header band, verse text, reference, weather strip) so porting to the
-     device is mechanical. Panel is 128x296 px, rendered here at 3x scale. -->
+<!-- CHROMAWOTD PC design mockup — NOT a pixel-accurate mirror of the firmware.
+     It is a fast visual sketch: proportional serif type, curly quotes, an em-dash
+     reference and a text-rendered ⚠ all differ from the panel, which uses a 5x7
+     ASCII font and normalises those glyphs (⚠ -> "!", curly quotes -> straight,
+     em/en dash -> "-", ellipsis -> "."). Use the CMake host harness
+     (firmware/test, `ctest` + docs/images/*.png) for pixel-accurate renders.
+     Edit the DATA object below to try a different verse / weather. -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -58,9 +61,11 @@
 <div class="wrap">
   <div class="frame" id="panel"></div>
   <div style="color:#ddd; font-size:13px; max-width:260px;">
-    <b style="font-size:15px;">CHROMAWOTD — Verse of the Day</b><br><br>
-    Rendered at panel scale 3× (128×296 px).<br><br>
-    Edit <code>DATA</code> in this file to change verse / weather.<br><br>
+    <b style="font-size:15px;">CHROMAWOTD — design mockup (not pixel-accurate)</b><br><br>
+    Approximates the 128×296 panel at 3× scale.<br><br>
+    Edit <code>DATA</code> in this file to try verse / weather.<br><br>
+    For pixel-accurate output run the host harness:
+    <code>ctest --test-dir firmware/test/build</code> → <code>docs/images/</code>.
     <b>Colour roles:</b><br>
     ■ Black — verse text, temps<br>
     ■ Red — reference, alerts, highlighted phrase<br>

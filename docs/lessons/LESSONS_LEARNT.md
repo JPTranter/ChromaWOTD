@@ -7,6 +7,9 @@ starting after eClock's highest section.
 ## 1. (inherited) Paged loop rule
 Draw every pixel of a frame inside `firstPage()/do/while(nextPage())`. Content
 drawn before `firstPage()` is wiped from the buffer.
+> **Not applicable on ESP32-S3 / Seeed GFX.** Lessons 1–3 are nRF52840 + mbed
+> mechanics from eClock; this project renders into the Seeed GFX buffer and calls
+> `epaper.update()` once. Kept for provenance only.
 
 ## 2. (inherited) Never reconfigure GPIO on SPI pins
 The panel shares SPI pins; touching `PIN_CNF`/pin config on those pads kills the
@@ -26,22 +29,34 @@ Touch_Drivers/ itself. Under PlatformIO it must be handled specially:
 1. The panel+board selection (e.g. `BOARD_SCREEN_COMBO 512` =
    Setup512_..._2inch9_BWRY, `USE_XIAO_EPAPER_DISPLAY_BOARD_EE05`) must be
    passed as **global build_flags**, not per-sketch defines, or TUs disagree.
-2. Exclude subfolders from the library build with
-   `lib_build_src_filter = -<Extensions/*> -<Processors/*> -<Touch_Drivers/*> -<TFT_eSPI.cpp>`
-   and `#include "TFT_eSPI.cpp"` from main.cpp.
+2. `#include "TFT_eSPI.cpp"` from main.cpp and never compile the subfolder sources
+   standalone — they assume `TFT_eSPI.h` is already included. **Do not add
+   `lib_build_src_filter` to platformio.ini**: it is not a PlatformIO option
+   (PIO 6.1.19 prints `Warning! Ignore unknown configuration option
+   lib_build_src_filter` on every build and ignores it). The subfolders stay out of
+   the build on their own because PlatformIO compiles only the root directory of a
+   legacy-layout library — verified by a clean build emitting exactly one Seeed_GFX
+   object, `lib*/Seeed_GFX/TFT_eSPI.cpp.o`. (Verified 2026-09-12.)
 3. Stock PlatformIO has no `seeed_xiao_esp32s3_plus` board; use
    `seeed_xiao_esp32s3` (Seeed GFX drives panel pins by raw GPIO number).
 4. Seeed_GFX is not on the PlatformIO registry — depend on the GitHub URL.
-   Verified combo for the 2.9" quad-colour (JD79661/JD79667 driver) panel: 512.
+   Verified combo for the 2.9" quad-colour panel: 512.
    EE05 pin map (from EPaper_Board_Pins_Setups.h): SCLK 7(D8), MOSI 9(D10),
    CS 44(D7), DC 10(D16), BUSY 4(D3), RST 38(D11), ENABLE 43(D6), no MISO.
 
 ## 6. Partial refresh is not available on the 2.9" BWRY panel
 `USE_PARTIAL_EPAPER` is only defined for monochrome panels (SSD1680/81/83,
-UC8179, ED103TC2) — there is no partial path in JD79667_Defines.h, so every
+UC8179, ED103TC2) — there is no partial path in the JD79667 driver defines, so every
 update is a full ~25 s sweep with multi-sweep flickering. Decided 2026-09-12:
 clock-style content refreshes a few times a day at most; red/yellow reserved
 for alerts and highlights, black carries text.
+
+**Controller naming (2026-09-12 review).** Two names circulate for this panel and both
+are defensible: Seeed's product datasheet for SKU 104990855 lists "Driver IC: JD79661",
+while Seeed GFX's combo table maps `BOARD_SCREEN_COMBO=512` to "2.9 inch BWRY ePaper
+Screen (JD79667)" and the build instantiates `TFT_Drivers/JD79667_Defines.h` +
+`JD79667_Init.h`. Reference the library path when talking about the build, and the
+datasheet when talking about the hardware — don't keep re-litigating which is "right".
 
 ## 7. Seeed_GFX header inclusion subtleties
 `TFT_eSPI.h` automatically `#include`s `Extensions/EPaper.h` near line 1133.
@@ -68,20 +83,35 @@ the ROM bootloader in download mode (`boot:0x21 (DOWNLOAD(USB/UART0))`) instead
 of booting from flash. Toggling DTR high/de-asserted and pulsing RTS restores
 SPI boot mode (`boot:0x29 (SPI_FAST_FLASH_BOOT)`).
 
-## 10. UTF-8 degree symbol on TFT_eSPI / Seeed_GFX
-`epaper.drawString()` expects CP437 or single-byte ASCII. Standard UTF-8 literals
-like `"%d°C"` embed the 2-byte sequence `\xC2\xB0`, causing TFT_eSPI to draw two
-unintended glyphs (CP437 block/shade characters). In `verse_display.cpp`,
-`dev_drawString` and `dev_measureText` decode `0xC2 0xB0` and render the degree
-symbol as a proportional vector circle (`epaper.drawCircle`) at `(cursorX + 2*size, y + 2*size, r=size)`,
-mirroring the host test harness.
+## 10. UTF-8 on TFT_eSPI / Seeed_GFX — one shared decoder
+`epaper.drawChar()` expects CP437/ASCII single bytes; standard UTF-8 literals like
+`"%d°C"` embed multi-byte sequences and draw one garbage glyph per byte. Rather than
+sprinkle special cases, every draw path now routes text through `cc_utf8ToAscii()` in
+`verse_display.cpp`, which consumes one *glyph* at a time and emits one ASCII byte:
+
+| Input glyph | Emitted |
+| :--- | :--- |
+| `°` U+00B0 (`C2 B0`) | `0xB0` sentinel → drawn as a vector circle (`drawCircle`), never a glyph |
+| `‘ ’` U+2018/19, `′` U+2032 | `'` |
+| `“ ”` U+201C/1D | `"` |
+| `– — ―` U+2013/14/15 | `-` |
+| `…` U+2026 | `.` |
+| `⚠` U+26A0 | `!` |
+| NBSP `C2 A0` | space |
+| anything else ≥ 0x80 | one `?` per glyph (not per byte) |
+
+`cc_countGlyphs()`/`cc_countGlyphsN()` mirror the decoder so measured width always
+equals drawn width, and word wrapping counts glyphs rather than bytes. Consequence to
+remember: **host and device now agree**, because the host canvas's own UTF-8 handling is
+no longer relied upon — normalisation happens before either backend sees the text.
+(2026-09-12)
 
 ## 11. Archiving Layout Screenshots for Lessons Learned
 To preserve visual design iterations and prevent regressions, host-rendered layout
 PNGs generated during testing are archived in
 [`docs/images/`](file:///C:/Users/jptra/Projects/ChromaWOTD/docs/images/).
-This tracks light, inverted, dark, and alert variants across portrait and landscape
-orientations for future reference.
+This tracks light, inverted, dark, alert and overflow-marker variants across portrait
+and landscape orientations for future reference.
 
 
 
@@ -161,4 +191,80 @@ orientations for future reference.
 ## 18. Development Tooling & Automation
 To streamline workflow and prevent stale documentation artifacts:
 - **`tools/regenerate_screenshots.py`**: A unified script that builds the CMake host test suite, executes all layout test assertions, captures fresh PNG renders, and synchronizes them directly into `docs/images/`. Run this whenever layout code in `verse_display.cpp` is touched.
-- **`tools/esp32s3_reset.py`**: Automatically cycles DTR/RTS serial control lines to release the native USB-Serial/JTAG download bootloader latch after flashing without requiring manual cable unplugging or button pressing.
+- **`tools/esp32s3_reset.py`**: Automatically cycles DTR/RTS serial control lines to release the native USB-Serial/JTAG download bootloader latch after flashing without requiring manual cable unplugging or button pressing. Takes `--port` (required), `--baud`, `--watch`; it must not hardcode a COM port.
+- **CMake/GoogleTest**: the host suite fetches googletest v1.14.0 from GitHub; `-DCHROMAWOTD_GTEST_DIR=<path>` reuses a local checkout for offline builds. Nothing may depend on another project's build tree.
+- **Regeneration is the source of truth**: `docs/images/*.png` must always be byte-identical to a fresh `ctest` run (`md5sum` compare is a 5-second sanity check when reviewing a layout change).
+
+## 19. Overflow must be visible, and the marker needs reserved space
+`drawWrappedText*` and `drawVerseBlock` used to `break` when a block filled up,
+silently swallowing the rest of a verse or alert. Fix, in three steps:
+1. `cc_wrappedLineCount()` (greedy, mirrors the draw loop) vs `cc_lineCapacity()`
+   decides *before drawing* whether content will be cut.
+2. When it will be cut, `cc_lineBudget()` shrinks the final line's width budget by
+   4 glyph widths (3 for the narrow weather slots, 6 for centred text) so the marker
+   fits inline. Drawing the marker only *after* a full line does not work — there is
+   no room left and it degrades to a misleading single `.` (this was tried; the
+   landscape verse ended with a bare period).
+3. `drawOverflowMarker()` appends `...`, or `..` when only that fits.
+`test_layout_overflow` asserts the marker exists, that it degrades gracefully, and that
+nothing spills out of the block (whitespace below the verse block, landscape divider
+column integrity, right edge of the weather column). The archived renders
+`docs/images/layout_overflow_*.png` are the visual record. (2026-09-12)
+
+## 20. Rounding negative temperatures
+`(int)(temp + 0.5f)` is wrong below zero because C truncates toward zero:
+`-0.6 → 0`, `-2.5 → -2`. Use `lroundf()` (`cc_roundTemp()`), which rounds half away
+from zero. Caught by a hash-equality test: `-0.6` must render identically to `-1.0`.
+Relevant for winter mornings in the Melbourne deployment. (2026-09-12)
+
+## 21. Highlight phrases must not be assumed to match
+BibleGateway text is HTML-entity-encoded and often re-capitalised (`the Lord` vs
+`the LORD`). The old byte-offset `strstr` match silently produced no red accent.
+`verseHighlightFound()` (exact, then case-insensitive) lets callers log the miss, and
+word colouring now tests *range overlap* rather than "does the phrase start in this
+word". (2026-09-12)
+
+## 22. Test suites need invariants, not pixel probes
+The original suites asserted 2–4 pixels that happened to be background, so clipping,
+overlap and spill all passed. `test_layout_overflow` instead asserts
+*properties*: FNV-1a canvas hashes for equivalence (`-0.6` ≡ `-1.0`; typographic UTF-8
+≡ its ASCII equivalent), whole-rectangle colour predicates for containment, and a
+cell-exact font-signature match for the ellipsis marker. This is what makes 25-second
+hardware refreshes safe to defer to the host harness. (2026-09-12)
+
+## 23. Repeat operations are scripted (verify + preview)
+Three commands cover almost every iteration; prefer them over ad-hoc commands:
+- **`python tools/verify_all.py`** — the whole check in one shot: firmware build
+  (`pio run -e s3`, `--clean` for a full rebuild), host suite (cmake configure if
+  needed + build + `ctest`), and the render ledger (md5 of `firmware/test/output/*.png`
+  against `docs/images/*.png`, reporting missing/stale/orphan files). Exits non-zero on
+  any failure, so it is CI-safe. `--fix` resyncs the archive, `--skip-firmware` is the
+  fast host-only loop.
+- **`python tools/render_preview.py`** — render any verse/weather fixture through the
+  real layout engine without flashing: `--orientation`, `--theme`, `--verse`,
+  `--verse-file -` (stdin), `--highlight`, `--reference`, `--temp` (negatives fine),
+  `--condition`, `--alert`, `--icon`, `--open`. With no `--verse` it uses
+  `tools/preview/sample_data.json`, so `--fixture` previews the bundled fixture.
+  It drives `layout_render` (`firmware/test/tools/layout_render.cpp`, built by the
+  same CMake project) and prints "highlight matched / NOT FOUND" so a silent red-accent
+  loss is visible immediately.
+- **`python tools/regenerate_screenshots.py`** — build → ctest → archive renders.
+
+Pitfall learned the hard way: `render_preview.py` must write to
+`firmware/test/output/previews/`, **not** `firmware/test/output/`, otherwise the
+verification ledger treats previews as required renders and the archiver copies
+throwaway images into `docs/images/`. (2026-09-12)
+
+## 24. Repository hygiene on this checkout
+- Build logs must not be committed: `firmware/build_s3.log` was tracked despite
+  `*.log` being gitignored (gitignore does not apply to already-tracked files) —
+  removed with `git rm --cached`. `*.log` and `firmware/*.log` are now covered.
+- Vendor PDFs stay out of the repo (see lesson 17); datasheet links live in
+  `docs/hardware/datasheets/README.md`.
+- Git prints `LF will be replaced by CRLF` for edited text files on this machine
+  (`core.autocrlf=true` is set): the index stores LF, the working tree CRLF. This is
+  expected — don't "fix" line endings or add `.gitattributes` churn for it. What does
+  matter is that an individual file uses one ending consistently.
+- The host build must not depend on another project's tree: the googletest path is now
+  configurable (`-DCHROMAWOTD_GTEST_DIR=<path>`) with a GitHub fetch fallback.
+  (2026-09-12)

@@ -38,6 +38,13 @@ harness (`firmware/test/`):
 | :---: | :---: |
 | <img src="docs/images/layout_landscape.png" alt="Landscape Layout" width="360"> | <img src="docs/images/layout_alert_landscape.png" alt="Landscape Layout with Alert" width="360"> |
 
+| Portrait (Over-long verse → marked) | Landscape (Over-long verse → marked) |
+| :---: | :---: |
+| <img src="docs/images/layout_overflow_portrait.png" alt="Portrait overflow marker" width="160"> | <img src="docs/images/layout_overflow_landscape.png" alt="Landscape overflow marker" width="360"> |
+
+The last row is a regression artifact: content that does not fit is truncated **visibly** with an inline
+ellipsis marker instead of being dropped silently.
+
 
 
 ---
@@ -59,7 +66,7 @@ Colour on an ambient ePaper display must carry unambiguous meaning rather than a
 
 | Component | Part / Specification | Notes |
 | :--- | :--- | :--- |
-| **Display Panel** | Seeed 2.9" Quadruple Color ePaper (BWRY) | 128×296 pixels, JD79661 controller, 24-pin FPC, SPI, 3.3 V (SKU: `104990855`) |
+| **Display Panel** | Seeed 2.9" Quadruple Color ePaper (BWRY) | 128×296 pixels, JD79661 panel IC (Seeed GFX drives it through its JD79667 code path — `BOARD_SCREEN_COMBO 512`), 24-pin FPC, SPI, 3.3 V (SKU: `104990855`) |
 | **Driver Board** | Seeed Studio XIAO ePaper Display Board EE05 | Integrated boost circuit, FPC connector, button, JST battery connector |
 | **Microcontroller** | Seeed Studio XIAO ESP32-S3 (or S3 Plus) | Xtensa dual-core 240 MHz, 8 MB Flash, integrated 2.4 GHz Wi-Fi & BLE |
 | **Power Supply** | USB-C or rechargeable LiPo battery via EE05 | USB-powered during development; target battery operation with deep sleep |
@@ -106,6 +113,11 @@ The rendering code in `firmware/src/verse_display.cpp` targets both hardware and
 * **Target Hardware (`#ifndef CHROMAWOTD_HOST`)**: Routes drawing calls directly to Seeed GFX (`epaper`), translating semantic colour constants (`CC_WHITE`, `CC_BLACK`, `CC_RED`, `CC_YELLOW`) to Seeed GFX display values.
 * **Host Harness (`#ifdef CHROMAWOTD_HOST`)**: Routes drawing calls to `CcCanvas`, simulating panel pigments in an RGBA buffer with a vendored 5×7 font and writing PNG screenshots via `stb_image_write`.
 
+Two rules are enforced in *shared* code so hardware and host can never disagree:
+
+* **UTF-8 is normalised before drawing.** `TFT_eSPI`'s built-in font is ASCII/CP437, so every draw path funnels text through `cc_utf8ToAscii()`, which maps the glyphs real API text contains — `°` (drawn as a vector circle), curly quotes, en/em dashes, non-breaking spaces, ellipsis, `⚠` — onto single ASCII bytes and collapses anything unknown to one `?` per *glyph* (not per byte). Width measurement counts glyphs with the same decoder, so measured width always equals drawn width.
+* **Truncation is never silent.** Each text block computes how many lines the greedy wrapper needs versus how many fit (`cc_wrappedLineCount` / `cc_lineCapacity`). If content will be cut, the final line's width budget is reduced (`cc_lineBudget`) so an ellipsis marker fits inline, and `drawOverflowMarker()` appends `...` (degrading to `..`/`.` only in very narrow columns). Verse text can therefore never spill into the reference rule, the weather strip, or the landscape divider.
+
 ### 3. Hardware Buttons & Dual Content Modes
 The device supports on-demand interaction and wake-from-deep-sleep via two physical buttons:
 * **Mode Switch Button**: Cycles visual presentation themes (Standard Light vs Inverted/Dark, Portrait vs Landscape orientation).
@@ -122,15 +134,22 @@ The active mode and last shown content type are persisted in non-volatile storag
 
 ```
 CHROMAWOTD/
-├── .codegraph/                  CodeGraph symbol database and indices
+├── .codegraph/                  CodeGraph symbol database (index files gitignored)
 ├── docs/
 │   ├── PROJECT_PLAN.md          Phased implementation plan and milestones
 │   ├── STATUS.md                Current project phase, completed tasks, and next steps
+│   ├── hardware/datasheets/     Vendor PDFs (gitignored) + README with download links
+│   ├── images/                  Archived PNG renders produced by the host test harness
 │   ├── lessons/
 │   │   └── LESSONS_LEARNT.md    Hard-won findings, hardware quirks, and solutions
-│   └── screenshots/             Exported PNG screenshots of layout renders
+│   └── research/
+│       ├── SCRIPTURE_APIS.md    Verse-of-the-Day endpoint research & fallbacks
+│       └── WEATHER_APIS.md      Open-Meteo vs BoM comparison & local config
 ├── firmware/
 │   ├── platformio.ini           PlatformIO build configuration for XIAO ESP32-S3
+│   ├── include/
+│   │   ├── board_pins.h         Deprecated pin map (Seeed GFX supplies pins now)
+│   │   └── chroma_version.h     Firmware version string
 │   ├── src/
 │   │   ├── main.cpp             Firmware entry point, setup, and display loop
 │   │   ├── driver.h             Seeed GFX board & screen combo definitions
@@ -139,15 +158,51 @@ CHROMAWOTD/
 │   └── test/
 │       ├── CMakeLists.txt       CMake configuration for native desktop tests
 │       ├── harness/             Mock canvas, font engine, and drawing primitives
-│       ├── tests/               GoogleTest suites for portrait, landscape, and alerts
-│       └── output/              Generated PNG screenshots from ctest
+│       ├── tests/               GoogleTest suites: portrait, landscape, alert, overflow
+│       ├── tools/               layout_render.cpp — CLI preview renderer
+│       └── output/              Generated PNG renders from ctest (gitignored)
 └── tools/
-    └── preview/                 HTML/CSS visual template for design prototyping
+    ├── verify_all.py            One-command check: build + tests + render ledger
+    ├── render_preview.py        Render any verse/weather fixture without flashing
+    ├── esp32s3_reset.py         Release the USB-Serial/JTAG download-mode latch
+    ├── regenerate_screenshots.py  Build tests → ctest → sync PNGs into docs/images/
+    └── preview/                 HTML/CSS design mockup + shared JSON fixture
 ```
 
 ---
 
 ## Building and Running
+
+### Verify everything in one command
+
+```powershell
+python tools/verify_all.py              # firmware build + host tests + render ledger
+python tools/verify_all.py --clean      # full firmware rebuild first
+python tools/verify_all.py --skip-firmware   # fast host-only loop
+python tools/verify_all.py --fix        # resync docs/images after an intentional layout change
+```
+
+Exit code is non-zero on any failure. The render ledger md5-compares
+`firmware/test/output/*.png` against `docs/images/*.png` and reports missing, stale or
+orphan files, so the archived renders can never silently drift from the code.
+
+### Preview any fixture without flashing
+
+```powershell
+# Bundled sample fixture, portrait
+python tools/render_preview.py --orientation portrait --fixture
+
+# Ad-hoc fixture: dark landscape, negative temperature, alert
+python tools/render_preview.py --orientation landscape --theme dark --temp -2.5 \
+    --condition "Partly cloudy" --alert "Rain likely after 4 PM" \
+    --verse "Trust in the Lord with all your heart." --highlight "Lord" \
+    --reference "Proverbs 3:5-6" --open
+```
+
+Renders land in `firmware/test/output/previews/` (gitignored, outside the ledger) and
+use the same draw calls the device executes. The tool also prints whether the highlight
+phrase was found, so a silently dropped red accent is obvious. Under the hood it drives
+`layout_render`, built by the same CMake project.
 
 ### Host Test Harness & Image Previews
 
@@ -164,7 +219,20 @@ cmake --build firmware/test/build
 ctest --test-dir firmware/test/build --output-on-failure
 ```
 
-Generated images will appear in `firmware/test/output/`.
+Generated images will appear in `firmware/test/output/`. GoogleTest is fetched from GitHub on first
+configure; to build offline (or reuse an existing checkout) pass a local tree:
+`cmake -S firmware/test -B firmware/test/build -DCHROMAWOTD_GTEST_DIR=<path-to-googletest>`.
+
+The suites are:
+
+| Suite | Covers |
+| :--- | :--- |
+| `test_layout_portrait` | Portrait geometry, header band, weather divider |
+| `test_layout_landscape` | Landscape split, divider, inverted and dark themes |
+| `test_layout_alert` | Alert banner placement in both orientations |
+| `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers, temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
+
+Fixtures used by the suites are mirrored in `tools/preview/sample_data.json` / `verse_template.html`.
 
 ### Firmware Build & Flashing
 
@@ -199,6 +267,7 @@ This repository is indexed by **CodeGraph** (`.codegraph/`). To explore symbols,
 
 1. **Exact-Power Display Sequencing**: On JD79661 panels, drawing must be completely staged before issuing `update()`. Powering down the panel while busy will cause panel latch-up.
 2. **Serial DFU Flashing**: UF2 drag-and-drop is prone to timing failures on Windows USB hosts; use native USB CDC flashing via `esptool.py` (`pio run -t upload`).
-3. **Flat Library Includes in PlatformIO**: Seeed_GFX root `TFT_eSPI.cpp` includes subfolder source files internally. Secondary translation units must include only `TFT_eSPI.h` to avoid duplicate class definitions.
+3. **Flat Library Includes in PlatformIO**: Seeed_GFX root `TFT_eSPI.cpp` includes subfolder source files internally, and PlatformIO compiles only that root directory, so `main.cpp` includes `TFT_eSPI.cpp` directly. There is no subfolder-exclusion option to configure — `lib_build_src_filter` is not a PlatformIO setting and is ignored with a warning.
 4. **Pure View Decoupling**: Isolate rendering math from network/NTP state by passing pure data structs by value.
+5. **No Silent Truncation**: Any content block that can overflow must mark the cut (`...`) rather than dropping words; region invariants in `test_layout_overflow` enforce that nothing leaves its block.
 
