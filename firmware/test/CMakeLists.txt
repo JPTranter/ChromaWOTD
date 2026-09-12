@@ -53,6 +53,8 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/draw/weather_icon.cpp
     ${CC_SRC_DIR}/text/glyphs.cpp
     ${CC_SRC_DIR}/text/wrap.cpp
+    ${CC_SRC_DIR}/net/net.cpp
+    ${CC_SRC_DIR}/net/net_host_curl.cpp
 )
 target_include_directories(chroma_canvas PUBLIC
     ${CC_HARN_DIR}
@@ -104,6 +106,10 @@ if(WIN32 AND EXISTS "${_mingw_bin_dir}")
                 ${_rt_dlls} $<TARGET_FILE_DIR:test_text>
         COMMENT "Copying MinGW runtime DLLs for test_text")
 endif()
+
+# Network module (shared pure mapping + host curl fetch; live-fetch tests are
+# skipped when offline).
+cc_test(test_net tests/test_net.cpp)
 
 # Preview renderer: render an arbitrary fixture through the real layout engine.
 # Driven by tools/render_preview.py.

@@ -10,6 +10,7 @@
 // what the panel will refresh to.
 #include "../harness/canvas.h"
 #include "verse_display.h"
+#include "net/net.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -33,7 +34,9 @@ const char* kUsage =
     "  --icon sun|cloud|rain|partly|0..3  weather icon (default partly)\n"
     "  --date \"Fri, Sep 12\"              header date (optional)\n"
     "  --out <path.png>                   output file (default preview.png)\n"
-    "  --help\n";
+    "  --help\n"
+    "  --live                         fetch weather + verse from the live network\n"
+    "                                 (curl hook) instead of fixtures; ignore others\n";
 
 struct Args {
     std::string verse;
@@ -48,6 +51,7 @@ struct Args {
     int icon = 3;
     bool haveHighlight = false, haveReference = false, haveAlert = false,
          haveCondition = false, haveDate = false;
+    bool live = false;
 };
 
 int iconFromName(const std::string& name) {
@@ -80,7 +84,10 @@ int main(int argc, char** argv) {
             return argv[++i];
         };
 
+        a.live = (flag == "--live") || a.live;
+
         if (flag == "--help" || flag == "-h") { std::cout << kUsage; return 0; }
+        else if (flag == "--live")      { /* handled above */ }
         else if (flag == "--verse")       { a.verse = next("--verse"); }
         else if (flag == "--verse-file")  { a.verseFile = next("--verse-file"); }
         else if (flag == "--highlight")   { a.highlight = next("--highlight"); a.haveHighlight = true; }
@@ -110,7 +117,7 @@ int main(int argc, char** argv) {
             a.verse = readAll(f);
         }
     }
-    if (a.verse.empty()) {
+    if (!a.live && a.verse.empty()) {
         std::cerr << "layout_render: no verse text (use --verse or --verse-file)\n\n" << kUsage;
         return 2;
     }
@@ -123,6 +130,23 @@ int main(int argc, char** argv) {
                    a.haveCondition ? a.condition.c_str() : nullptr,
                    a.haveAlert ? a.alert.c_str() : nullptr,
                    static_cast<WeatherIcon>(a.icon) };
+
+    // --live: pull the real weather + verse through the shared network module
+    // (curl hook on host), exactly as the device will. Falls back to the fixture
+    // args if a fetch fails, and prints what it did.
+    if (a.live) {
+        WeatherData lw{}; VerseData lv{};
+        bool wok = cc_fetchWeather(&lw), vok = cc_fetchVerse(&lv);
+        if (wok) { w = lw; }
+        if (vok) {
+            v.verse   = static_cast<const char*>(lv.verse);
+            v.reference= static_cast<const char*>(lv.reference);
+            v.date    = lv.date ? static_cast<const char*>(lv.date) : a.haveDate ? a.date.c_str() : nullptr;
+            v.highlight= nullptr;
+        }
+        printf("live: weather%s verse%s\n",
+               wok ? " OK" : " FAIL(fallback)", vok ? " OK" : " FAIL(fallback)");
+    }
 
     g_canvas.init(296, 128);
     drawLayout(v, w);
