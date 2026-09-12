@@ -39,13 +39,13 @@ static int cc_utf8ToAscii(const unsigned char* p, unsigned char* out);
 typedef struct { uint32_t bitmapOffset; uint8_t width, height, xAdvance; int8_t xOffset, yOffset; } GFXglyph;
 typedef struct { const uint8_t* bitmap; GFXglyph* glyph; uint16_t first, last; uint8_t yAdvance; } GFXfont;
 #endif
-#include "fonts/FreeSans8pt7b.h"   // needs GFXglyph/GFXfont visible
+#include "fonts/FreeSans6pt7b.h"   // needs GFXglyph/GFXfont visible
 #endif
 
 // Pixel advance of ONE decoded ASCII glyph at the given magnification.
 static int cc_advance(unsigned char ascii, int size) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    static const GFXfont* f = &FreeSans8pt7b;
+    static const GFXfont* f = &FreeSans6pt7b;
     if (ascii >= f->first && ascii <= f->last) {
         GFXglyph* g = &f->glyph[ascii - f->first];
         return (g->width || g->height) ? g->xAdvance * size : 6 * size;
@@ -78,7 +78,7 @@ static int cc_measurePxN(const char* str, int len, int size) {
 // Vertical distance between successive text baselines.
 static int cc_lineHeight(int size, int fallback) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    return FreeSans8pt7b.yAdvance * size;
+    return FreeSans6pt7b.yAdvance * size;
 #else
     return fallback;
 #endif
@@ -154,7 +154,7 @@ static void dev_fillCircle(int x, int y, int r, uint32_t c) { g_canvas.fillCircl
 // Render one FreeSans glyph at baseline (x,y), magnification size, honouring the
 // glyph's xOffset/yOffset so descenders hang below the baseline as drawn on-device.
 static void dev_drawGlyph(unsigned char ch, int x, int y, uint32_t c, int size) {
-    const GFXfont* f = &FreeSans8pt7b;
+    const GFXfont* f = &FreeSans6pt7b;
     if (ch < f->first || ch > f->last) { g_canvas.drawChar(x, y, '?', c, (uint8_t)size); return; }
     const GFXglyph* g = &f->glyph[ch - f->first];
     if (!g->width || !g->height) return;   // space etc.
@@ -240,7 +240,7 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
 #ifdef CHROMAWOTD_FONT_FREESANS
     epaper.setTextColor(toDeviceColor(c));
     epaper.setTextSize(size);
-    epaper.setFreeFont(&FreeSans8pt7b);
+    epaper.setFreeFont(&FreeSans6pt7b);
     epaper.drawString(str, x, y);   // y = baseline; GFX path handles advance + descenders
     return;
 #else
