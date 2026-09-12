@@ -1,3 +1,4 @@
+// test_layout_alert.cpp — alert banner placement in the single landscape layout.
 #include "../harness/canvas.h"
 #include "verse_display.h"
 #include <gtest/gtest.h>
@@ -11,29 +12,16 @@ static VerseData sampleVerse() {
     };
 }
 
-static WeatherData sampleWeatherAlert() {
-    return { 22.0f, "Heavy rain", "Rain after 4 PM", 2 };
-}
-
-TEST(LayoutAlert, PortraitWithAlert) {
-    g_canvas.init(128, 296);
-    drawLayoutPortrait(sampleVerse(), sampleWeatherAlert());
-
-    // Red alert text is present at y >= 284
-    EXPECT_EQ(g_canvas.getPixel(44, 284), CC_RED);
-
-    ASSERT_TRUE(g_canvas.dumpPng("output/layout_alert_portrait.png"));
-}
-
 TEST(LayoutAlert, LandscapeWithAlert) {
     g_canvas.init(296, 128);
-    drawLayoutLandscape(sampleVerse(), sampleWeatherAlert());
+    WeatherData w = { 22.0f, "Heavy rain", "Rain after 4 PM", 2 };
+    drawLayout(sampleVerse(), w);
 
-    // Red right-edge stripe is removed (right edge at (294, 50) is white canvas)
+    // Red right edge of the column, above the alert, stays white canvas (no spill).
     EXPECT_EQ(g_canvas.getPixel(294, 50), CC_WHITE);
 
-    // Red alert divider line at x = 220, y = 78
-    EXPECT_EQ(g_canvas.getPixel(220, 78), CC_RED);
+    // Red alert divider line is pinned near the bottom of the view (y = 94).
+    EXPECT_EQ(g_canvas.getPixel(251, 94), CC_RED);
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_alert_landscape.png"));
 }

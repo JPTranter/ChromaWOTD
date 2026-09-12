@@ -1,5 +1,10 @@
 // verse_display.h — layout engine for CHROMAWOTD.
-// Runs both on-device (Seeed GFX / ESP32-S3) and on PC (test harness with mock canvas).
+// Single light layout on a landscape 296x128 panel. Runs both on-device
+// (Seeed GFX / ESP32-S3) and on PC (test harness with mock canvas).
+//
+// Orientation and theme are NOT parameters: the display has exactly one
+// presentation — landscape, light theme. Colour is carried by the CC_* constants
+// and the palette never varies, so there is nothing to switch on.
 
 #pragma once
 #include <cstdint>
@@ -25,20 +30,9 @@ struct WeatherData {
 #define CC_RED     2u
 #define CC_YELLOW  3u
 
-// Legacy aliases
-#define C_WHITE  CC_WHITE
-#define C_BLACK  CC_BLACK
-#define C_RED    CC_RED
-#define C_YELLOW CC_YELLOW
+// Render the one and only layout (landscape, light theme) into the target canvas.
+void drawLayout(const VerseData& v, const WeatherData& w);
 
-void drawLayout(const VerseData& v, const WeatherData& w, bool landscape, bool inverted = false);
 // True when v.highlight was located inside v.verse (exact or case-insensitive).
 // Callers should surface a false result rather than silently losing the red accent.
 bool verseHighlightFound(const VerseData& v);
-void drawLayoutPortrait(const VerseData& v, const WeatherData& w);
-void drawLayoutPortraitInverted(const VerseData& v, const WeatherData& w);
-void drawLayoutLandscape(const VerseData& v, const WeatherData& w);
-void drawLayoutLandscapeInverted(const VerseData& v, const WeatherData& w);
-void drawLayoutLandscapeDark(const VerseData& v, const WeatherData& w);
-
-

@@ -1,8 +1,7 @@
-// layout_render — render an arbitrary verse/weather fixture with the real layout
-// engine and write a PNG, without touching hardware.
+// layout_render — render a verse/weather fixture through the real (single, light,
+// landscape) layout engine and write a PNG, without touching hardware.
 //
-//   ./layout_render --orientation landscape --theme dark \
-//                   --verse-file verse.txt --highlight "he will make straight your paths" \
+//   ./layout_render --verse-file verse.txt --highlight "he will make straight your paths" \
 //                   --reference "Proverbs 3:5-6" --temp -2.5 --condition "Partly cloudy" \
 //                   --icon partly --alert "Rain likely after 4 PM" --out preview.png
 //
@@ -24,8 +23,6 @@ namespace {
 const char* kUsage =
     "usage: layout_render [options]\n"
     "\n"
-    "  --orientation portrait|landscape   (default landscape)\n"
-    "  --theme light|inverted|dark        (default light; portrait+dark falls back to inverted)\n"
     "  --verse \"text\"                     verse body text\n"
     "  --verse-file <path>                read verse body from a file ('-' for stdin)\n"
     "  --highlight \"phrase\"               phrase painted in red (optional)\n"
@@ -39,8 +36,6 @@ const char* kUsage =
     "  --help\n";
 
 struct Args {
-    bool landscape = true;
-    std::string theme = "light";
     std::string verse;
     std::string verseFile;
     std::string highlight;
@@ -67,8 +62,7 @@ int iconFromName(const std::string& name) {
 std::string readAll(std::istream& in) {
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
-    // Collapse line breaks so the wrapper sees one paragraph, as API text arrives.
-    for (char& c : text) if (c == '\n' || c == '\r' || c == '\t') c = ' ';
+    for (char& c : text) if (c == '\n' || c == '\r' || c == '\t') c = ' ';  // one paragraph
     return text;
 }
 
@@ -76,7 +70,6 @@ std::string readAll(std::istream& in) {
 
 int main(int argc, char** argv) {
     Args a;
-
     for (int i = 1; i < argc; i++) {
         std::string flag = argv[i];
         auto next = [&](const char* what) -> std::string {
@@ -88,19 +81,6 @@ int main(int argc, char** argv) {
         };
 
         if (flag == "--help" || flag == "-h") { std::cout << kUsage; return 0; }
-        else if (flag == "--orientation") {
-            std::string v = next("--orientation");
-            if (v == "portrait")       a.landscape = false;
-            else if (v == "landscape") a.landscape = true;
-            else { std::cerr << "layout_render: unknown orientation '" << v << "'\n"; return 2; }
-        }
-        else if (flag == "--theme") {
-            a.theme = next("--theme");
-            if (a.theme != "light" && a.theme != "inverted" && a.theme != "dark") {
-                std::cerr << "layout_render: unknown theme '" << a.theme << "'\n";
-                return 2;
-            }
-        }
         else if (flag == "--verse")       { a.verse = next("--verse"); }
         else if (flag == "--verse-file")  { a.verseFile = next("--verse-file"); }
         else if (flag == "--highlight")   { a.highlight = next("--highlight"); a.haveHighlight = true; }
@@ -144,34 +124,15 @@ int main(int argc, char** argv) {
                    a.haveAlert ? a.alert.c_str() : nullptr,
                    a.icon };
 
-    const int width  = a.landscape ? 296 : 128;
-    const int height = a.landscape ? 128 : 296;
-    g_canvas.init(width, height);
-
-    const bool darkPortrait = (!a.landscape && a.theme == "dark");
-    if (darkPortrait) {
-        std::cerr << "layout_render: no dark portrait layout exists yet; rendering inverted\n";
-    }
-
-    if (a.landscape) {
-        if (a.theme == "dark")          drawLayoutLandscapeDark(v, w);
-        else if (a.theme == "inverted") drawLayoutLandscapeInverted(v, w);
-        else                            drawLayoutLandscape(v, w);
-    } else {
-        if (a.theme == "light") drawLayoutPortrait(v, w);
-        else                    drawLayoutPortraitInverted(v, w);
-    }
+    g_canvas.init(296, 128);
+    drawLayout(v, w);
 
     if (!g_canvas.dumpPng(a.out.c_str())) {
         std::cerr << "layout_render: failed to write " << a.out << "\n";
         return 1;
     }
 
-    printf("rendered %dx%d %s/%s -> %s\n",
-           width, height,
-           a.landscape ? "landscape" : "portrait",
-           darkPortrait ? "inverted" : a.theme.c_str(),
-           a.out.c_str());
+    printf("rendered 296x128 landscape/light -> %s\n", a.out.c_str());
     printf("temp %.1f C | icon %d | highlight %s\n", a.temp, a.icon,
            !a.haveHighlight ? "n/a" : (verseHighlightFound(v) ? "matched" : "NOT FOUND - no red accent"));
     return 0;

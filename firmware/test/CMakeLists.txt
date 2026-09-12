@@ -83,7 +83,6 @@ function(cc_test NAME SRC_TEST)
     endif()
 endfunction()
 
-cc_test(test_layout_portrait  tests/test_layout_portrait.cpp)
 cc_test(test_layout_landscape tests/test_layout_landscape.cpp)
 cc_test(test_layout_alert     tests/test_layout_alert.cpp)
 cc_test(test_layout_overflow  tests/test_layout_overflow.cpp)
@@ -104,6 +103,6 @@ if(WIN32 AND EXISTS "${_mingw_bin_dir}")
 endif()
 
 # Ensure output directory exists
-add_custom_command(TARGET test_layout_portrait POST_BUILD
+add_custom_command(TARGET test_layout_landscape POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/output)
 

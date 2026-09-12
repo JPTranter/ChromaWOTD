@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Preview any verse/weather fixture through the real layout engine — no flashing.
+"""Preview a verse/weather fixture through the real layout engine — no flashing.
 
 Examples
 --------
-    # Standard bundled fixture (tools/preview/sample_data.json), portrait
-    python tools/render_preview.py --orientation portrait
+    # Standard bundled fixture (tools/preview/sample_data.json)
+    python tools/render_preview.py --fixture
 
-    # Ad-hoc fixture, dark landscape, negative temperature
-    python tools/render_preview.py --orientation landscape --theme dark \\
-        --temp -2.5 --condition "Partly cloudy" --alert "Rain likely after 4 PM" \\
-        --verse "Trust in the Lord with all your heart." --highlight "Lord" \\
-        --reference "Proverbs 3:5-6"
+    # Ad-hoc fixture, negative temperature + alert
+    python tools/render_preview.py --temp -2.5 --condition "Partly cloudy" \\
+        --alert "Rain likely after 4 PM" --verse "Trust in the Lord with all your heart." \\
+        --highlight "Lord" --reference "Proverbs 3:5-6"
 
     # Render a verse body kept in a file, and open the PNG when done
     python tools/render_preview.py --verse-file myverse.txt --open
 
-Renders land in `firmware/test/output/previews/` by default (gitignored, and kept out
-of the docs/images ledger) and use the same draw calls the device runs, so the PNG
-matches what the panel will refresh to.
+The device has a single presentation (landscape, light theme); the 296x128 render
+uses the same draw calls the firmware runs, so the PNG is what the panel refreshes to.
+Renders land in `firmware/test/output/previews/` (gitignored, outside the docs/images
+ledger).
 """
 import argparse
 import json
@@ -90,8 +90,6 @@ def fixture_args(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--orientation", choices=["portrait", "landscape"], default="landscape")
-    parser.add_argument("--theme", choices=["light", "inverted", "dark"], default="light")
     parser.add_argument("--verse", help="verse body text")
     parser.add_argument("--verse-file", help="file containing the verse body ('-' for stdin)")
     parser.add_argument("--highlight", help="phrase painted red")
@@ -102,7 +100,7 @@ def main():
     parser.add_argument("--alert", help="alert banner text (red)")
     parser.add_argument("--icon", choices=["sun", "cloud", "rain", "partly", "0", "1", "2", "3"],
                         help="weather icon")
-    parser.add_argument("--out", help="output PNG path (default firmware/test/output/preview_<mode>.png)")
+    parser.add_argument("--out", help="output PNG path (default firmware/test/output/previews/preview.png)")
     parser.add_argument("--fixture", nargs="?", const=FIXTURE,
                         help="use the bundled sample_data.json fixture (optionally another path)")
     parser.add_argument("--rebuild", action="store_true", help="force a rebuild of layout_render")
@@ -111,7 +109,7 @@ def main():
 
     exe = ensure_built(args.rebuild)
 
-    cmd = [exe, "--orientation", args.orientation, "--theme", args.theme]
+    cmd = [exe]
     if args.fixture:
         cmd += fixture_args(args.fixture)
     else:
@@ -130,7 +128,7 @@ def main():
     out = args.out
     if not out:
         os.makedirs(DEFAULT_OUT_DIR, exist_ok=True)
-        out = os.path.join(DEFAULT_OUT_DIR, f"preview_{args.orientation}_{args.theme}.png")
+        out = os.path.join(DEFAULT_OUT_DIR, "preview.png")
     cmd += ["--out", out]
 
     print("[2/3] Rendering...")

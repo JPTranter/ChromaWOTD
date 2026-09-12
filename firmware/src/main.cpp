@@ -42,8 +42,8 @@ void setup() {
         Serial.println("WARN: highlight phrase not found in verse - no red accent drawn");
     }
 
-    drawLayoutLandscape(v, w);
-    epaper.update();
+    drawLayout(v, w);
+        epaper.update();
     Serial.println("CHROMAWOTD landscape layout pushed to display");
     epaper.sleep();
 }

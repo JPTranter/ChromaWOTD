@@ -268,3 +268,27 @@ throwaway images into `docs/images/`. (2026-09-12)
 - The host build must not depend on another project's tree: the googletest path is now
   configurable (`-DCHROMAWOTD_GTEST_DIR=<path>`) with a GitHub fetch fallback.
   (2026-09-12)
+
+## 25. One presentation is simpler than five — delete, don't parameterise
+The layout engine originally shipped five variants (portrait, portrait-inverted,
+landscape, landscape-inverted, landscape-dark) that duplicated the same four zones
+with different colours, plus a `drawLayout()` dispatcher whose theme model was
+inconsistent (portrait had no "dark"). On 2026-09-12 the product was reduced to a
+**single landscape, light presentation**: all portrait/inverted/dark layouts were
+deleted, the `Theme`/`Orientation` branching and the `inverted` flags went away, the
+colour palette is now plain `CC_*` constants with no switch, and the test count fell
+from 19 (4 suites) to 10 (3 suites). This closed REVIEW items D1 (monolith) and D3
+(theme inconsistency) by removal.
+- Lesson: when a feature matrix is costing more than it earns, deleting the unused
+  dimension is better engineering than parameterising it further. A palette object
+  would have been the right call while multiple themes existed; with one theme it is
+  dead complexity.
+- The deletion surfaced two real bugs: `drawOverflowMarker` right-aligned `..` at
+  `maxRight - x - w` but tested `>= x - w + 1`, so a marker one pixel short of the gap
+  incorrectly degraded to a single `.`; and a single word wider than the 66 px weather
+  column overflows its right edge (first word of a line always draws regardless of
+  budget). Both fixed; the second is a documented minor limitation for pathological
+  words ("thunderstorm" in a 66 px column).
+- `tools/render_preview.py` lost `--orientation`/`--theme`, `layout_render` no longer
+  takes them, and portrait/inverted/dark PNGs were removed from `docs/images/`. Syncing
+  these docs is part of the change, not an afterthought.

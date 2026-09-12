@@ -1,3 +1,5 @@
+// test_layout_landscape.cpp — geometry and PNG dump for the single (light,
+// landscape) layout.
 #include "../harness/canvas.h"
 #include "verse_display.h"
 #include <gtest/gtest.h>
@@ -17,7 +19,7 @@ static WeatherData sampleWeather() {
 
 TEST(LayoutLandscape, DividerAndPngDump) {
     g_canvas.init(296, 128);
-    drawLayoutLandscape(sampleVerse(), sampleWeather());
+    drawLayout(sampleVerse(), sampleWeather());
 
     // Header band at (2, 2) must be yellow
     EXPECT_EQ(g_canvas.getPixel(2, 2), CC_YELLOW);
@@ -30,40 +32,4 @@ TEST(LayoutLandscape, DividerAndPngDump) {
 
     // Dump PNG
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_landscape.png"));
-}
-
-TEST(LayoutLandscape, InvertedPngDump) {
-    g_canvas.init(296, 128);
-    WeatherData alertWeather = { 24.5f, "Partly cloudy", "Rain likely after 4 PM", 3 };
-    drawLayoutLandscapeInverted(sampleVerse(), alertWeather);
-
-    // Header band at (2, 2) is yellow
-    EXPECT_EQ(g_canvas.getPixel(2, 2), CC_YELLOW);
-
-    // Background in verse body (50, 50) is black
-    EXPECT_EQ(g_canvas.getPixel(50, 50), CC_BLACK);
-
-    // Vertical divider line at x = 205 is white
-    EXPECT_EQ(g_canvas.getPixel(205, 50), CC_WHITE);
-
-    // Weather column background at (250, 100) is black
-    EXPECT_EQ(g_canvas.getPixel(250, 100), CC_BLACK);
-
-    // Dump PNG
-    ASSERT_TRUE(g_canvas.dumpPng("output/layout_landscape_inverted.png"));
-}
-
-TEST(LayoutLandscape, DarkPngDump) {
-    g_canvas.init(296, 128);
-    WeatherData alertWeather = { 24.5f, "Partly cloudy", "Rain likely after 4 PM", 3 };
-    drawLayoutLandscapeDark(sampleVerse(), alertWeather);
-
-    // Header area background at (2, 2) is black
-    EXPECT_EQ(g_canvas.getPixel(2, 2), CC_BLACK);
-
-    // Vertical divider line at x = 205 is yellow
-    EXPECT_EQ(g_canvas.getPixel(205, 50), CC_YELLOW);
-
-    // Dump PNG
-    ASSERT_TRUE(g_canvas.dumpPng("output/layout_landscape_dark.png"));
 }

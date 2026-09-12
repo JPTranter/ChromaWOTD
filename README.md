@@ -26,24 +26,18 @@ ePaper panel. Built upon the architectural and hardware lessons of the sibling
 
 ## Visual Concept & Rendered Outputs
 
-The layout engine generates pixel-accurate renders for both portrait (128×296) and landscape
-(296×128) orientations. The renders below are produced directly by the native host test
-harness (`firmware/test/`):
+The device has a **single presentation: landscape (296×128) in the light theme**. The
+renders below are produced directly by the native host test harness (`firmware/test/`):
 
-| Portrait (Normal) | Portrait (Weather Alert) |
-| :---: | :---: |
-| <img src="docs/images/layout_portrait.png" alt="Portrait Layout" width="160"> | <img src="docs/images/layout_alert_portrait.png" alt="Portrait Layout with Alert" width="160"> |
+| Landscape (Normal) | Landscape (Weather Alert) | Landscape (Over-long verse → marked) |
+| :---: | :---: | :---: |
+| <img src="docs/images/layout_landscape.png" alt="Landscape Layout" width="360"> | <img src="docs/images/layout_alert_landscape.png" alt="Landscape Layout with Alert" width="360"> | <img src="docs/images/layout_overflow_landscape.png" alt="Landscape overflow marker" width="360"> |
 
-| Landscape (Normal) | Landscape (Weather Alert) |
-| :---: | :---: |
-| <img src="docs/images/layout_landscape.png" alt="Landscape Layout" width="360"> | <img src="docs/images/layout_alert_landscape.png" alt="Landscape Layout with Alert" width="360"> |
+The third column is a regression artifact: content that does not fit is truncated
+**visibly** with an inline ellipsis marker instead of being dropped silently.
 
-| Portrait (Over-long verse → marked) | Landscape (Over-long verse → marked) |
-| :---: | :---: |
-| <img src="docs/images/layout_overflow_portrait.png" alt="Portrait overflow marker" width="160"> | <img src="docs/images/layout_overflow_landscape.png" alt="Landscape overflow marker" width="360"> |
-
-The last row is a regression artifact: content that does not fit is truncated **visibly** with an inline
-ellipsis marker instead of being dropped silently.
+The earlier portrait and dark/inverted design variants are kept for historical reference
+under [`docs/images/history/`](docs/images/history/). They are no longer produced.
 
 
 
@@ -120,7 +114,8 @@ Two rules are enforced in *shared* code so hardware and host can never disagree:
 
 ### 3. Hardware Buttons & Dual Content Modes
 The device supports on-demand interaction and wake-from-deep-sleep via two physical buttons:
-* **Mode Switch Button**: Cycles visual presentation themes (Standard Light vs Inverted/Dark, Portrait vs Landscape orientation).
+
+* **Mode Switch Button**: Not used — the display has a single presentation (landscape, light theme).
 * **Refresh & Content Toggle Button**: Wakes the device to immediately refresh local weather and toggle between:
   1. **Verse of the Day (Word of God)**: Daily scripture reading with highlighted key phrase and biblical citation.
   2. **Word of the Day (Vocabulary)**: Curated vocabulary word, pronunciation guide, part of speech, definition, and usage sentence.
@@ -159,7 +154,7 @@ CHROMAWOTD/
 │   └── test/
 │       ├── CMakeLists.txt       CMake configuration for native desktop tests
 │       ├── harness/             Mock canvas, font engine, and drawing primitives
-│       ├── tests/               GoogleTest suites: portrait, landscape, alert, overflow
+│       ├── tests/               GoogleTest suites: landscape, alert, overflow
 │       ├── tools/               layout_render.cpp — CLI preview renderer
 │       └── output/              Generated PNG renders from ctest (gitignored)
 └── tools/
@@ -194,14 +189,13 @@ orphan files, so the archived renders can never silently drift from the code.
 ### Preview any fixture without flashing
 
 ```powershell
-# Bundled sample fixture, portrait
-python tools/render_preview.py --orientation portrait --fixture
+# Bundled sample fixture, default output
+python tools/render_preview.py --fixture
 
-# Ad-hoc fixture: dark landscape, negative temperature, alert
-python tools/render_preview.py --orientation landscape --theme dark --temp -2.5 \
-    --condition "Partly cloudy" --alert "Rain likely after 4 PM" \
-    --verse "Trust in the Lord with all your heart." --highlight "Lord" \
-    --reference "Proverbs 3:5-6" --open
+# Ad-hoc fixture: negative temperature + alert
+python tools/render_preview.py --temp -2.5 --condition "Partly cloudy" \
+    --alert "Rain likely after 4 PM" --verse "Trust in the Lord with all your heart." \
+    --highlight "Lord" --reference "Proverbs 3:5-6" --open
 ```
 
 Renders land in `firmware/test/output/previews/` (gitignored, outside the ledger) and
@@ -232,9 +226,8 @@ The suites are:
 
 | Suite | Covers |
 | :--- | :--- |
-| `test_layout_portrait` | Portrait geometry, header band, weather divider |
-| `test_layout_landscape` | Landscape split, divider, inverted and dark themes |
-| `test_layout_alert` | Alert banner placement in both orientations |
+| `test_layout_landscape` | Single-layout geometry, header band, divider, weather column |
+| `test_layout_alert` | Alert banner pinned to the bottom of the weather column |
 | `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers, temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
 
 Fixtures used by the suites are mirrored in `tools/preview/sample_data.json` / `verse_template.html`.

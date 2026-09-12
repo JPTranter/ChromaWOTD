@@ -158,11 +158,11 @@ static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int 
 }
 #endif
 
-static void drawWeatherIcon(int cx, int cy, int size, int iconType, bool inverted = false) {
+static void drawWeatherIcon(int cx, int cy, int size, int iconType) {
     int r = size / 3;
     if (r < 3) r = 3;
 
-    uint32_t cloudOutline = inverted ? CC_WHITE : CC_BLACK;
+    uint32_t cloudOutline = CC_BLACK;
     uint32_t cloudFill    = CC_WHITE;
 
     switch (iconType) {
@@ -257,9 +257,10 @@ static int cc_lineCapacity(int maxH, int size, int lineHeight) {
 }
 
 // Width budget for one line. When the text will be cut off, the final line is kept
-// short enough that the "..." marker still fits inline: 3 glyph widths of slack for
-// a left-aligned block, 6 for a centred one (the line floats, so both margins count).
-static int cc_lineBudget(int maxW, int charWidth, int slack, bool truncated, int lineIdx, int capacity) {
+// short enough that the "..." marker still fits inline: 6 glyph widths of slack for
+// centred text (the line floats, so both margins count).
+static int cc_lineBudget(int maxW, int charWidth, bool truncated, int lineIdx, int capacity) {
+    const int slack = 6;
     if (truncated && capacity > 0 && lineIdx == capacity - 1) {
         int budget = maxW - slack * charWidth;
         if (budget >= 4 * charWidth) return budget;
@@ -267,64 +268,18 @@ static int cc_lineBudget(int maxW, int charWidth, int slack, bool truncated, int
     return maxW;
 }
 
-// Marks text the block could not hold: "..." when the reserved space allows it,
-// degrading to ".." rather than pushing characters off the block.
+// Marks text the block could not hold. Prefers "..." right after the last word;
+// when that does not fit, right-aligns ".." into the free gap at the block edge
+// (without touching the word's ink); falls back to a single "." only when even
+// that cannot be placed.
 static void drawOverflowMarker(int x, int y, int maxRight, uint32_t color, int size) {
     int w = CC_GLYPH_W * size;
     if (x + 3 * w <= maxRight) { dev_drawString(x, y, "...", color, size); return; }
-    if (x + 2 * w <= maxRight) { dev_drawString(x, y, "..", color, size); return; }
-    dev_drawString(x, y, ".", color, size);
-}
-
-static int drawWrappedText(int startX, int startY, int maxW, int maxH, const char* text, uint32_t color, int size = 1, int lineHeight = 10) {
-    if (!text || !*text) return startY;
-
-    const int charWidth = CC_GLYPH_W * size;
-    const int capacity = cc_lineCapacity(maxH, size, lineHeight);
-    const bool truncated = cc_wrappedLineCount(text, maxW, size) > capacity;
-
-    int curX = startX;
-    int curY = startY;
-    int lastX = startX;
-    int lastY = startY;
-    int lineIdx = 0;
-    bool drewAny = false;
-
-    const char* ptr = text;
-    while (*ptr) {
-        while (*ptr == ' ') ptr++;
-        if (!*ptr) break;
-
-        if (curY + 8 * size > startY + maxH) break;
-
-        const char* wordStart = ptr;
-        while (*ptr && *ptr != ' ') ptr++;
-        int wordLen = (int)(ptr - wordStart);
-        int wordPx = cc_countGlyphsN(wordStart, wordLen) * charWidth;
-        int budget = cc_lineBudget(maxW, charWidth, 3, truncated, lineIdx, capacity);
-
-        if (curX > startX && (curX + wordPx > startX + budget)) {
-            curX = startX;
-            curY += lineHeight;
-            lineIdx++;
-            if (curY + 8 * size > startY + maxH) break;
-            budget = cc_lineBudget(maxW, charWidth, 3, truncated, lineIdx, capacity);
-        }
-
-        char wordBuf[64];
-        int copyLen = wordLen < 63 ? wordLen : 63;
-        memcpy(wordBuf, wordStart, copyLen);
-        wordBuf[copyLen] = '\0';
-
-        dev_drawString(curX, curY, wordBuf, color, size);
-        curX += wordPx + charWidth;
-        lastX = curX;
-        lastY = curY;
-        drewAny = true;
-    }
-
-    if (truncated && drewAny) drawOverflowMarker(lastX, lastY, startX + maxW, color, size);
-    return curY + lineHeight;
+    int two = maxRight - 2 * w;
+    // Text's ink ends at x - w (the trailing space advance); start the dots there.
+    if (two >= x - w) { dev_drawString(two, y, "..", color, size); return; }
+    if (x + w <= maxRight) { dev_drawString(x, y, ".", color, size); return; }
+    dev_drawString(maxRight - w, y, ".", color, size);
 }
 
 static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, const char* text, uint32_t color, int size = 1, int lineHeight = 10) {
@@ -346,7 +301,7 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 
         if (curY + 8 * size > startY + maxH) break;
 
-        int budget = cc_lineBudget(maxW, charWidth, 6, truncated, lineIdx, capacity);
+        int budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
         const char* p = lineStart;
         const char* lastWordEnd = lineStart;
         int linePx = 0;
@@ -391,9 +346,7 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
     return curY;
 }
 
-
-
-static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const VerseData& vd, bool inverted = false) {
+static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const VerseData& vd) {
     if (!vd.verse) return;
 
     // Locate the highlighted phrase: exact match first, then case-insensitive so a
@@ -431,20 +384,20 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
         int wordLen = (int)(ptr - wordStart);
         int wordPx = cc_countGlyphsN(wordStart, wordLen) * charWidth;
         int wordIdx = (int)(wordStart - vd.verse);
-        int budget = cc_lineBudget(maxW, charWidth, 4, truncated, lineIdx, capacity);
+        int budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
 
         if (curX > startX && (curX + wordPx > startX + budget)) {
             curX = startX;
             curY += lineHeight;
             lineIdx++;
             if (curY + 8 > startY + maxH) break;
-            budget = cc_lineBudget(maxW, charWidth, 4, truncated, lineIdx, capacity);
+            budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
         }
 
         // A word is highlighted when it overlaps the phrase range at all — not
         // merely when the phrase starts inside it.
         bool isHl = (hlStart >= 0 && wordIdx < hlEnd && wordIdx + wordLen > hlStart);
-        uint32_t wordColor = isHl ? (inverted ? CC_YELLOW : CC_RED) : (inverted ? CC_WHITE : CC_BLACK);
+        uint32_t wordColor = isHl ? CC_RED : CC_BLACK;
 
         char wordBuf[64];
         int copyLen = wordLen < 63 ? wordLen : 63;
@@ -459,100 +412,47 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     }
 
     if (truncated && drewAny) {
-        drawOverflowMarker(lastX, lastY, startX + maxW, inverted ? CC_WHITE : CC_BLACK, 1);
+        drawOverflowMarker(lastX, lastY, startX + maxW, CC_BLACK, 1);
     }
 }
 
-void drawLayoutPortrait(const VerseData& v, const WeatherData& w) {
-    // 1. Header (Yellow band)
-    dev_fillRect(0, 0, 128, 22, CC_YELLOW);
-    dev_drawString(4, 3, "DAILY VERSE", CC_BLACK, 1);
-    if (v.date) {
-        dev_drawStringRight(124, 12, v.date, CC_BLACK, 1);
-    }
-    dev_drawFastHLine(0, 21, 128, CC_BLACK);
+// 72 px-wide weather column (20% smaller than the original 90 px). The alert block
+// — rule, ALERT: label and wrapped text — is pinned to the BOTTOM of the view; the
+// condition fills whatever space remains above it.
+static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
+    const int colW = 66;
+    const int half = 28;
 
-    // 2. Verse body (White background)
-    dev_fillRect(0, 22, 128, 222, CC_WHITE);
-    drawVerseBlock(6, 28, 116, 172, v);
-
-    // 3. Reference line (Red)
-    if (v.reference) {
-        dev_drawFastHLine(14, 204, 100, CC_RED);
-        dev_drawStringRight(122, 210, v.reference, CC_RED, 1);
-    }
-
-    // 4. Weather strip
-    dev_fillRect(0, 244, 128, 52, CC_WHITE);
-    dev_drawFastHLine(0, 244, 128, CC_BLACK);
-
-    // Forecast label
-    dev_drawString(4, 247, "FORECAST", CC_BLACK, 1);
-
-    drawWeatherIcon(22, 276, 26, w.icon);
+    int fcWidth = dev_measureText("FORECAST", 1);
+    dev_drawString(cx - fcWidth / 2, 6, "FORECAST", CC_BLACK, 1);
+    dev_drawFastHLine(cx - half, 17, 2 * half, CC_BLACK);
+    drawWeatherIcon(cx, 32, 24, w.icon);
 
     char tbuf[16];
     snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
-    dev_drawString(44, 258, tbuf, CC_BLACK, 2);
+    int tWidth = dev_measureText(tbuf, 2);
+    dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
 
-    int curY = 274;
-    if (w.condition) {
-        int availH = w.alert ? 10 : 20;
-        curY = drawWrappedText(44, curY, 80, availH, w.condition, CC_BLACK, 1, 9);
-    }
-
+    const int condTop = 65;
     if (w.alert) {
-        if (curY < 284) curY = 284;
-        drawWrappedText(44, curY, 80, 296 - curY, w.alert, CC_RED, 1, 9);
+        int lines = cc_wrappedLineCount(w.alert, colW, 1);
+        if (lines > 3) lines = 3;
+        int textY  = 128 - 2 - 8 - (lines - 1) * 10;   // last line ends 2 px above bottom
+        int labelY = textY - 11;
+        int divY   = labelY - 3;
+        if (w.condition) {
+            drawWrappedTextCentered(cx, condTop, colW, divY - 2 - condTop, w.condition, CC_BLACK, 1, 10);
+        }
+        dev_drawFastHLine(cx - half, divY, 2 * half, CC_RED);
+        int alWidth = dev_measureText("ALERT:", 1);
+        dev_drawString(cx - alWidth / 2, labelY, "ALERT:", CC_RED, 1);
+        drawWrappedTextCentered(cx, textY, colW, 128 - 2 - textY, w.alert, CC_RED, 1, 10);
+    } else if (w.condition) {
+        drawWrappedTextCentered(cx, condTop, colW, 128 - 2 - condTop, w.condition, CC_BLACK, 1, 10);
     }
 }
 
-void drawLayoutPortraitInverted(const VerseData& v, const WeatherData& w) {
-    // Canvas: Full Black background
-    dev_fillRect(0, 0, 128, 296, CC_BLACK);
-
-    // 1. Header (Yellow band)
-    dev_fillRect(0, 0, 128, 22, CC_YELLOW);
-    dev_drawString(4, 3, "DAILY VERSE", CC_BLACK, 1);
-    if (v.date) {
-        dev_drawStringRight(124, 12, v.date, CC_BLACK, 1);
-    }
-    dev_drawFastHLine(0, 21, 128, CC_BLACK);
-
-    // 2. Verse body (Black background, white text, yellow highlight)
-    drawVerseBlock(6, 28, 116, 172, v, true);
-
-    // 3. Reference line (Red)
-    if (v.reference) {
-        dev_drawFastHLine(14, 204, 100, CC_RED);
-        dev_drawStringRight(122, 210, v.reference, CC_RED, 1);
-    }
-
-    // 4. Weather strip
-    dev_drawFastHLine(0, 244, 128, CC_WHITE);
-
-    // Forecast label
-    dev_drawString(4, 247, "FORECAST", CC_YELLOW, 1);
-
-    drawWeatherIcon(22, 276, 26, w.icon, true);
-
-    char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
-    dev_drawString(44, 258, tbuf, CC_WHITE, 2);
-
-    int curY = 274;
-    if (w.condition) {
-        int availH = w.alert ? 10 : 20;
-        curY = drawWrappedText(44, curY, 80, availH, w.condition, CC_WHITE, 1, 9);
-    }
-
-    if (w.alert) {
-        if (curY < 284) curY = 284;
-        drawWrappedText(44, curY, 80, 296 - curY, w.alert, CC_RED, 1, 9);
-    }
-}
-
-void drawLayoutLandscape(const VerseData& v, const WeatherData& w) {
+void drawLayout(const VerseData& v, const WeatherData& w) {
     const int splitX = 205;
 
     // 1. Header (Yellow band)
@@ -576,160 +476,7 @@ void drawLayoutLandscape(const VerseData& v, const WeatherData& w) {
     // 4. Vertical divider
     dev_drawFastVLine(splitX, 0, 128, CC_BLACK);
 
-    // 5. Right-hand weather column (x = 206..295, w = 90)
+    // 5. Right-hand weather column (72 px; alert pinned to bottom)
     dev_fillRect(splitX + 1, 0, 296 - splitX - 1, 128, CC_WHITE);
-
-    // Forecast header (Centered at x = 251)
-    int fcWidth = dev_measureText("FORECAST", 1);
-    dev_drawString(251 - fcWidth / 2, 6, "FORECAST", CC_BLACK, 1);
-    dev_drawFastHLine(215, 17, 72, CC_BLACK);
-
-    // Weather icon moved down 1 pixel (cy = 32)
-    drawWeatherIcon(251, 32, 24, w.icon);
-
-    char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
-    int tWidth = dev_measureText(tbuf, 2);
-    dev_drawString(251 - tWidth / 2, 47, tbuf, CC_BLACK, 2);
-
-    int curY = 65;
-    if (w.condition) {
-        int availH = w.alert ? 20 : 58;
-        curY = drawWrappedTextCentered(251, curY, 84, availH, w.condition, CC_BLACK, 1, 10);
-    }
-
-    if (w.alert) {
-        if (curY < 78) curY = 78;
-        dev_drawFastHLine(215, curY, 72, CC_RED);
-        int alWidth = dev_measureText("ALERT:", 1);
-        dev_drawString(251 - alWidth / 2, curY + 3, "ALERT:", CC_RED, 1);
-        drawWrappedTextCentered(251, curY + 14, 84, 128 - (curY + 14), w.alert, CC_RED, 1, 10);
-    }
+    drawLandscapeWeatherColumn(251, w);
 }
-
-void drawLayoutLandscapeInverted(const VerseData& v, const WeatherData& w) {
-    const int splitX = 205;
-
-    // Fill entire canvas black
-    dev_fillRect(0, 0, 296, 128, CC_BLACK);
-
-    // 1. Header (Yellow band)
-    dev_fillRect(0, 0, splitX, 20, CC_YELLOW);
-    dev_drawString(6, 6, "Verse of the Day", CC_BLACK, 1);
-    if (v.date) {
-        dev_drawStringRight(splitX - 6, 6, v.date, CC_BLACK, 1);
-    }
-    dev_drawFastHLine(0, 19, splitX, CC_BLACK);
-
-    // 2. Verse body (Black background, white text, yellow highlight)
-    drawVerseBlock(8, 26, 188, 76, v, true);
-
-    // 3. Reference line (Red)
-    if (v.reference) {
-        dev_drawFastHLine(10, 104, splitX - 20, CC_RED);
-        dev_drawStringRight(splitX - 8, 110, v.reference, CC_RED, 1);
-    }
-
-    // 4. Vertical divider (White)
-    dev_drawFastVLine(splitX, 0, 128, CC_WHITE);
-
-    // 5. Right-hand weather column (Black background)
-    // Forecast header (Centered at x = 251)
-    int fcWidth = dev_measureText("FORECAST", 1);
-    dev_drawString(251 - fcWidth / 2, 6, "FORECAST", CC_YELLOW, 1);
-    dev_drawFastHLine(215, 17, 72, CC_YELLOW);
-
-    // Weather icon moved down 1 pixel (cy = 32)
-    drawWeatherIcon(251, 32, 24, w.icon, true);
-
-    char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
-    int tWidth = dev_measureText(tbuf, 2);
-    dev_drawString(251 - tWidth / 2, 47, tbuf, CC_WHITE, 2);
-
-    int curY = 65;
-    if (w.condition) {
-        int availH = w.alert ? 20 : 58;
-        curY = drawWrappedTextCentered(251, curY, 84, availH, w.condition, CC_WHITE, 1, 10);
-    }
-
-    if (w.alert) {
-        if (curY < 78) curY = 78;
-        dev_drawFastHLine(215, curY, 72, CC_RED);
-        int alWidth = dev_measureText("ALERT:", 1);
-        dev_drawString(251 - alWidth / 2, curY + 3, "ALERT:", CC_RED, 1);
-        drawWrappedTextCentered(251, curY + 14, 84, 128 - (curY + 14), w.alert, CC_RED, 1, 10);
-    }
-}
-
-void drawLayoutLandscapeDark(const VerseData& v, const WeatherData& w) {
-    const int splitX = 205;
-
-    // Full midnight black canvas
-    dev_fillRect(0, 0, 296, 128, CC_BLACK);
-
-    // 1. Header (Dark: Yellow text, white date, yellow separator line)
-    dev_drawString(6, 6, "Verse of the Day", CC_YELLOW, 1);
-    if (v.date) {
-        dev_drawStringRight(splitX - 6, 6, v.date, CC_WHITE, 1);
-    }
-    dev_drawFastHLine(0, 19, splitX, CC_YELLOW);
-
-    // 2. Verse body (Black background, white text, yellow highlight)
-    drawVerseBlock(8, 26, 188, 76, v, true);
-
-    // 3. Reference line (Red)
-    if (v.reference) {
-        dev_drawFastHLine(10, 104, splitX - 20, CC_RED);
-        dev_drawStringRight(splitX - 8, 110, v.reference, CC_RED, 1);
-    }
-
-    // 4. Vertical divider (Yellow)
-    dev_drawFastVLine(splitX, 0, 128, CC_YELLOW);
-
-    // 5. Right-hand weather column (Black background)
-    // Forecast header (Centered at x = 251)
-    int fcWidth = dev_measureText("FORECAST", 1);
-    dev_drawString(251 - fcWidth / 2, 6, "FORECAST", CC_YELLOW, 1);
-    dev_drawFastHLine(215, 17, 72, CC_YELLOW);
-
-    // Weather icon moved down 1 pixel (cy = 32)
-    drawWeatherIcon(251, 32, 24, w.icon, true);
-
-    char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
-    int tWidth = dev_measureText(tbuf, 2);
-    dev_drawString(251 - tWidth / 2, 47, tbuf, CC_WHITE, 2);
-
-    int curY = 65;
-    if (w.condition) {
-        int availH = w.alert ? 20 : 58;
-        curY = drawWrappedTextCentered(251, curY, 84, availH, w.condition, CC_WHITE, 1, 10);
-    }
-
-    if (w.alert) {
-        if (curY < 78) curY = 78;
-        dev_drawFastHLine(215, curY, 72, CC_RED);
-        int alWidth = dev_measureText("ALERT:", 1);
-        dev_drawString(251 - alWidth / 2, curY + 3, "ALERT:", CC_RED, 1);
-        drawWrappedTextCentered(251, curY + 14, 84, 128 - (curY + 14), w.alert, CC_RED, 1, 10);
-    }
-}
-
-void drawLayout(const VerseData& v, const WeatherData& w, bool landscape, bool inverted) {
-    if (landscape) {
-        if (inverted) {
-            drawLayoutLandscapeInverted(v, w);
-        } else {
-            drawLayoutLandscape(v, w);
-        }
-    } else {
-        if (inverted) {
-            drawLayoutPortraitInverted(v, w);
-        } else {
-            drawLayoutPortrait(v, w);
-        }
-    }
-}
-
-

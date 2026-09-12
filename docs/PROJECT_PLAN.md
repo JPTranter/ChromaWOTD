@@ -28,7 +28,7 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
       through its JD79667 code path for combo 512)
 - [x] Architectural pivot: infrequent glanceable layout (Daily Verse + Weather)
 - [x] Dual-target layout engine (`verse_display.cpp` / `.h`)
-- [x] Host test harness & mock canvas generating PNG screenshots (portrait & landscape)
+- [x] Host test harness & mock canvas generating PNG screenshots (single landscape layout)
 - [x] Layout hardening: shared UTF-8→ASCII glyph normalisation, visible `...` overflow
       markers, negative-temperature rounding, case-insensitive highlight matching
 - [x] Regression suite with region invariants (`test_layout_overflow`, 11 invariant tests)
@@ -39,9 +39,10 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 - [ ] **Factory Reset**: Long-press button hold (10 seconds) detection to wipe NVS credentials and reboot into setup wizard.
 - [ ] **Dual-Button Hardware Interaction & Deep Sleep Wake**:
   - `ext1` multi-button deep sleep wake mask (EE05 D0/GPIO1 + BOOT/GPIO0 or external D1/GPIO2).
-  - Mode Switch: Toggle theme (Light vs Inverted/Dark) or orientation.
   - Refresh / Content Toggle: Force immediate re-sync and toggle between Verse of the Day and Word of the Day.
   - Lockout during active ~25s screen sweep to ignore switch bounce/spam.
+  - *(2026-09-12: the display has a single light/landscape presentation, so there is no
+    mode-switch button; the second button is solely Refresh/Content.)*
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
   - Wi-Fi credentials, timezone POSIX string, latitude/longitude.
   - Active display layout & content mode.
@@ -86,11 +87,12 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 
 ## Open follow-ups (from the 2026-09-12 project review)
 
-- [ ] Portrait weather strip gives an alert only a single 12 px line (`curY` is forced to
-      284), so real alerts like "Rain likely after 4 PM" still lose their tail to the
-      overflow marker. Consider giving the alert 20 px by starting it at 276 when present.
-- [ ] Portrait verse block leaves ~90 px of dead space between the last line and the
-      reference rule when the verse is short; consider vertically centring the block.
-- [ ] The `drawWrappedText*` helpers are duplicated per-orientation call sites; a single
-      block-descriptor type would remove the repeated geometry constants.
+- [x] ~~Portrait strip/verse-block issues~~ **Resolved 2026-09-12**: portrait mode is
+      dropped entirely; the device has one landscape, light presentation. This removed the
+      cramped alert strip and verse-block dead-space problems by removal, and also cleared
+      the theme-dispatcher inconsistency (REVIEW D3) and most of the per-variant geometry
+      duplication.
+- [ ] The `drawWrappedText#` and `drawVerseBlock` helpers are only used by the single
+      layout now; a block-descriptor type could still remove the remaining repeated
+      geometry constants, but it is lower priority than it was with five layouts.
 
