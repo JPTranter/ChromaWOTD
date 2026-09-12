@@ -11,3 +11,7 @@ secrets.h
 docs/hardware/datasheets/*.pdf
 firmware/build_s3.log
 firmware/*.log
+
+# Python bytecode caches (auto-generated; never commit)
+__pycache__/
+*.py[cod]
