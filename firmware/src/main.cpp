@@ -10,13 +10,12 @@
 // lands in this TU; PlatformIO only compiles the library's root directory, so no
 // other Seeed_GFX translation unit competes with it.
 #include "TFT_eSPI.cpp"
-#include "driver.h"
 #include "chroma_version.h"
 
 #ifdef EPAPER_ENABLE
 EPaper epaper;
 #else
-#error "EPAPER_ENABLE not set - check BOARD_SCREEN_COMBO in driver.h"
+#error "EPAPER_ENABLE not set - check BOARD_SCREEN_COMBO / USE_XIAO_EPAPER_DISPLAY_BOARD_EE05 build_flags in platformio.ini"
 #endif
 
 #include "verse_display.h"
