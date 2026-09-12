@@ -811,3 +811,29 @@ get?" by calling `cc_verseFontSize()` through `layout_render --live` — the ans
 real engine, never a re-derivation.
 
 (2026-09-13)
+
+
+## 40. Write lessons that the repository can substantiate (RESOLVED)
+
+**What happened.** LESSONS 39 originally said two invariants "had passed for months". The
+repository's first commit is 2026-09-11 and the lesson is dated 2026-09-13, so no test in it
+could have passed for months. The claim was invented framing, and it made the finding *worse*:
+the plain fact — **the tests had never once run against the shipped font** — is both true and
+the reason the failure was worth recording.
+
+**Rules.**
+- **Anchor every claim to something checkable**: a commit date (`git log --reverse`), a measured
+  value (y=101 vs y=94), a tool's output, a file's line count. If a claim needs a timeframe,
+  derive it from the history instead of gesturing at one.
+- **Do not inflate a finding's surprise.** "Never exercised" is a stronger and more useful
+  statement than "passed for months until now"; the second implies prior regression testing that
+  did not happen.
+- **Re-check cross-references before citing them.** Two consecutive lessons cited `§36` for the
+  pixel-probe precedent when it is `§22` (probes asserting background pixels), and called this the
+  second occurrence when it is the third. Grep the referenced section and quote what it actually
+  says.
+- **Renumbering a multi-stage tool leaves stale references behind.** Moving `verify_all.py` from
+  4 to 5 stages left "stage 4/4" and "Four stages" in README and an earlier lesson. When a count
+  in one artifact defines a count elsewhere, grep the whole repo for the old number.
+
+(2026-09-13)
