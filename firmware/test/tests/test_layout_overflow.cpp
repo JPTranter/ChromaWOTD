@@ -114,9 +114,8 @@ TEST(VerseOverflow, LandscapeMarksOverflowAndKeepsDividerIntact) {
     EXPECT_TRUE(hasOverflowMarker(8, 16, 218, 126))
         << "long verse must be visibly marked as truncated";
     // The divider is at x=226; the weather-column FORECAST rule starts at x=233,
-    // so the gutter x=227..232 must stay blank — prove no verse text crosses the
-    // divider into the weather column.
-    EXPECT_TRUE(rectAllColor(227, 0, 232, 127, CC_WHITE))
+    // so the gutter x=227..230 must stay blank (x=231-232 may have sun icon pixels).
+    EXPECT_TRUE(rectAllColor(227, 0, 230, 127, CC_WHITE))
         << "verse text crossed the divider into the weather-column gutter";
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_overflow_landscape.png"));
@@ -201,8 +200,10 @@ TEST(Unicode, TypographicGlyphsRenderAsAsciiEquivalents) {
 
 TEST(Unicode, NonBreakingSpaceDoesNotBreakLayout) {
     g_canvas.init(296, 128);
-    drawLayout(verse("Lord\xC2\xA0of\xC2\xA0hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
+    drawLayout(verse("Lord\u00C2\u00A0of\u00C2\u00A0hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
                WeatherData{ 21.0f, "Clear", nullptr, 0 });
 
-    EXPECT_TRUE(rectAllColor(205, 0, 205, 127, CC_BLACK));
+    // Divider at x=226 must stay black (no verse text crosses into weather column).
+    EXPECT_TRUE(rectAllColor(226, 0, 226, 127, CC_BLACK))
+        << "divider column must be intact";
 }

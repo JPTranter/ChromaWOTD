@@ -34,14 +34,14 @@ TEST(LayoutLandscape, Divider_PngDump_And_RightMargin) {
 
     // The vertical divider is a solid black column at x = 226, full height.
     for (int y = 0; y < 128; y++) {
-        EXPECT_EQ(g_canvas.getPixel(kDivider, y), CC_BLACK)
-            << "divider column x=" << kDivider << " must be black at y=" << y;
+        EXPECT_EQ(g_canvas.getPixel(kDividerX, y), CC_BLACK)
+            << "divider column x=" << kDividerX << " must be black at y=" << y;
     }
 
     // Nothing may reach the panel's right edge (no content spills past x 294).
     for (int y = 0; y < 128; y += 8) {
-        EXPECT_EQ(g_canvas.getPixel(kRightColumnX, y), CC_WHITE)
-            << "right edge pixel at x=" << kRightColumnX << ", y=" << y << " must stay white";
+        EXPECT_EQ(g_canvas.getPixel(kRightMarginX, y), CC_WHITE)
+            << "right edge pixel at x=" << kRightMarginX << ", y=" << y << " must stay white";
     }
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_landscape.png"));
