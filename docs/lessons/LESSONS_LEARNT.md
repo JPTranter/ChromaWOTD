@@ -666,3 +666,42 @@ as a shared `cc_wmoIcon()` from `net.cpp` so the device stops duplicating the ta
 copies can drift today because `iconFromWmo()` is `static`.
 
 (2026-09-12)
+
+## 36. Layout alignment must be measured on INK, not on the pen origin
+
+Two alignment defects were reported from the panel and both turned out to be
+measurable facts rather than taste:
+
+1. **The weather-column caption (`FORECAST` / `TOMORROW`) was drawn at y=4 while the
+   header title and date are drawn at y=2.** Its ink therefore occupied rows 4–10 and
+   sat only 2 px above the rule at y=13 — reading as "touching the line". Drawn at
+   y=2 instead, its ink occupies rows 2–8: level with the date, 4 px clear of the rule.
+   A caption and the date it sits beside should share a y, not merely look "close".
+
+2. **The caption rule and the pronunciation caption started at x=10, but the body
+   text block starts at `kVerseMargin` = 4.** A 6 px offset. The rule now spans
+   `kVerseMargin .. kSplitX - kVerseMargin` (x 4–222), matching the body block's
+   declared margins on both edges, and the left caption shares that margin.
+
+**Measure ink, not the drawing coordinate.** After moving the caption to x=4 its ink
+still began at x=5, because `'('` carries a 1 px left side bearing — and the caption
+always starts with `'(‘` in A.Word.A.Day's format. A 1 px nudge compensates, so the
+caption's *ink* lands on x=4 with the rule and body text. Eyeballing a 296×128 PNG
+cannot distinguish a 1 px bearing from a rounding error; the pixel scan can.
+
+**Tooling (added because this scan was written by hand three times):**
+- `tools/measure_layout.py` — reports and asserts the geometry invariants above
+  (header-level, rule extent, body margin, caption margin, caption-below-rule) on
+  any render, and is wired into `verify_all.py` as **stage 4/4**, so an alignment
+  regression now fails the one-command check. It skips cleanly if Pillow is absent
+  (not a hard project dependency).
+- `tools/bench_watch.py` — the bench observer: `--presence` polls the serial port
+  without opening it (the only trustworthy wake/sleep trace, see §34), and
+  `--capture` waits for the device to wake and reads the boot log with DTR/RTS
+  deasserted so it does not reset the board.
+
+**Reminder:** the archived renders in `docs/images/` are md5-compared by the ledger,
+so an intentional layout change requires `python tools/verify_all.py --fix` to
+resync them — otherwise stage 3 fails (as it correctly did here).
+
+(2026-09-12)

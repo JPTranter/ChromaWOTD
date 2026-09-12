@@ -1,9 +1,10 @@
-# CHROMAWOTD — 4-colour ePaper daily scripture & glanceable display
+# CHROMAWOTD — 4-colour ePaper verse, word & weather display
 
-An ambient, low-power ePaper information display showing daily scripture, local weather,
-and glanceable colour-coded alerts on a 2.9" quadruple-colour (black, white, red, yellow)
-ePaper panel. Built upon the architectural and hardware lessons of the sibling
-[eClock](../eClock) project.
+An ambient, low-power ePaper information display showing a daily scripture verse or a
+vocabulary word depending on the time of day, local weather, and glanceable colour-coded
+alerts on a 2.9" quadruple-colour (black, white, red, yellow) ePaper panel. It refreshes a few
+times a day at scheduled slots (or on a button press) and deep-sleeps in between. Built upon
+the architectural and hardware lessons of the sibling [eClock](../eClock) project.
 
 ---
 
@@ -78,6 +79,13 @@ The EE05 board drives the panel via direct ESP32-S3 GPIOs (configured automatica
 | **BUSY** | GPIO 4 | D3 | Panel Busy Signal |
 | **RST** | GPIO 38 | D11 | Hardware Reset (bottom pad) |
 | **ENABLE** | GPIO 43 | D6 | Power Rail Enable |
+| **BUTTON1** | GPIO 2 | D1 | User button, active-low (wakes from deep sleep) |
+| **BUTTON2** | GPIO 3 | D2 | User button, active-low (wakes from deep sleep) |
+| **BUTTON3** | GPIO 8 | D9 | User button, active-low (wakes from deep sleep) |
+| **BAT_ADC** | GPIO 1 | D0 | Battery-sense divider input (ADC) — *not* a button |
+
+The three button pins are the ones armed for `ext1` deep-sleep wake; `BAT_ADC` is available for
+the deferred battery-monitoring work.
 
 ---
 
@@ -112,15 +120,71 @@ Two rules are enforced in *shared* code so hardware and host can never disagree:
 * **UTF-8 is normalised before drawing.** `TFT_eSPI`'s built-in font is ASCII/CP437, so every draw path funnels text through `cc_utf8ToAscii()`, which maps the glyphs real API text contains — `°` (drawn as a vector circle), curly quotes, en/em dashes, non-breaking spaces, ellipsis, `⚠` — onto single ASCII bytes and collapses anything unknown to one `?` per *glyph* (not per byte). Width measurement counts glyphs with the same decoder, so measured width always equals drawn width.
 * **Truncation is never silent.** Each text block computes how many lines the greedy wrapper needs versus how many fit (`cc_wrappedLineCount` / `cc_lineCapacity`). If content will be cut, the final line's width budget is reduced (`cc_lineBudget`) so an ellipsis marker fits inline, and `drawOverflowMarker()` appends `...` (degrading to `..`/`.` only in very narrow columns). Verse text can therefore never spill into the reference rule, the weather strip, or the landscape divider.
 
-### 3. Hardware Buttons & Dual Content Modes
-The device supports on-demand interaction and wake-from-deep-sleep via two physical buttons:
+### 3. Hardware Buttons, Deep-Sleep Wake & Time-Based Content
 
-* **Mode Switch Button**: Not used — the display has a single presentation (landscape, light theme).
-* **Refresh & Content Toggle Button**: Wakes the device to immediately refresh local weather and toggle between:
-  1. **Verse of the Day (Word of God)**: Daily scripture reading with highlighted key phrase and biblical citation.
-  2. **Word of the Day (Vocabulary)**: Curated vocabulary word, pronunciation guide, part of speech, definition, and usage sentence.
+The EE05 exposes **three** user buttons. All are **active-low** and RTC-capable, so a press
+wakes the device from deep sleep through one shared `ext1` mask and runs exactly the same
+Sync → Render → Sleep cycle as a scheduled wake (`wake_cause == ESP_SLEEP_WAKEUP_EXT1`).
+Verified on hardware.
 
-The active mode and last shown content type are persisted in non-volatile storage (`Preferences` / NVS) across deep sleep intervals.
+| Button | XIAO pin | GPIO | Polarity |
+| :--- | :--- | :--- | :--- |
+| BUTTON1 | D1 | GPIO 2 | active-low |
+| BUTTON2 | D2 | GPIO 3 | active-low |
+| BUTTON3 | D9 | GPIO 8 | active-low |
+
+The pin map was **probed on the physical board** (`pio run -e probe`), not derived from the
+schematic: the schematic reading put BUTTON3 on D4, which is actually `I2C_SDA`. Arming that
+non-button pad for wake caused a deep-sleep wake storm — see `LESSONS_LEARNT.md` §34.
+
+**Content is selected by local time, not by a button toggle:**
+
+| Window | Content | Source |
+| :--- | :--- | :--- |
+| 00:00–11:59 | **Verse of the Day** | BibleGateway VOTD (`docs/research/SCRIPTURE_APIS.md`) |
+| 12:00–23:59 | **Word of the Day** | A.Word.A.Day (`docs/research/WORD_APIS.md`) |
+
+The header title follows the mode, and the policy lives in pure, unit-tested
+`sched/content_policy.{h,cpp}`. If NTP fails, the device falls back to the verse rather than
+showing the wrong content.
+
+The Word-of-the-Day presentation puts the definition plus a quoted usage example in the body,
+with the **respelling pronunciation** as a black caption at the left of the bottom rule and
+the **headword** in red at the right.
+
+> **Not yet implemented** (tracked in `docs/PROJECT_PLAN.md`): NVS persistence of credentials
+> and state, and the refresh lockout during the ~25 s panel sweep.
+
+### 4. Network Layer & Data Sources
+`firmware/src/net/` splits the network path so parsing and mapping are testable on the host:
+
+* **`net.cpp`** — shared logic (WMO code → condition text/icon/alert, JSON and A.Word.A.Day
+  HTML parsing), plus a host fetch backend that shells out to `curl`.
+* **`net_impl_esp32.{h,cpp}`** — the device backend: Wi-Fi, `HTTPClient`, `ArduinoJson`, and
+  the pinned root CAs.
+* **TLS validation is mandatory.** `setInsecure()` is never called; each host is validated
+  against its pinned root/intermediate (Amazon Root CA 1 for BibleGateway, Let's Encrypt YR2
+  for Open-Meteo, Let's Encrypt YE1 for Wordsmith).
+* **The sync phase runs on a dedicated FreeRTOS task with a 16 KB stack** — the first TLS
+  handshake needs more stack than the default Arduino `loopTask` provides (see the STACK NOTE
+  in `main.cpp`).
+
+| Data | Endpoint | Notes |
+| :--- | :--- | :--- |
+| Weather | `api.open-meteo.com/v1/forecast` | `forecast_days=2`; the **evening** sync (18:00–23:59) reads the *next* day's daily entry and captions it **TOMORROW** instead of **FORECAST** |
+| Verse | `biblegateway.com/votd/get/?format=json&version=NIV` | `docs/research/SCRIPTURE_APIS.md` |
+| Word | `wordsmith.org/words/today.html` | A.Word.A.Day respelling pronunciation; `docs/research/WORD_APIS.md` |
+
+Any failure degrades to bundled fallback content behind a red `OFFLINE:` banner — the
+substitution is never silent.
+
+### 5. Wake Schedule
+`sched/wake_schedule.{h,cpp}` computes the strictly-forward next slot from a local `struct tm`
+(slots exactly **06:30 / 12:30 / 18:00**), with a 60 s floor that makes a wake loop impossible
+and a 1 h fallback when the clock is not trustworthy. `setup()` then arms an RTC timer for
+that interval **and** the `ext1` button mask, and calls `esp_deep_sleep_start()`. Between
+refreshes the ESP32-S3 is fully asleep — its native USB powers down, so the serial port
+disappears (expected, not a crash; see `LESSONS_LEARNT.md` §32).
 
 
 ---
@@ -140,7 +204,8 @@ CHROMAWOTD/
 │   │   └── LESSONS_LEARNT.md    Hard-won findings, hardware quirks, and solutions
 │   └── research/
 │       ├── SCRIPTURE_APIS.md    Verse-of-the-Day endpoint research & fallbacks
-│       └── WEATHER_APIS.md      Open-Meteo vs BoM comparison & local config
+│       ├── WEATHER_APIS.md      Open-Meteo vs BoM comparison & local config
+│       └── WORD_APIS.md         Word-of-the-Day source research (A.Word.A.Day)
 ├── firmware/
 │   ├── platformio.ini           PlatformIO build configuration for XIAO ESP32-S3
 │   ├── include/
@@ -158,15 +223,24 @@ CHROMAWOTD/
 │   │   │   ├── target_seeed.cpp   Device backend (Seeed GFX)
 │   │   │   ├── font_types.h     GFXglyph/GFXfont types (host shim / device gfxfont.h)
 │   │   │   └── weather_icon.{h,cpp}  Vector weather icons
+│   │   ├── net/
+│   │   │   ├── net.{h,cpp}      Shared parse/mapping + host (curl) fetch backend
+│   │   │   ├── net_impl_esp32.{h,cpp}  Device backend: Wi-Fi, TLS, ArduinoJson
+│   │   │   └── net_host_curl.cpp       Host curl hook
+│   │   ├── sched/
+│   │   │   ├── wake_schedule.{h,cpp}   Next wake slot (06:30/12:30/18:00) — pure
+│   │   │   └── content_policy.{h,cpp}  Verse/Word by hour + tomorrow-forecast window
 │   │   └── fonts/               Mono-hinted Roboto GFX fonts (5/5.5/6/10pt)
 │   └── test/
 │       ├── CMakeLists.txt       CMake configuration for native desktop tests
 │       ├── harness/             Mock canvas, font engine, and drawing primitives
-│       ├── tests/               GoogleTest suites: landscape, alert, overflow, text
-│       ├── tools/               layout_render.cpp — CLI preview renderer
+│       ├── tests/               GoogleTest suites: landscape, alert, overflow, text, net, sched
+│       ├── tools/               layout_render.cpp — CLI preview renderer (incl. --word-live)
 │       └── output/              Generated PNG renders from ctest (gitignored)
 └── tools/
-    ├── verify_all.py            One-command check: build + tests + render ledger
+    ├── verify_all.py            One-command check: build + tests + render ledger + alignment
+    ├── measure_layout.py        Measure/assert the render's alignment invariants
+    ├── bench_watch.py           Non-invasive wake/sleep watcher (port presence / log capture)
     ├── render_preview.py        Render any verse/weather fixture without flashing
     ├── esp32s3_reset.py         Release the USB-Serial/JTAG download-mode latch
     ├── regenerate_screenshots.py  Build tests → ctest → sync PNGs into docs/images/
@@ -206,9 +280,38 @@ python tools/verify_all.py --skip-firmware   # fast host-only loop
 python tools/verify_all.py --fix        # resync docs/images after an intentional layout change
 ```
 
-Exit code is non-zero on any failure. The render ledger md5-compares
+Exit code is non-zero on any failure. Four stages run in order: firmware build, host tests,
+render ledger, and layout alignment. The render ledger md5-compares
 `firmware/test/output/*.png` against `docs/images/*.png` and reports missing, stale or
-orphan files, so the archived renders can never silently drift from the code.
+orphan files, so the archived renders can never silently drift from the code. The alignment
+stage (`tools/measure_layout.py --check`) measures the rendered PNGs and asserts the panel's
+geometry invariants — caption level with the date, rule and caption on the body text's
+margins — so an alignment regression fails the check rather than needing to be spotted by eye.
+
+### Measure a render's alignment
+
+```powershell
+python tools/measure_layout.py                 # report the golden render's geometry
+python tools/measure_layout.py --check --all   # assert every layout render; non-zero on failure
+python tools/measure_layout.py firmware/test/output/previews/foo.png
+```
+
+Reports the header ink rows, the caption rule's extent, the body text's left margin and the
+left caption's ink position, then passes/fails each invariant. Useful after any layout tweak:
+alignment must be judged on **ink**, not on the drawing coordinate (a glyph can carry a side
+bearing — see `LESSONS_LEARNT.md` §36). Skips cleanly if Pillow is not installed.
+
+### Watch the device on the bench
+
+```powershell
+python tools/bench_watch.py --presence --seconds 90    # wake/sleep trace, no reset
+python tools/bench_watch.py --capture --seconds 150    # wait for wake, then read the boot log
+```
+
+**Do not use `pio device monitor` to observe wake/sleep behaviour:** attaching asserts DTR/RTS
+and *resets* the ESP32-S3, which manufactures a reboot cycle that looks exactly like a
+firmware wake storm (`LESSONS_LEARNT.md` §34). `--presence` never opens the port (the port
+vanishing is how deep sleep is detected), and `--capture` opens it with DTR/RTS deasserted.
 
 ### Preview any fixture without flashing
 
@@ -253,6 +356,8 @@ The suites are:
 | `test_layout_landscape` | Single-layout geometry, header band, divider, weather column |
 | `test_layout_alert` | Alert banner pinned to the bottom of the weather column |
 | `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers, temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
+| `test_net` | WMO code → condition/icon/alert mapping, JSON extraction, A.Word.A.Day HTML parsing (incl. printable-ASCII and newline-collapse guards), plus live-fetch smoke tests that skip when there is no network |
+| `test_sched` | Next-wake slot math (midnight roll-over, slot boundaries, never 0) and the time-based content/forecast policy |
 
 Fixtures used by the suites are mirrored in `tools/preview/sample_data.json` / `verse_template.html`.
 
@@ -270,9 +375,22 @@ pio run -e s3
 # Flash over USB CDC serial
 pio run -e s3 -t upload
 
-# Open serial monitor
-pio device monitor -b 115200
+# Button-pad diagnostic: identify the button pins/polarity on the bench
+pio run -e probe -t upload
 ```
+
+> [!IMPORTANT]
+> **While the device is deep-asleep, its serial port does not exist.** The XIAO ESP32-S3's
+> native USB Serial/JTAG lives in the digital power domain, so `COM13` disappears the moment
+> `esp_deep_sleep_start()` runs. To re-flash, put the board into ROM download mode — **hold
+> BOOT, tap RESET, release BOOT** — or unplug/replug USB. A retry loop around `pio run -t
+> upload` also works, since the port returns on every wake.
+
+Useful build flags (`firmware/platformio.ini`): `-DCHROMAWOTD_BUTTON_WAKE=1` enables the
+`ext1` button wake; `-DCHROMAWOTD_DEEP_SLEEP` controls sleeping; `-DCHROMAWOTD_WAKE_TEST_SEC=N`
+forces a short sleep for bench observation; `-DCHROMAWOTD_HOSTNAME` overrides the DHCP
+hostname (default `ChromaWOTD`), and `-DCHROMAWOTD_MDNS=1` additionally answers to
+`ChromaWOTD.local` (~24 KB flash).
 
 ---
 
@@ -292,4 +410,7 @@ This repository is indexed by **CodeGraph** (`.codegraph/`). To explore symbols,
 3. **Flat Library Includes in PlatformIO**: Seeed_GFX root `TFT_eSPI.cpp` includes subfolder source files internally, and PlatformIO compiles only that root directory, so `main.cpp` includes `TFT_eSPI.cpp` directly. There is no subfolder-exclusion option to configure — `lib_build_src_filter` is not a PlatformIO setting and is ignored with a warning.
 4. **Pure View Decoupling**: Isolate rendering math from network/NTP state by passing pure data structs by value.
 5. **No Silent Truncation**: Any content block that can overflow must mark the cut (`...`) rather than dropping words; region invariants in `test_layout_overflow` enforce that nothing leaves its block.
+6. **Probe pin maps on the board; don't decode them from a schematic.** A `pdftotext -layout` read of the EE05 schematic scrambled the net-label-to-pin association and put BUTTON3 on D4 — which is `I2C_SDA`. Arming that non-button pad for `ext1` wake produced a deep-sleep wake storm. `pio run -e probe` prints every pad transition so the real map is established in one flash (`LESSONS_LEARNT.md` §33–34).
+7. **Judge alignment on ink, not on the drawing coordinate.** A caption drawn at the same nominal x can still land 1 px off because of a glyph's side bearing; `tools/measure_layout.py` measures the rendered pixels and asserts the invariants (`LESSONS_LEARNT.md` §36).
+8. **Never observe deep-sleep behaviour through `pio device monitor`** — attaching asserts DTR/RTS and resets the board, faking a wake storm. Use `tools/bench_watch.py --presence` (`LESSONS_LEARNT.md` §34).
 

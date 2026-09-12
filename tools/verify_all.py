@@ -5,6 +5,7 @@ Runs, in order:
   1. firmware build  — `pio run -e s3` (optionally from a clean tree with --clean)
   2. host tests      — cmake configure/build + ctest
   3. render ledger   — md5 comparison of firmware/test/output against docs/images
+  4. alignment        — measures caption/rule/margin invariants in the archived renders
 
 Exit code is non-zero if any step fails, so this is CI-safe. `--fix` re-syncs the
 archived renders (same as tools/regenerate_screenshots.py) instead of only reporting.
@@ -59,7 +60,7 @@ def run(cmd, cwd=ROOT):
 
 
 def build_firmware(clean):
-    step("1/3 firmware build")
+    step("1/4 firmware build")
     if clean:
         print("$ pio run -e s3 -t clean")
         run(["pio", "run", "-e", "s3", "-t", "clean"], cwd=FIRMWARE)
@@ -86,7 +87,7 @@ def build_firmware(clean):
 
 
 def run_host_tests():
-    step("2/3 host layout tests")
+    step("2/4 host layout tests")
     if not os.path.exists(os.path.join(BUILD_DIR, "CMakeCache.txt")):
         print("$ cmake -S firmware/test -B firmware/test/build -G Ninja")
         if run(["cmake", "-S", TEST_DIR, "-B", BUILD_DIR, "-G", "Ninja"]).returncode != 0:
@@ -107,8 +108,28 @@ def run_host_tests():
     return ok
 
 
+def check_alignment():
+    step("4/4 layout alignment (tools/measure_layout.py --check)")
+    result = run([sys.executable, os.path.join(ROOT, "tools", "measure_layout.py"),
+                  "--check", "--all"])
+    output = result.stdout + result.stderr
+    # Surface only the problems and the verdict; a clean run is one line.
+    problems = [l.strip() for l in output.splitlines() if l.strip().startswith("FAIL")]
+    for line in problems:
+        print(f"  ! {line}")
+    skipped = any(l.strip().startswith("SKIP") for l in output.splitlines())
+    ok = result.returncode == 0
+    if skipped:
+        print("  SKIP: alignment invariants (Pillow not installed)")
+        return True
+    print(f"  {'PASS' if ok else 'FAIL'}: alignment invariants hold")
+    if not ok and not problems:
+        print(output)
+    return ok
+
+
 def check_ledger(fix):
-    step("3/3 render ledger (firmware/test/output vs docs/images)")
+    step("3/4 render ledger (firmware/test/output vs docs/images)")
     if not os.path.isdir(OUTPUT_DIR):
         print("  FAIL: no renders found - run the tests first")
         return False
@@ -162,6 +183,7 @@ def main():
     if not args.skip_tests:
         results["tests"] = run_host_tests()
         results["renders"] = check_ledger(args.fix)
+        results["alignment"] = check_alignment()
 
     step("summary")
     for name, ok in results.items():
