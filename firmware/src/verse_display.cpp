@@ -8,6 +8,7 @@
 // they are pure, unit-testable units rather than hidden in this monolith.
 #include "text/glyphs.h"
 #include "text/wrap.h"
+#include "draw/weather_icon.h"
 
 // ---------------------------------------------------------------------------
 // Backend abstraction (D6). All drawing routes through the DisplayTarget
@@ -254,86 +255,8 @@ static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int 
     dev_drawString(rx - dev_measureText(str, size), y, str, c, size);
 }
 
-static void drawWeatherIcon(int cx, int cy, int size, WeatherIcon iconType) {
-    int r = size / 3;
-    if (r < 3) r = 3;
-
-    uint32_t cloudOutline = CC_BLACK;
-    uint32_t cloudFill    = CC_WHITE;
-
-    switch (iconType) {
-        case WeatherIcon::Sun: { // Sun
-            dev_fillCircle(cx, cy, r, CC_YELLOW);
-            dev_drawCircle(cx, cy, r, CC_YELLOW);
-            // 8 Rays
-            int r1 = r + 2;
-            int r2 = size / 2;
-            dev_drawLine(cx, cy - r1, cx, cy - r2, CC_YELLOW);
-            dev_drawLine(cx, cy + r1, cx, cy + r2, CC_YELLOW);
-            dev_drawLine(cx - r1, cy, cx - r2, cy, CC_YELLOW);
-            dev_drawLine(cx + r1, cy, cx + r2, cy, CC_YELLOW);
-            int d1 = (int)(r1 * 0.707f);
-            int d2 = (int)(r2 * 0.707f);
-            dev_drawLine(cx - d1, cy - d1, cx - d2, cy - d2, CC_YELLOW);
-            dev_drawLine(cx + d1, cy - d1, cx + d2, cy - d2, CC_YELLOW);
-            dev_drawLine(cx - d1, cy + d1, cx - d2, cy + d2, CC_YELLOW);
-            dev_drawLine(cx + d1, cy + d1, cx + d2, cy + d2, CC_YELLOW);
-            break;
-        }
-        case WeatherIcon::Cloud: { // Cloud
-            dev_fillCircle(cx - size / 4, cy + size / 10, size / 5, cloudFill);
-            dev_drawCircle(cx - size / 4, cy + size / 10, size / 5, cloudOutline);
-            dev_fillCircle(cx + size / 5, cy + size / 10, size / 6, cloudFill);
-            dev_drawCircle(cx + size / 5, cy + size / 10, size / 6, cloudOutline);
-            dev_fillCircle(cx, cy - size / 10, size / 4, cloudFill);
-            dev_drawCircle(cx, cy - size / 10, size / 4, cloudOutline);
-            dev_fillRect(cx - size / 4, cy - size / 10, size / 2, size / 3, cloudFill);
-            dev_drawFastHLine(cx - size / 3, cy + size / 4, (size * 2) / 3, cloudOutline);
-            break;
-        }
-        case WeatherIcon::Rain: { // Rain
-            // cyShift and the drop x-offset must scale with size so the glyph stays
-            // proportional when the icon is reflowed larger (see drawLandscapeWeatherColumn).
-            int cyShift = cy - size / 6;   // == cy-4 at size 24
-            dev_fillCircle(cx - size / 4, cyShift + size / 10, size / 5, cloudFill);
-            dev_drawCircle(cx - size / 4, cyShift + size / 10, size / 5, cloudOutline);
-            dev_fillCircle(cx + size / 5, cyShift + size / 10, size / 6, cloudFill);
-            dev_drawCircle(cx + size / 5, cyShift + size / 10, size / 6, cloudOutline);
-            dev_fillCircle(cx, cyShift - size / 10, size / 4, cloudFill);
-            dev_drawCircle(cx, cyShift - size / 10, size / 4, cloudOutline);
-            dev_fillRect(cx - size / 4, cyShift - size / 10, size / 2, size / 3, cloudFill);
-            dev_drawFastHLine(cx - size / 3, cyShift + size / 4, (size * 2) / 3, cloudOutline);
-            // Red rain drops (offsets proportional to size; == 6/3/9 at size 24)
-            int dx = size / 4;
-            int dropTop = cyShift + size / 4 + 3;
-            int dropBot = cyShift + size / 2 + 3;
-            dev_drawLine(cx - dx, dropTop, cx - dx - 3, dropBot, CC_RED);
-            dev_drawLine(cx,      dropTop, cx - 3,       dropBot, CC_RED);
-            dev_drawLine(cx + dx, dropTop, cx + dx - 3, dropBot, CC_RED);
-            break;
-        }
-        case WeatherIcon::PartlyCloudy: // Partly cloudy
-        default: {
-            // Sun peeking behind cloud (stub rays scale with size so the glyph
-            // stays proportional on the larger reflowed icon)
-            int ray = size / 8;   // == 3 at size 24
-            if (ray < 3) ray = 3;
-            dev_fillCircle(cx - size / 4, cy - size / 5, size / 4, CC_YELLOW);
-            dev_drawLine(cx - size / 4, cy - size / 5 - size / 4 - ray, cx - size / 4, cy - size / 5 - size / 4 - ray + 2, CC_YELLOW);
-            dev_drawLine(cx - size / 4 - size / 4 - ray, cy - size / 5, cx - size / 4 - size / 4 - ray + 2, cy - size / 5, CC_YELLOW);
-            // Masking cloud in foreground
-            dev_fillCircle(cx - size / 6, cy + size / 8, size / 5, cloudFill);
-            dev_drawCircle(cx - size / 6, cy + size / 8, size / 5, cloudOutline);
-            dev_fillCircle(cx + size / 5, cy + size / 8, size / 6, cloudFill);
-            dev_drawCircle(cx + size / 5, cy + size / 8, size / 6, cloudOutline);
-            dev_fillCircle(cx + 2, cy - size / 12, size / 4, cloudFill);
-            dev_drawCircle(cx + 2, cy - size / 12, size / 4, cloudOutline);
-            dev_fillRect(cx - size / 6, cy - size / 12, (size * 5) / 12, size / 3, cloudFill);
-            dev_drawFastHLine(cx - size / 4, cy + size / 4, (size * 7) / 12, cloudOutline);
-            break;
-        }
-    }
-}
+// drawWeatherIcon is extracted to draw/weather_icon.{h,cpp} (D1); call it as
+// drawWeatherIcon(target(), cx, cy, size, icon).
 
 // Lines the greedy wrapper below needs for a given width budget (mirrors the
 // draw loops exactly, so the truncation decision is made before drawing).
@@ -559,12 +482,12 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
         const GFXfont* prev = cc_setBodyFont(&Roboto5pt7b);
         const int alertLH = Roboto5pt7b.yAdvance;
 
-        drawWeatherIcon(cx, 32, 24, w.icon);
+        drawWeatherIcon(target(), cx, 32, 24, w.icon);
         int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);
         dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, 47, tbuf, CC_BLACK, 1);
 #else
         const int alertLH = 10;
-        drawWeatherIcon(cx, 32, 24, w.icon);
+        drawWeatherIcon(target(), cx, 32, 24, w.icon);
         int tWidth = dev_measureText(tbuf, 2);
         dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
 #endif
@@ -611,7 +534,7 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w) {
     int topPad = 2;
 
     int iconCY = colTop + topPad + iconS / 2;
-    drawWeatherIcon(cx, iconCY, iconS, w.icon);
+    drawWeatherIcon(target(), cx, iconCY, iconS, w.icon);
 
     int tempY = colTop + topPad + iconS + gap;
 #ifdef CHROMAWOTD_FONT_FREESANS

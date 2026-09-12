@@ -50,6 +50,7 @@ set(CC_STB_DIR   "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 add_library(chroma_canvas STATIC
     ${CC_HARN_DIR}/canvas.cpp
     ${CC_SRC_DIR}/draw/target_canvas.cpp
+    ${CC_SRC_DIR}/draw/weather_icon.cpp
     ${CC_SRC_DIR}/text/glyphs.cpp
     ${CC_SRC_DIR}/text/wrap.cpp
 )
