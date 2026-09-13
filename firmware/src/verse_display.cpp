@@ -758,8 +758,10 @@ void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
 
     dev_drawString(6, 22, "1. Join Wi-Fi network:", CC_BLACK, 1);
     dev_drawString(14, 32, info.apName, CC_RED, 2);
-    dev_drawString(6, 54, "2. Password:", CC_BLACK, 1);
-    dev_drawString(14, 64, info.apPassword, CC_BLACK, 2);
-    dev_drawString(6, 88, "3. Open http://192.168.4.1 and save", CC_BLACK, 1);
-    dev_drawString(6, 102, "Long-press a button 10s to reset", CC_BLACK, 1);
+    dev_drawString(6, 54, "2. Password (8 digits):", CC_BLACK, 1);
+    // Size 3 (18px tall): the password is only 8 digits now, so it fits large and is
+    // far easier to read and type correctly off a 4-colour panel.
+    dev_drawString(14, 64, info.apPassword, CC_BLACK, 3);
+    dev_drawString(6, 92, "3. Open http://192.168.4.1 and save", CC_BLACK, 1);
+    dev_drawString(6, 106, "Long-press a button 10s to reset", CC_BLACK, 1);
 }

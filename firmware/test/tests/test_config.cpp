@@ -18,7 +18,7 @@ DeviceConfig fresh() {
     cc_configDefaults(&c);
     return c;
 }
-}  // namespace
+} // namespace
 
 // ------------------------------------------------------------- defaults -----
 
@@ -190,22 +190,21 @@ TEST(Portal, ApNameIsDerivedFromTheMac) {
     EXPECT_STREQ(info.apName, "ChromaWOTD-ABCDEF");
 }
 
-TEST(Portal, PasswordIsLongEnoughForWpa2AndUsesTheSafeAlphabet) {
+TEST(Portal, PasswordIsEightDigitsWhichIsTheWpa2Minimum) {
     PortalInfo a, b;
     cc_portalMakeInfo(0x112233, 0xDEADBEEFu, &a);
     cc_portalMakeInfo(0x112233, 0xFEEDFACEu, &b);
 
-    // WPA2 requires >= 8 characters.
-    EXPECT_GE(strlen(a.apPassword), 8u);
+    // Exactly 8 digits: shorter than 8 is rejected outright by the ESP32 core
+    // (WiFiAP.cpp: strlen(passphrase) < 8 -> softAP fails), so this length is a
+    // hard requirement, not a style choice.
+    EXPECT_EQ(strlen(a.apPassword), 8u);
+    EXPECT_EQ(CC_PORTAL_APASS_LEN, 8u);
+    for (const char* p = a.apPassword; *p; p++) {
+        EXPECT_TRUE(*p >= '0' && *p <= '9') << "non-digit in password: " << *p;
+    }
     // Different RNG seeds must give different passwords (per-boot randomness).
     EXPECT_STRNE(a.apPassword, b.apPassword);
-
-    // Only the unambiguous alphabet: a user transcribes this from a 4-colour panel,
-    // so O/0 and I/1/l must never appear.
-    for (const char* p = a.apPassword; *p; p++) {
-        EXPECT_TRUE((*p >= 'A' && *p <= 'Z') || (*p >= '2' && *p <= '9')) << *p;
-        EXPECT_EQ(strchr("O0I1L", *p), nullptr) << "ambiguous glyph in password: " << *p;
-    }
 }
 
 TEST(Portal, PasswordIsStableForTheSameSeed) {

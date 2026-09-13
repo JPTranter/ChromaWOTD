@@ -341,13 +341,19 @@ void setup() {
         epaper.sleep();
 
         Serial.printf("setup: starting portal '%s'\n", pinfo.apName);
-        // No timeout: setup mode persists until configured, because falling back
-        // to a dead end would leave the user with no way forward.
-        if (cc_portalRun(pinfo, 0)) {
+        // BOUNDED setup window. An unconfigured device must not stay awake forever:
+        // this is a battery-powered ambient device, so leaving the SoftAP and the
+        // CPU running indefinitely would flatten the pack, and an AP that never
+        // closes is a needless exposure. If the window expires we deep-sleep, which
+        // also means the whole cycle (portal -> sleep -> portal on the next wake)
+        // is the same shape as normal operation and the user can simply try again.
+        const bool configured = cc_portalRun(pinfo, CC_PORTAL_TIMEOUT_MS);
+        if (configured) {
             Serial.println("setup: configured - rebooting into normal operation");
             delay(500);
             ESP.restart();
         }
+        Serial.println("setup: window expired, sleeping (press a button to retry)");
     }
 #endif
 

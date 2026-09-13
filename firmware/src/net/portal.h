@@ -22,18 +22,30 @@
 
 // AP name is derived from the chip MAC so two devices on a bench are distinguishable.
 static constexpr size_t CC_PORTAL_APNAME_MAX = 32;
-static constexpr size_t CC_PORTAL_APASS_MAX = 16; // >=8 required for WPA2
+// WPA2 requires a passphrase of AT LEAST 8 characters — the ESP32 core rejects a
+// shorter one outright (WiFiAP.cpp: `strlen(passphrase) < 8`), so `WiFi.softAP()`
+// would fail and the portal would never come up. 8 digits + NUL is the minimum
+// viable length, kept numeric because the user reads it off a 4-colour panel.
+static constexpr size_t CC_PORTAL_APASS_MAX = 9;
+static constexpr size_t CC_PORTAL_APASS_LEN = 8;
+
+// How long the setup portal stays up before giving up and going back to sleep.
+// Bounded on purpose: this is a battery-powered device, so an unconfigured unit must
+// not sit awake with an open SoftAP indefinitely. Long enough to find the panel,
+// join the network and fill in a form (the panel refresh alone takes ~25 s).
+static constexpr uint32_t CC_PORTAL_TIMEOUT_MS = 10UL * 60UL * 1000UL; // 10 minutes
 
 struct PortalInfo {
     char apName[CC_PORTAL_APNAME_MAX];
     char apPassword[CC_PORTAL_APASS_MAX];
 };
 
-// Derive the per-boot AP name and random WPA2 password. `seed` must be a
+// Derive the per-boot AP name and random WPA2 password. `seed` must be an
 // unpredictable value (the device passes its hardware RNG); this function is pure
 // so the *generation rule* is unit-testable — it never reads the RNG itself.
-// Generates a password from an unambiguous alphabet (no O/0/I/1/l) because the user
-// has to transcribe it from a 4-colour ePaper panel by eye.
+// Generates an 8-DIGIT password (the WPA2 minimum) because the user has to
+// transcribe it from a 4-colour ePaper panel by eye, and digits are the easiest
+// thing to read and type off a 6px font.
 void cc_portalMakeInfo(uint32_t macLow, uint32_t seed, PortalInfo* out);
 
 // Run the blocking setup portal: starts the SoftAP, serves the form, and returns

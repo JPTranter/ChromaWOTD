@@ -11,13 +11,6 @@
 // ---------------------------------------------------------------------------
 // Pure: AP identity + per-boot random password (host-testable)
 // ---------------------------------------------------------------------------
-namespace {
-// Excludes O/0, I/1/l: this password is read off a 4-colour ePaper panel by a
-// human, and those glyph pairs are genuinely ambiguous at 5-6px.
-constexpr const char kPwAlphabet[] = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-constexpr size_t kPwAlphabetLen = sizeof(kPwAlphabet) - 1;
-} // namespace
-
 void cc_portalMakeInfo(uint32_t macLow, uint32_t seed, PortalInfo* out) {
     if (!out)
         return;
@@ -27,19 +20,20 @@ void cc_portalMakeInfo(uint32_t macLow, uint32_t seed, PortalInfo* out) {
     snprintf(out->apName, sizeof(out->apName), "ChromaWOTD-%02X%02X%02X", (unsigned)((macLow >> 16) & 0xFF),
              (unsigned)((macLow >> 8) & 0xFF), (unsigned)(macLow & 0xFF));
 
-    // Password: 12 chars from the unambiguous alphabet, drawn from `seed`. The
-    // caller supplies a hardware-RNG value; this function only maps it. A plain
-    // LCG/xorshift keeps the mapping dependency-free and is perfectly adequate for
-    // a 12-char, per-boot, physically-readable credential whose threat model is a
-    // passer-by during setup — NOT a long-lived secret.
+    // Password: CC_PORTAL_APASS_LEN random DIGITS. Digits only because the user reads
+    // this off a 4-colour ePaper panel and types it on a phone — 0/8, 1/7 and 5/6 at
+    // 6px are far less ambiguous than letters, and there is no case to mis-enter.
+    // The xorshift is adequate here: the password is regenerated every boot, is shown
+    // on the device itself, and only needs to keep a passer-by out during the
+    // (bounded) setup window — it is not a long-lived secret.
     uint32_t s = seed ? seed : 0x9E3779B9u;
-    for (size_t i = 0; i < 12 && i < CC_PORTAL_APASS_MAX - 1; i++) {
+    for (size_t i = 0; i < CC_PORTAL_APASS_LEN; i++) {
         s ^= s << 13;
         s ^= s >> 17;
         s ^= s << 5; // xorshift32
-        out->apPassword[i] = kPwAlphabet[s % kPwAlphabetLen];
+        out->apPassword[i] = (char)('0' + (s % 10u));
     }
-    out->apPassword[12 <= CC_PORTAL_APASS_MAX - 1 ? 12 : CC_PORTAL_APASS_MAX - 1] = '\0';
+    out->apPassword[CC_PORTAL_APASS_LEN] = '\0';
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +234,13 @@ bool cc_portalRun(const PortalInfo& info, uint32_t timeoutMs) {
     }
     const IPAddress ip = WiFi.softAPIP();
     Serial.printf("portal: AP '%s' up, portal at http://%s/\n", info.apName, ip.toString().c_str());
+#if defined(CHROMAWOTD_PORTAL_DEBUG)
+    // Development-only: the password is shown on the panel anyway, so printing it in
+    // an explicitly opt-in debug build adds no real exposure — but it is NOT printed
+    // in a normal build, and this flag must never ship enabled. It exists so the
+    // portal can be exercised end-to-end without a human reading the ePaper.
+    Serial.printf("portal: DEBUG ap_password=%s\n", info.apPassword);
+#endif
 
     // Catch-all DNS: point every lookup at us so the OS shows its sign-in sheet.
     g_dns.start(53, "*", ip);
