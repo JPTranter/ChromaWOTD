@@ -1022,3 +1022,59 @@ found two defects that every host test and every render had passed over.
   The boot log from a real device is a first-class test artifact.
 
 (2026-09-13)
+
+
+## 45. Stored config vanished: the Arduino core silently reformats NVS when it fills (DIAGNOSED)
+
+**Symptom.** After the portal had been configured successfully on hardware (the device
+joined the home network and rendered real content), a later boot reported
+`config: source=compile-time ssid=(empty)` and raised the setup portal again. Every key
+logged `nvs_get_blob len fail: ssid NOT_FOUND`, yet no `nvs_open failed` appeared, so the
+namespace existed but was empty.
+
+**Diagnosis (from an offline dump of the NVS region, preserved before the device was
+reset).** The NVS is healthy and correctly formatted — namespace `chromawotd` at
+nsIndex=4 with all 16 entries well formed (`ssid`/`pass`/`tz` = 11-byte blobs, `host` 10,
+`cfgver` 5, `lat`/`lon` 4, `mode`/`cfgok` u8). But the page sequence numbers start at 0 and
+increment, which is the signature of a RECENTLY REFORMATTED partition. The mechanism is in
+the Arduino core's `initArduino()`:
+
+```c
+esp_err_t err = nvs_flash_init();
+if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    esp_partition_erase_range(partition, 0, partition->size);   // wipes EVERYTHING
+    err = nvs_flash_init();
+}
+```
+
+The NVS partition is only 20 KB and holds WiFi + BLE + DHCP state alongside our config.
+When it fills, the core **erases and reformats the entire partition**, destroying the
+stored credentials, and the device falls back to the unprovisioned path. Nothing in our
+code erased them; `cc_configEraseNvs()` is only reachable from the deliberate 10 s
+factory-reset gesture.
+
+**What is PROVEN vs INDICATED.** Proven: the partition was reformatted recently (page seq
+numbers), our entries are well formed, and no code path of ours erased them. Indicated but
+not proven: that `ESP_ERR_NVS_NO_FREE_PAGES` was the specific trigger — the boot log did
+not contain the core's `Failed to initialize NVS!` line (which only logs if the RE-INIT
+fails, so a successful reformat is silent), and the evidence partition was already
+rewritten by the re-run portal before it could be captured in the failing state.
+
+**Consequences / what to do.**
+- A device can silently lose its configuration and there is nothing in the UI to say why;
+  the user sees the setup portal again and may not realise their settings were wiped.
+- Do not trust a single NVS write as permanent. A read-back verification after save (and a
+  boot-time warning when a previously-provisioned device finds nothing) would surface this
+  instead of hiding it.
+- If the trigger is confirmed, the fix is to stop sharing one small partition with the
+  WiFi stack (a dedicated NVS partition for our config), not to write more defensively into
+  the same one.
+
+**Method note (the part I got wrong twice).** I first claimed the page header was corrupt
+using `0xFEEDBEEF` as the NVS page magic — that is the DEBUG-STUB magic; I had
+misremembered it. I then "confirmed" the bug from that false premise. Only parsing the
+entries against the authoritative layout from Espressif's `nvs_types.hpp` produced a
+correct reading, which is how the real story (a healthy but freshly-reformatted partition)
+emerged. Fetch the struct definition before interpreting binary layouts.
+
+(2026-09-13)
