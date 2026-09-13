@@ -7,9 +7,11 @@
 // Shared UTF-8 -> single-byte decoder and wrapping math live in text/ (D1) so
 // they are pure, unit-testable units rather than hidden in this monolith.
 #include "draw/weather_icon.h"
-#include "net/portal.h" // PortalInfo, for the setup screen at the end of this file
+#include "net/portal.h"  // PortalInfo, for the setup screen at the end of this file
+#include "net/wifi_qr.h" // cc_qrBuildWifiPayload, for the setup screen's QR code
 #include "text/glyphs.h"
 #include "text/wrap.h"
+#include "third_party/qrcodegen/qrcodegen.h" // vendored QR encoder (MIT)
 
 // ---------------------------------------------------------------------------
 // Backend abstraction (D6). All drawing routes through the DisplayTarget
@@ -731,13 +733,70 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
     drawLandscapeWeatherColumn(kWeatherCx, w, opts.weatherLabel);
 }
 
+// Draw a QR code for `text`, anchored at (x, y), within `maxH` pixels of height.
+// Returns the x coordinate just past the drawn code (so a caller can lay text out
+// beside it), or `x` when nothing could be drawn.
+//
+// Why the buffers are static: qrcodegen_encodeText needs two caller buffers of
+// qrcodegen_BUFFER_LEN_MAX (3918 bytes each at the largest QR version). On a device
+// with a 16 KB sync-task stack that is fatal on the stack, so they live in BSS — the
+// draw happens once per boot and never concurrently.
+//
+// Scale selection is what makes this scannable: modules are drawn as `scale`x`scale`
+// pixel blocks and there is NO partial scaling, so the code stays on the module grid.
+// The largest scale that fits both the height budget and the panel width wins.
+static int drawPortalQrCode(const char* text, int x, int y, int maxH) {
+    static uint8_t qrTemp[qrcodegen_BUFFER_LEN_MAX];
+    static uint8_t qrCode[qrcodegen_BUFFER_LEN_MAX];
+
+    const bool ok = qrcodegen_encodeText(text, qrTemp, qrCode, qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN,
+                                         qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
+    if (!ok)
+        return x; // payload too long: no code rather than a wrong code
+
+    const int size = qrcodegen_getSize(qrCode); // modules per side (no quiet zone)
+    // The spec requires a 4-module quiet zone; without it scanners fail on a busy
+    // background. It is drawn as white margin around the modules.
+    const int quiet = 4;
+    const int totalModules = size + 2 * quiet;
+
+    // Largest whole-module scale that fits the height budget and stays on-panel.
+    int scale = maxH / totalModules;
+    const int maxScaleByWidth = (296 - x - 2) / totalModules;
+    if (scale > maxScaleByWidth)
+        scale = maxScaleByWidth;
+    if (scale < 1)
+        return x; // too dense to render legibly: caller shows text only
+
+    const int px = totalModules * scale;
+    const int ox = x;                   // quiet zone is inside `px`
+    const int oy = y + (maxH - px) / 2; // vertically centred in the budget
+
+    // Quiet zone: a white block behind the code (the panel is white already, but this
+    // guarantees the margin even over an earlier drawing).
+    dev_fillRect(ox, oy, px, px, CC_WHITE);
+
+    for (int my = 0; my < size; my++) {
+        for (int mx = 0; mx < size; mx++) {
+            if (!qrcodegen_getModule(qrCode, mx, my))
+                continue;
+            const int px0 = ox + (mx + quiet) * scale;
+            const int py0 = oy + (my + quiet) * scale;
+            dev_fillRect(px0, py0, scale, scale, CC_BLACK);
+        }
+    }
+    return ox + px;
+}
+
 // Setup screen for the first-boot captive portal (see net/portal.cpp). Lives here
 // because the dev_drawString* helpers above are file-static and this must reuse
 // exactly the same text/degree/decoding path as every other screen — a second copy
 // in portal.cpp would be the thing that drifts.
 //
-// Layout: a big red AP name and password (the user has to transcribe them from a
-// 4-colour panel, so size matters more than elegance), then the two steps.
+// Layout: a Wi-Fi QR code on the LEFT (the primary path — the user scans and the
+// phone joins the AP with no typing), and the same credentials in text on the RIGHT
+// as the fallback, with the setup URL. The QR is square and needs a quiet zone, so
+// most of the right side is text at size 1.
 void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
     static constexpr int kW = 296;
     static constexpr int kH = 128;
@@ -756,12 +815,40 @@ void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
         return;
     }
 
-    dev_drawString(6, 22, "1. Join Wi-Fi network:", CC_BLACK, 1);
-    dev_drawString(14, 32, info.apName, CC_RED, 2);
-    dev_drawString(6, 54, "2. Password (8 digits):", CC_BLACK, 1);
-    // Size 3 (18px tall): the password is only 8 digits now, so it fits large and is
-    // far easier to read and type correctly off a 4-colour panel.
-    dev_drawString(14, 64, info.apPassword, CC_BLACK, 3);
-    dev_drawString(6, 92, "3. Open http://192.168.4.1 and save", CC_BLACK, 1);
-    dev_drawString(6, 106, "Long-press a button 10s to reset", CC_BLACK, 1);
+    // --- QR code (left) -----------------------------------------------------
+    // Drawn first so the text block can be positioned against its actual extent.
+    // The QR gets almost the full panel height (not a reduced band) because module
+    // size is the difference between scanning and not: at ECC LOW a 51-char payload
+    // is version 3 (29 modules), so 37 modules with the quiet zone scale to 3px
+    // (111px) when given ~111px of height, versus only 2px (74px) from a 108px band.
+    char payload[CC_QR_PAYLOAD_MAX];
+    const size_t plen = cc_qrBuildWifiPayload(payload, sizeof(payload), info.apName, info.apPassword, "WPA");
+    int qrRight = 4;
+    if (plen > 0) {
+        qrRight = drawPortalQrCode(payload, 4, kHeaderH + 1, kH - kHeaderH - 2);
+    }
+
+    // --- Credentials as text (right) ----------------------------------------
+    // The fallback for a phone whose scanner will not cooperate, or whose OS blocks the
+    // portal probe via Private DNS / an always-on VPN (in which case no sign-in sheet
+    // appears at all and this text is the only way in). Wrapped to the remaining width
+    // so nothing runs off the panel edge.
+    const int tx = qrRight + 6;
+    const int tw = kW - tx - 4; // keep a 4px right margin
+    int y = kHeaderH + 3;
+    dev_drawString(tx, y, "Scan the code, or type:", CC_BLACK, 1);
+    y += 12;
+
+    drawWrappedTextCentered(tx + tw / 2, y, tw, 20, info.apName, CC_RED, 1, 10);
+    y += 12;
+
+    dev_drawString(tx, y, "Password:", CC_BLACK, 1);
+    y += 11;
+    // Size 2 for the 8 digits: readable off the panel without dominating the block.
+    dev_drawString(tx, y, info.apPassword, CC_BLACK, 2);
+    y += 20;
+
+    drawWrappedTextCentered(tx + tw / 2, y, tw, 20, "Open http://192.168.4.1", CC_BLACK, 1, 10);
+    y += 12;
+    dev_drawString(tx, y, "Reset: hold a button 10s", CC_BLACK, 1);
 }

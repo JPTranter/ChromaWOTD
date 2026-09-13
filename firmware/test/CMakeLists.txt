@@ -1,5 +1,8 @@
+# C is required as well as C++: the vendored QR encoder
+# (third_party/qrcodegen/qrcodegen.c) is C, and a CXX-only project has no
+# CMAKE_C_COMPILE_OBJECT, so adding a .c source silently fails to configure.
 cmake_minimum_required(VERSION 3.16)
-project(CHROMAWOTD_layout_tests CXX)
+project(CHROMAWOTD_layout_tests C CXX)
 
 include(CTest)
 
@@ -56,6 +59,11 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/net/net.cpp
     ${CC_SRC_DIR}/net/net_host_curl.cpp
     ${CC_SRC_DIR}/net/portal.cpp
+    ${CC_SRC_DIR}/net/wifi_qr.cpp
+    # Vendored QR encoder (Nayuki, MIT) — C, no exceptions, no dynamic allocation
+    # beyond the caller's buffers. Needed because the Wi-Fi QR payload contains a
+    # per-boot random password, so the code cannot be pre-generated.
+    ${CC_SRC_DIR}/third_party/qrcodegen/qrcodegen.c
     ${CC_SRC_DIR}/config/config.cpp
     ${CC_SRC_DIR}/config/config_active.cpp
     ${CC_SRC_DIR}/config/config_nvs_host.cpp
@@ -160,6 +168,10 @@ cc_test(test_net tests/test_net.cpp)
 # round-trip and the portal's AP credential rule. These decide whether a device
 # can connect at all, so they are asserted rather than eyeballed.
 cc_test(test_config tests/test_config.cpp)
+
+# Wi-Fi QR payload: the escaping rules, which decide whether a scan joins the right
+# network with the right password.
+cc_test(test_wifi_qr tests/test_wifi_qr.cpp)
 
 # Wake schedule arithmetic (pure; no backend needed).
 add_executable(test_sched tests/test_sched.cpp)

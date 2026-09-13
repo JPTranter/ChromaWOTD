@@ -162,11 +162,22 @@ void handleRoot() {
     g_server.send(200, "text/html", page(nullptr));
 }
 
-// Any unknown path is redirected to the form, which is what makes the captive
-// portal sheet appear on iOS/Android/Windows.
-void handleNotFound() {
+// Redirect to the form. Every unknown path lands here, plus the specific probe URLs
+// each OS uses — see the registrations in cc_portalRun() for why the explicit ones
+// matter.
+void redirectToForm() {
+    // 302 (not 204/200-with-body) is what the detectors look for:
+    //   Android  /generate_204        expects 204, so ANY other code means "portal"
+    //   Apple    /hotspot-detect.html expects the word "Success"
+    //   Windows  /ncsi.txt, /connecttest.txt expect "Microsoft Connect Test"
+    // Returning a redirect satisfies all three: the body never matches, so the OS
+    // concludes it is behind a captive portal and raises its sign-in sheet.
     g_server.sendHeader("Location", "http://192.168.4.1/", true);
     g_server.send(302, "text/plain", "");
+}
+
+void handleNotFound() {
+    redirectToForm();
 }
 
 void handleSave() {
@@ -247,6 +258,31 @@ bool cc_portalRun(const PortalInfo& info, uint32_t timeoutMs) {
 
     g_server.on("/", HTTP_GET, handleRoot);
     g_server.on("/save", HTTP_POST, handleSave);
+
+    // Explicit handlers for the OS captive-portal probe URLs. The catch-all
+    // (onNotFound) already redirects anything unknown, but some Android builds treat a
+    // 404 on the probe path differently from a redirect, so handling the probe URLs
+    // BY NAME is what makes the sign-in sheet appear reliably across devices:
+    //   Android : /generate_204, /gen_204
+    //   Apple   : /hotspot-detect.html, /library/test/success.html
+    //   Windows : /ncsi.txt, /connecttest.txt, /redirect
+    //   Firefox : /canonical.html, /success.txt
+    static const char* kProbePaths[] = {
+        "/generate_204",
+        "/gen_204",
+        "/hotspot-detect.html",
+        "/hotspotdetect.html",
+        "/library/test/success.html",
+        "/ncsi.txt",
+        "/connecttest.txt",
+        "/redirect",
+        "/canonical.html",
+        "/success.txt",
+    };
+    for (const char* path : kProbePaths) {
+        g_server.on(path, HTTP_GET, redirectToForm);
+    }
+
     g_server.onNotFound(handleNotFound);
     g_server.begin();
 
