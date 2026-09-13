@@ -187,17 +187,26 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
 
 ### Credential Handling (S3)
 
-**Wi-Fi credentials, timezone, and location live in NVS only. They are never echoed to serial.**
+**Credentials live on the device and are never echoed to serial.**
 
-- **Storage:** `Preferences` / NVS namespace `chromawotd`:
-  - `wifi_ssid` (string)
-  - `wifi_passphrase` (string)
-  - `timezone` (POSIX string, e.g., `Australia/Sydney`)
-  - `lat` / `lon` (float)
-  - `content_mode` (enum: 0=verse, 1=word)
-  - `last_verse` / `last_weather` (cached JSON, optional)
-- **Input:** Entered over the captive portal (Phase 2+). Portal AP password is per-boot random.
-- **Output:** Never logged to `Serial`. `Serial.printf` must sanitize or skip credential fields.
+- **Resolution order** (implemented in `config/`): NVS → compile-time `secrets.h` →
+  built-in default. One shared instance (`config_active.cpp`), so host and device
+  cannot diverge — they did while each TU re-derived its own defaults.
+- **Storage:** `Preferences` / NVS namespace `chromawotd`, one key per field:
+  - `ssid` (string), `pass` (string), `tz` (POSIX string), `lat` / `lon` (float)
+  - `host` (string, optional device name), `mode` (content mode), `cfgver` (the
+    firmware version that wrote the values), `cfgok` (provisioned marker)
+  - Cached content (last verse/word/weather) is still **not implemented**.
+- **Input:** the first-boot captive portal (`net/portal.cpp`): SoftAP named
+  `ChromaWOTD-<MAC>` + DNS catch-all + a form on `192.168.4.1`. The AP password is
+  regenerated per boot and shown on the ePaper; it is never persisted, so a
+  captured password is useless once the device leaves setup mode.
+- **Factory reset:** hold any button ≥10 s through a button wake
+  (`sched/factory_reset.cpp`), which erases the namespace and returns to the portal.
+- **Output:** never logged. The firmware reports only `(set)` / `(empty)`, and
+  `Serial.printf` must not be given a credential field. (Note `secrets.h.example`
+  previously claimed values were "stored in NVS at runtime" — that was aspirational
+  until this work; it is now true.)
 
 ### Remote String Safety (S4)
 

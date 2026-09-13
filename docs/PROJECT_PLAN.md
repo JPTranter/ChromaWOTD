@@ -34,9 +34,13 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
 - [x] Regression suite with region invariants (`test_layout_overflow`, 11 invariant tests)
 
 ### Phase 2 — Setup Wizard, Hardware Buttons & State Persistence
-- [ ] **First-Boot Setup Screen**: Display on-screen instructions guide (SSID, AP IP address `192.168.4.1`, setup steps).
-- [ ] **Captive Portal Wi-Fi Wizard**: SoftAP mode + web configuration portal for SSID/password, timezone, location, and preferred content mode.
-- [ ] **Factory Reset**: Long-press button hold (10 seconds) detection to wipe NVS credentials and reboot into setup wizard.
+- [x] **First-Boot Setup Screen** (2026-09-13): the ePaper shows the AP name, the
+      per-boot portal password and the steps (`http://192.168.4.1`).
+- [x] **Captive Portal Wi-Fi Wizard** (2026-09-13): SoftAP + DNS catch-all + a form
+      for SSID/passphrase, timezone, coordinates, device name and content mode;
+      values validated and written to NVS (`config/`, `net/portal.cpp`).
+- [x] **Factory Reset** (2026-09-13): 10 s button hold through a button wake wipes
+      the NVS namespace and returns to the setup portal (`sched/factory_reset.cpp`).
 - [x] **Button Hardware Interaction & Deep Sleep Wake** (Phase 5, 2026-09-12):
   - [x] `ext1` multi-button deep sleep wake mask — **BUTTON1/2/3 = GPIO2/GPIO3/GPIO8
         (D1/D2/D9)**, active-low, all RTC-capable. **D0/GPIO1 is `BAT_ADC`**, not a button.
@@ -48,9 +52,10 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
   - [x] Content mode is time-based, not toggled: Verse 00:00–11:59, Word 12:00–23:59.
   - [ ] Lockout during active ~25s screen sweep to ignore switch bounce/spam.
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
-  - Wi-Fi credentials, timezone POSIX string, latitude/longitude.
-  - Active display layout & content mode.
-  - Cached last successful verse, word, and weather data with timestamp.
+  - [x] Wi-Fi credentials, timezone POSIX string, latitude/longitude (2026-09-13).
+  - [x] Resolution order NVS → `secrets.h` → built-in default (one shared instance).
+  - [ ] Active display layout & content mode.
+  - [ ] Cached last successful verse, word, and weather data with timestamp.
 
 ### Phase 3 — Weather, Dual Content Sources & Sync Indicators
 - [ ] **Syncing & Status Feedback**:

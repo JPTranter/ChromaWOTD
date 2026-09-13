@@ -258,8 +258,12 @@ CHROMAWOTD/
 >
 > - **TLS validation is mandatory.** Never call `WiFiClientSecure::setInsecure()`;
 >   ship root CAs and call `setCACert()` before every HTTPS request (S1).
-> - **Credentials live in NVS only**, are entered over the captive portal, and are
->   never echoed to serial (S3). Template: `firmware/src/secrets.h.example`.
+> - **Credentials live on the device, never in the repo.** They are set over the
+>   first-boot captive portal and stored in NVS, and are never echoed to serial (S3).
+>   Nothing is logged: the firmware prints `ssid=(set)`/`(empty)`, never the value.
+>   Resolution order is NVS → `secrets.h` → built-in default, so a developer board
+>   can keep using a compile-time `secrets.h` while a shipped unit is portal-configured.
+>   Template: `firmware/src/secrets.h.example`.
 > - **Remote text is untrusted input** — the renderer's fixed buffers are the
 >   boundary; `snprintf`/bounded-copy only, never `sprintf` (S4).
 > - **Committing a secret is blocked, not just discouraged.** gitleaks runs on every
@@ -454,6 +458,35 @@ Useful build flags (`firmware/platformio.ini`): `-DCHROMAWOTD_BUTTON_WAKE=1` ena
 forces a short sleep for bench observation; `-DCHROMAWOTD_HOSTNAME` overrides the DHCP
 hostname (default `ChromaWOTD`), and `-DCHROMAWOTD_MDNS=1` additionally answers to
 `ChromaWOTD.local` (~24 KB flash).
+
+### First-time setup (no toolchain needed)
+
+A device with no stored configuration boots into a **setup portal** instead of showing
+fallback content:
+
+1. The ePaper shows an AP name (`ChromaWOTD-XXXXXX`) and a **per-boot random password**.
+2. Join that network from a phone or laptop, using the password on the panel.
+3. The captive-portal sheet appears (or browse to `http://192.168.4.1`) and asks for
+   your Wi-Fi network/password, timezone and coordinates.
+4. Save — the device stores the values in its own flash (NVS) and restarts into normal
+   operation.
+
+**Factory reset:** hold any of the three buttons for **10 seconds** while the device
+wakes; it erases the stored configuration and returns to the portal. Re-flashing the
+merged image (`write_flash 0x0`) has the same effect, since that image includes the
+NVS region.
+
+### Settings precedence
+
+```
+NVS (set over the portal)  >  secrets.h (compile-time)  >  built-in defaults
+```
+
+So you can bake a configuration into your own build with `secrets.h` and still
+reconfigure a device later over the portal — the portal wins. This ordering is also
+what makes partial updates safe: flashing the **app-only** image writes from `0x10000`
+and leaves NVS at `0x9000` untouched, so your settings survive an update, while the
+merged image at `0x0` gives you a clean, factory-fresh device.
 
 ### Releases
 

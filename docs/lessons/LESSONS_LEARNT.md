@@ -939,3 +939,49 @@ caused by publishing; publishing is what made them visible. All four are now fix
   md5 equality check is only meaningful for renders a test produces.
 
 (2026-09-13)
+
+
+## 43. Configuration was compile-time only — and the two copies of its defaults had already diverged (RESOLVED)
+
+**Context.** "How does a user change their settings, or keep the settings already on the
+device?" had no good answer: every value (SSID, passphrase, lat/lon, timezone) was a
+compile-time `#define` from the gitignored `secrets.h`, so nothing was stored on the device,
+and README/ARCHITECTURE described NVS + a captive portal that did not exist. Grepping for
+`Preferences`/`nvs_get` in `firmware/src/` returned nothing — the docs were aspirational
+(Phase 2 of PROJECT_PLAN), which is the same doc-vs-reality gap as the BOOT/RESET claims (§32).
+
+**Latent bug found while consolidating.** The fallback defaults were duplicated in
+`net_impl_esp32.cpp` (device) and `net.cpp` (host) and had **drifted**: Sydney (-33.8688,
+151.2093) vs Melbourne (-37.8528, 145.1633). So the host harness and the firmware could
+compile *different* coordinates, and the project's "host and device stay identical" invariant
+was quietly false for configuration — the same class of divergence the layout engine is
+carefully built to avoid. Now defined once in `config/config_compiletime.h`.
+
+**Design.** Resolution order NVS → `secrets.h` → built-in default, one shared instance
+(`config_active.cpp`). This is what makes partial updates work without a flag: NVS lives at
+`0x9000` and an **app-only** flash writes from `0x10000`, so settings survive an update, while
+the merged image at `0x0` (which spans the NVS region — verified: 20 KB, all `0xFF`) yields a
+factory-fresh device. The choice of release artifact *is* the choice of behaviour.
+
+**Rules.**
+- **Put configuration behind one resolution rule and one instance.** Two places deriving the
+  same defaults WILL drift; the duplication survived because nothing compared them.
+- **A gesture that spans deep sleep cannot be timed with `millis()`.** A "hold for 10 s" reset
+  cannot know how long the user held before the boot, because the press *is* the wake source.
+  Sample the level repeatedly instead (pure logic in `sched/factory_reset.cpp`, so it is
+  testable without hardware). Read such buttons through the RTC domain (`rtc_gpio_*`), never
+  `pinMode`/`digitalRead`, which hands the pad back to the digital domain (§34).
+- **Generator functions should take their entropy as an argument.** `cc_portalMakeInfo()` is
+  pure (MAC + seed → name/password), so the credential rule is unit-tested on the host while
+  the device supplies `esp_random()`. The password alphabet excludes O/0/I/1/L because a human
+  transcribes it from a 4-colour panel by eye.
+- **Bound and validate everything from a web form** — that is remote input (S4). Values are
+  length-clamped, HTML-escaped when echoed back, coordinates are range-checked, and `(0, 0)` is
+  rejected explicitly rather than silently producing a plausible-but-wrong forecast.
+
+**Not yet verified on hardware.** The portal compiles, boots to the setup screen and the
+config layer's precedence is exercised end-to-end on the host, but no one has joined the AP
+from a phone. Treat the captive-portal sheet behaviour (DNS catch-all, OS sign-in sheet) as
+unproven until tested on the real device.
+
+(2026-09-13)
