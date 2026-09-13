@@ -831,15 +831,20 @@ void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
     // --- Credentials as text (right) ----------------------------------------
     // The fallback for a phone whose scanner will not cooperate, or whose OS blocks the
     // portal probe via Private DNS / an always-on VPN (in which case no sign-in sheet
-    // appears at all and this text is the only way in). Wrapped to the remaining width
-    // so nothing runs off the panel edge.
+    // appears at all and this text is the only way in).
+    //
+    // Every line is flush-left at `tx` for a consistent left edge. These strings are
+    // known-width and all fit `tw` (the widest is 24 chars = 144px of the 202px
+    // available), and apName is always exactly 17 chars ("ChromaWOTD-" + 6 hex), so
+    // nothing here can wrap — an earlier version centred two of the lines and it read
+    // as a misalignment rather than a deliberate choice.
     const int tx = qrRight + 6;
     const int tw = kW - tx - 4; // keep a 4px right margin
     int y = kHeaderH + 3;
     dev_drawString(tx, y, "Scan the code, or type:", CC_BLACK, 1);
     y += 12;
 
-    drawWrappedTextCentered(tx + tw / 2, y, tw, 20, info.apName, CC_RED, 1, 10);
+    dev_drawString(tx, y, info.apName, CC_RED, 1);
     y += 12;
 
     dev_drawString(tx, y, "Password:", CC_BLACK, 1);
@@ -848,7 +853,7 @@ void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
     dev_drawString(tx, y, info.apPassword, CC_BLACK, 2);
     y += 20;
 
-    drawWrappedTextCentered(tx + tw / 2, y, tw, 20, "Open http://192.168.4.1", CC_BLACK, 1, 10);
-    y += 12;
+    dev_drawString(tx, y, "Open http://192.168.4.1", CC_BLACK, 1);
+    y += 11;
     dev_drawString(tx, y, "Reset: hold a button 10s", CC_BLACK, 1);
 }
