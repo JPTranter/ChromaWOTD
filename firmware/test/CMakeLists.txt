@@ -67,6 +67,7 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/config/config.cpp
     ${CC_SRC_DIR}/config/config_active.cpp
     ${CC_SRC_DIR}/config/config_nvs_host.cpp
+    ${CC_SRC_DIR}/config/tz_map.cpp
     ${CC_SRC_DIR}/sched/wake_schedule.cpp
     ${CC_SRC_DIR}/sched/content_policy.cpp
     ${CC_SRC_DIR}/sched/factory_reset.cpp

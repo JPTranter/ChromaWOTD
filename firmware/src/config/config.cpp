@@ -6,6 +6,7 @@
 #include "config/config.h"
 
 #include "config/config_compiletime.h"
+#include "config/tz_map.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -35,7 +36,11 @@ void cc_configDefaults(DeviceConfig* cfg) {
     // compiled-in credential path any more (see config_compiletime.h).
     cfg->ssid[0] = '\0';
     cfg->passphrase[0] = '\0';
-    cc_configCopy(cfg->timezone, sizeof(cfg->timezone), CHROMAWOTD_TIMEZONE);
+    // Store the timezone as an IANA NAME (the form the portal picker offers and
+    // validation accepts). The POSIX string newlib needs is DERIVED from it at use
+    // time via cc_configResolvedTz() -> cc_tzPosixForIana(), so the stored value and
+    // the runtime value can never disagree about DST.
+    cc_configCopy(cfg->timezone, sizeof(cfg->timezone), cc_tzDefaultName());
     cc_configCopy(cfg->hostname, sizeof(cfg->hostname), "");
     cfg->latitude = CHROMAWOTD_LATITUDE;
     cfg->longitude = CHROMAWOTD_LONGITUDE;
@@ -45,6 +50,15 @@ void cc_configDefaults(DeviceConfig* cfg) {
 
 bool cc_configIsProvisioned(const DeviceConfig& cfg) {
     return cfg.ssid[0] != '\0';
+}
+
+const char* cc_configResolvedTz(const DeviceConfig& cfg) {
+    const char* posix = cc_tzPosixForIana(cfg.timezone);
+    // Also accept a legacy POSIX string that is already correct, so a device
+    // provisioned before the picker existed keeps working if its stored value happens
+    // to be a complete rule. cc_tzPosixForIana() maps the known legacy forms; anything
+    // else unknown yields nullptr and the caller falls back to the built-in default.
+    return posix;
 }
 
 bool cc_configParseCoord(const char* text, float* out, float min, float max) {
@@ -85,9 +99,15 @@ bool cc_configValidate(const DeviceConfig& cfg, char* err, size_t errsz) {
     } else if (strnlen(cfg.passphrase, CC_CFG_PASS_MAX) >= CC_CFG_PASS_MAX) {
         reason = "Wi-Fi password is too long (max 63 characters).";
     } else if (cfg.timezone[0] == '\0') {
-        reason = "Timezone is required (POSIX form, e.g. AEST-10AEDT,M10.1.0,M4.1.0/3).";
+        reason = "Timezone is required - pick your timezone from the list.";
     } else if (strnlen(cfg.timezone, CC_CFG_TZ_MAX) >= CC_CFG_TZ_MAX) {
         reason = "Timezone string is too long.";
+    } else if (!cc_tzPosixForIana(cfg.timezone)) {
+        // The value must be a known IANA name (or a legacy form we can map). A bare
+        // POSIX string is rejected because an INCOMPLETE one is silently wrong: with no
+        // DST rule newlib applies US DST dates, so "AEST-10AEDT" shifted the clock an
+        // hour and scheduled the 06:30 wake for 05:30.
+        reason = "Unrecognised timezone. Choose one from the list (e.g. Australia/Melbourne).";
     } else if (!(cfg.latitude >= -90.0f && cfg.latitude <= 90.0f)) {
         reason = "Latitude must be between -90 and 90.";
     } else if (!(cfg.longitude >= -180.0f && cfg.longitude <= 180.0f)) {

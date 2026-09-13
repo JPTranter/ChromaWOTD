@@ -66,10 +66,17 @@ static const char kTzPosixDefault[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
 // this file reads naturally without copying the struct around.
 static DeviceConfig& g_cfg = *cc_configMutable();
 
-// POSIX TZ for the current boot. Points at the configured timezone, or the built-in
-// default if the configured string is empty. Used by configTzTime() and setenv("TZ").
+// POSIX TZ for the current boot, DERIVED from the configured IANA name.
+//
+// This must never return the raw stored value: the stored value is an IANA name
+// (e.g. "Australia/Melbourne") which newlib cannot resolve without tzdata, and an
+// incomplete POSIX string is silently wrong (no DST rule -> newlib assumes US dates
+// -> the clock is an hour out and the 06:30 wake fires at 05:30). cc_configResolvedTz
+// translates the name to a complete rule; an unrecognised value falls back to the
+// built-in default rather than being passed through.
 static const char* activeTz() {
-    return g_cfg.timezone[0] ? g_cfg.timezone : kTzPosixDefault;
+    const char* resolved = cc_configResolvedTz(g_cfg);
+    return resolved ? resolved : kTzPosixDefault;
 }
 
 // Fallback sleep when the wall clock isn't trustworthy: retry soon rather than

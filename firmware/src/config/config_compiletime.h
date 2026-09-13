@@ -34,12 +34,9 @@
 #ifndef CHROMAWOTD_LONGITUDE
 #define CHROMAWOTD_LONGITUDE 145.1633
 #endif
-// POSIX TZ string, used ONLY for the local clock (configTzTime/setenv TZ). The
-// weather API is asked for timezone=auto because Open-Meteo rejects a POSIX string
-// with HTTP 400 — see cc_fetchWeather().
-#ifndef CHROMAWOTD_TIMEZONE
-#define CHROMAWOTD_TIMEZONE "AEST-10AEDT,M10.1.0,M4.1.0/3"
-#endif
+// NOTE: there is no CHROMAWOTD_TIMEZONE here. The timezone is stored as an IANA
+// name (config/tz_map.cpp owns the name -> POSIX mapping), so a compile-time
+// POSIX string would be a second, drift-prone source of truth.
 
 // DHCP hostname / mDNS name (overridable for a second device on one LAN).
 #ifndef CHROMAWOTD_HOSTNAME

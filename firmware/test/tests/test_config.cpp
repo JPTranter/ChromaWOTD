@@ -6,6 +6,7 @@
 // config_nvs_host.cpp) with the same save/load contract as the device.
 #include "config/config.h"
 #include "config/config_active.h"
+#include "config/tz_map.h"
 #include "net/portal.h"
 
 #include <gtest/gtest.h>
@@ -24,9 +25,11 @@ DeviceConfig fresh() {
 
 TEST(Config, DefaultsAreUsable) {
     DeviceConfig c = fresh();
-    // The built-in timezone must be non-empty; otherwise the device would have no
-    // time base at all on a fresh clone.
+    // The built-in timezone must be non-empty AND resolve to a POSIX rule, or a fresh
+    // device would have no time base. It is stored as an IANA name so it matches the
+    // form the picker offers and validation accepts.
     EXPECT_TRUE(c.timezone[0] != '\0');
+    EXPECT_NE(cc_configResolvedTz(c), nullptr) << "the default timezone must resolve";
     // Coordinates must be inside the valid ranges (a bad default would be silently
     // rejected by validation and the portal would be unreachable-looking).
     EXPECT_GE(c.latitude, -90.0f);
@@ -214,4 +217,84 @@ TEST(Portal, PasswordIsStableForTheSameSeed) {
     cc_portalMakeInfo(1, 42u, &a);
     cc_portalMakeInfo(1, 42u, &b);
     EXPECT_STREQ(a.apPassword, b.apPassword);
+}
+
+// ------------------------------------------------------ timezone mapping ------
+
+// The portal previously took a free-text POSIX string, and an INCOMPLETE one is
+// silently wrong: newlib applies US DST dates when no rule is given, so the device
+// configured with "AEST-10AEDT" ran an hour ahead and scheduled its 06:30 wake for
+// 05:30. These tests pin the two halves of the fix: IANA names resolve, and the
+// incomplete form is no longer accepted as a bare string.
+
+TEST(Timezone, IanaNamesResolveToPosixStrings) {
+    EXPECT_STREQ(cc_tzPosixForIana("Australia/Melbourne"), "AEST-10AEDT,M10.1.0,M4.1.0/3");
+    EXPECT_STREQ(cc_tzPosixForIana("UTC"), "UTC0");
+    // A zone with no DST must NOT get a DST rule appended.
+    EXPECT_STREQ(cc_tzPosixForIana("Australia/Brisbane"), "AEST-10");
+}
+
+TEST(Timezone, EveryPickableNameResolves) {
+    // The portal renders its <select> from cc_tzNameAt(), so every option a user can
+    // choose MUST resolve — otherwise the form offers a value that validation rejects.
+    ASSERT_GT(cc_tzCount(), 0);
+    for (int i = 0; i < cc_tzCount(); i++) {
+        const char* name = cc_tzNameAt(i);
+        ASSERT_NE(name, nullptr) << "index " << i << " is null";
+        EXPECT_NE(cc_tzPosixForIana(name), nullptr) << "the picker offers '" << name << "' but it does not resolve";
+    }
+    EXPECT_EQ(cc_tzNameAt(-1), nullptr);
+    EXPECT_EQ(cc_tzNameAt(cc_tzCount()), nullptr);
+}
+
+TEST(Timezone, AnIncompleteStoredRuleIsCorrectedByDerivation) {
+    // The exact value that caused the +1h clock error: "AEST-10AEDT" with no DST dates.
+    //
+    // It is ACCEPTED by validation rather than rejected, deliberately: a device already
+    // provisioned with it must keep working, and the fix is that the value is mapped to
+    // a complete rule at use time. What matters is the RESOLVED string carries the DST
+    // dates, so the clock is right — the old code passed the incomplete string straight
+    // to setenv() and newlib then borrowed US DST dates.
+    //
+    // (The portal picker no longer OFFERS this form, so new configurations cannot
+    // acquire it; this guards the upgrade path.)
+    DeviceConfig c = fresh();
+    cc_configCopy(c.ssid, sizeof(c.ssid), "MyNetwork");
+    cc_configCopy(c.timezone, sizeof(c.timezone), "AEST-10AEDT");
+    char err[160];
+    // It maps (legacy), so validation passes — the point is that the RESOLVED string is
+    // the complete rule, not the incomplete input.
+    EXPECT_TRUE(cc_configValidate(c, err, sizeof(err))) << err;
+    EXPECT_STREQ(cc_configResolvedTz(c), "AEST-10AEDT,M10.1.0,M4.1.0/3")
+        << "an incomplete stored rule must resolve to a COMPLETE one (with DST dates)";
+}
+
+TEST(Timezone, UnknownTimezoneIsRejected) {
+    DeviceConfig c = fresh();
+    cc_configCopy(c.ssid, sizeof(c.ssid), "MyNetwork");
+    cc_configCopy(c.timezone, sizeof(c.timezone), "Mars/Olympus_Mons");
+    char err[160];
+    EXPECT_FALSE(cc_configValidate(c, err, sizeof(err)));
+    EXPECT_NE(std::string(err).find("timezone"), std::string::npos) << err;
+}
+
+TEST(Timezone, ResolvedTzIsNullForGarbageSoCallersFallBack) {
+    // activeTz() treats nullptr as "use the built-in default" rather than passing an
+    // unvalidated string to setenv("TZ").
+    DeviceConfig c = fresh();
+    cc_configCopy(c.timezone, sizeof(c.timezone), "not-a-zone");
+    EXPECT_EQ(cc_configResolvedTz(c), nullptr);
+    cc_configCopy(c.timezone, sizeof(c.timezone), "");
+    EXPECT_EQ(cc_configResolvedTz(c), nullptr);
+}
+
+TEST(Timezone, ResolvedTzIsNeverTheRawStoredName) {
+    // The heart of the bug: whatever is stored, the value handed to setenv() must be a
+    // POSIX rule, never the IANA name (newlib cannot resolve a name without tzdata).
+    DeviceConfig c = fresh();
+    cc_configCopy(c.timezone, sizeof(c.timezone), "Australia/Melbourne");
+    const char* resolved = cc_configResolvedTz(c);
+    ASSERT_NE(resolved, nullptr);
+    EXPECT_STRNE(resolved, c.timezone) << "the IANA name was passed through unresolved";
+    EXPECT_NE(strchr(resolved, '/'), nullptr) << "a POSIX rule should contain no path separator";
 }

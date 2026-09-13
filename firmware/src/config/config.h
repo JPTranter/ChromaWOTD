@@ -56,11 +56,19 @@ bool cc_configIsProvisioned(const DeviceConfig& cfg);
 // reason suitable for showing back to the user. Enforces:
 //   - ssid non-empty and length < CC_CFG_SSID_MAX
 //   - passphrase length < CC_CFG_PASS_MAX (empty allowed for open networks)
-//   - timezone non-empty and length < CC_CFG_TZ_MAX
+//   - timezone resolves to a known IANA name via cc_tzPosixForIana(), and is not a
+//     bare POSIX string. This is what prevents the silent +1h clock error: an
+//     incomplete POSIX rule (e.g. "AEST-10AEDT", no DST dates) makes newlib apply US
+//     DST rules, so the device is an hour out with no visible symptom.
 //   - latitude in [-90, 90], longitude in [-180, 180], and NOT both zero
 //     (0,0 is the classic "unset" value and would put the forecast in the Atlantic)
 //   - contentMode <= 2
 bool cc_configValidate(const DeviceConfig& cfg, char* err, size_t errsz);
+
+// Resolve the configured timezone to the POSIX string newlib needs, or nullptr when
+// the configured value is not a recognised zone. Callers must treat nullptr as "use
+// the built-in default" rather than passing an unvalidated string to setenv("TZ").
+const char* cc_configResolvedTz(const DeviceConfig& cfg);
 
 // Persist the whole struct to NVS. Returns false on a storage failure.
 bool cc_configSaveToNvs(const DeviceConfig& cfg);

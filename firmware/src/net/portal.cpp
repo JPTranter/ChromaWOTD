@@ -49,6 +49,7 @@ void cc_portalMakeInfo(uint32_t macLow, uint32_t seed, PortalInfo* out) {
 
 #include "chroma_version.h" // CHROMAWOTD_VERSION, recorded as configuredBy
 #include "config/config.h"
+#include "config/tz_map.h"
 #include "draw/target.h"
 #include "net/net.h" // NET_TEXT_MAX, shared text helpers
 #include "text/glyphs.h"
@@ -92,8 +93,7 @@ void htmlEscape(const char* src, char* dst, size_t dstsz) {
 }
 
 String page(const char* statusLine) {
-    char tzEsc[128], hostEsc[128];
-    htmlEscape(g_candidate.timezone, tzEsc, sizeof(tzEsc));
+    char hostEsc[128];
     htmlEscape(g_candidate.hostname, hostEsc, sizeof(hostEsc));
 
     char latBuf[24], lonBuf[24];
@@ -121,11 +121,27 @@ String page(const char* statusLine) {
     h += F("<input name='ssid' required maxlength='32' autocapitalize='none' autocomplete='off'>");
     h += F("<label>Wi-Fi password <span class='hint'>(leave blank for open networks)</span></label>");
     h += F("<input name='pass' type='password' maxlength='63' autocomplete='off'>");
-    h += F("<label>Timezone (POSIX)</label>");
-    h += F("<input name='tz' value='");
-    h += tzEsc;
-    h += F("' maxlength='47'>");
-    h += F("<span class='hint'>e.g. AEST-10AEDT,M10.1.0,M4.1.0/3 for Sydney</span>");
+    h += F("<label>Timezone</label>");
+    // A PICKER, not free text. The previous free-text POSIX field accepted an
+    // incomplete rule ("AEST-10AEDT" with no DST dates), which made newlib apply US DST
+    // rules and put the clock an hour out — scheduling the 06:30 wake for 05:30 with no
+    // visible symptom. An IANA name has no partial form, and the POSIX string is
+    // derived on the device (config/tz_map.cpp).
+    h += F("<select name='tz'>");
+    for (int i = 0; i < cc_tzCount(); i++) {
+        const char* name = cc_tzNameAt(i);
+        if (!name)
+            continue;
+        h += F("<option value='");
+        h += name;
+        h += F("'");
+        if (strcmp(name, g_candidate.timezone) == 0)
+            h += F(" selected");
+        h += F(">");
+        h += name;
+        h += F("</option>");
+    }
+    h += F("</select>");
     h += F("<label>Latitude</label><input name='lat' value='");
     h += latBuf;
     h += F("'>");
