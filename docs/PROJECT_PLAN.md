@@ -52,10 +52,59 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
   - [x] Content mode is time-based, not toggled: Verse 00:00–11:59, Word 12:00–23:59.
   - [ ] Lockout during active ~25s screen sweep to ignore switch bounce/spam.
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
-  - [x] Wi-Fi credentials, timezone POSIX string, latitude/longitude (2026-09-13).
+  - [x] Wi-Fi credentials, timezone IANA name, latitude/longitude (2026-09-13).
   - [x] Resolution order NVS → built-in default (one shared instance); no compile-time credential path.
   - [ ] Active display layout & content mode.
   - [ ] Cached last successful verse, word, and weather data with timestamp.
+
+#### ⚠️ FIX NEEDED — stored config can be silently wiped (LESSONS §45)
+
+**Observed on hardware (2026-09-13):** a provisioned device (it had joined the home
+network and rendered real content) later booted reporting every key
+`nvs_get_blob len fail: NOT_FOUND` and re-raised the setup portal. The stored
+credentials were destroyed — with nothing in the UI to explain it.
+
+**Cause (diagnosed, see §45):** the Arduino core's `initArduino()` calls
+`nvs_flash_init()` and, on `ESP_ERR_NVS_NO_FREE_PAGES` / `ESP_ERR_NVS_NEW_VERSION_FOUND`,
+**erases and reformats the entire NVS partition**:
+
+```c
+if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    esp_partition_erase_range(partition, 0, partition->size);   // wipes EVERYTHING
+    err = nvs_flash_init();
+}
+```
+
+Our partition is only 20 KB and is **shared with the WiFi/BLE/DHCP stack**
+(`misc`, `nvs.net80211`, `phy`, `dhcp_state`). When it fills, everything goes.
+Not our code: `cc_configEraseNvs()` is reachable only from the 10 s reset gesture.
+
+**Evidence.** Offline dump of the region: namespace `chromawotd` at nsIndex=4 with all
+16 entries well formed, but the page sequence numbers start at 0 and increment — the
+signature of a fresh reformat. Not yet proven that `NO_FREE_PAGES` was the specific
+trigger (the core's failure line only logs if the *re*-init fails, so a successful
+reformat is silent).
+
+**Planned fix (do this, in order):**
+1. **Give our config its own NVS partition.** There is currently **no**
+   `firmware/partitions.csv` and no `board_build.partitions` override in
+   `platformio.ini` — the build uses the board's default table, which is why we share a
+   single 20 KB NVS with the WiFi stack. So the fix starts by *creating* a partition
+   table CSV (copy the current default as the baseline, e.g. from the framework's
+   `tools/partitions/default.csv`) and adding a second `data, nvs` entry with its own
+   label. Then open it with `nvs_flash_init_partition(label)` and
+   `Preferences::begin(name, ro, label)`. This isolates our data from the WiFi stack
+   entirely — writing more defensively into the shared partition does not address the
+   cause. Note that changing the partition table requires a full `write_flash` (the
+   layout moves), not an app-only update, and existing devices will lose their NVS.
+2. **Read-back verification after save.** `cc_configSaveToNvs()` should load the values
+   back and compare before the portal reports success; a silent write failure is
+   currently indistinguishable from success.
+3. **Warn on unexpected loss.** If the device has ever been provisioned (a flag in a
+   separate namespace, or an RTC/marker value) and now finds nothing, say so on the panel
+   instead of quietly showing the setup portal.
+4. Re-test: fill the WiFi NVS (many connect/disconnect cycles) and confirm our config
+   survives a reformat of the other partition.
 
 ### Phase 3 — Weather, Dual Content Sources & Sync Indicators
 - [ ] **Syncing & Status Feedback**:
