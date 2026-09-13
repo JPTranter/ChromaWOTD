@@ -874,9 +874,28 @@ void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
 
     dev_drawString(tx, y, "Password:", CC_BLACK, 1);
     y += 11;
-    // Size 2 for the 8 digits: readable off the panel without dominating the block.
-    dev_drawString(tx, y, info.apPassword, CC_BLACK, 2);
-    y += 20;
+    // The password uses the DEDICATED 10pt font at its NATIVE size rather than scaling
+    // the 5.5pt body font up 2x. Scaling a small bitmap stair-steps the digits, and an
+    // 8-digit code is exactly the thing that has to be unambiguous when typed off a
+    // 4-colour panel; the 10pt glyphs are drawn unscaled so the curves stay smooth (the
+    // temperature readout uses this same font for the same reason).
+    //
+    // Grouped in pairs ("2668 1037") because an unbroken 8-digit run is hard to parse
+    // at a glance, and a mis-typed AP password means the user cannot reach the form.
+    char pwGrouped[CC_PORTAL_APASS_MAX + 4];
+    size_t gi = 0;
+    for (size_t i = 0; info.apPassword[i] && gi + 2 < sizeof(pwGrouped); i++) {
+        if (i > 0 && i % 4 == 0)
+            pwGrouped[gi++] = ' ';
+        pwGrouped[gi++] = info.apPassword[i];
+    }
+    pwGrouped[gi] = '\0';
+#ifdef CHROMAWOTD_FONT_FREESANS
+    dev_drawStringF(&RobotoT10pt7b, tx, y, pwGrouped, CC_BLACK, 1);
+#else
+    dev_drawString(tx, y, pwGrouped, CC_BLACK, 2);
+#endif
+    y += 22;
 
     dev_drawString(tx, y, "Open http://192.168.4.1", CC_BLACK, 1);
     y += 11;
