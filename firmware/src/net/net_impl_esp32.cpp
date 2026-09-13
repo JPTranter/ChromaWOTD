@@ -189,11 +189,18 @@ bool cc_fetchJsonThrottled(const char* url, char* out, size_t outsz) {
 // --- Weather fetch (device): real HTTP + ArduinoJson parse -----------------
 bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
     char url[520];
+    // timezone=auto, NOT the configured timezone. The device stores a POSIX TZ string
+    // ("AEST-10AEDT,M10.1.0,M4.1.0/3") because that is what the local clock needs, but
+    // Open-Meteo expects an IANA name and answers a POSIX string with HTTP 400 —
+    // measured: timezone=AEST-10AEDT -> 400, timezone=Australia/Melbourne -> 200.
+    // That made EVERY weather fetch fail silently behind a "No reading" column.
+    // "auto" derives the zone from the lat/lon we already send, so the API needs no
+    // timezone at all and the two uses stop being conflated.
     snprintf(url, sizeof(url),
              "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
              "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-             "&timezone=%s&forecast_days=2",
-             (double)cc_configActive().latitude, (double)cc_configActive().longitude, cc_configActive().timezone);
+             "&timezone=auto&forecast_days=2",
+             (double)cc_configActive().latitude, (double)cc_configActive().longitude);
     char json[4096];
     if (!cc_fetchJsonThrottled(url, json, sizeof(json)))
         return false;

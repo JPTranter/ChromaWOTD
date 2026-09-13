@@ -8,6 +8,7 @@
 #include "net/net.h"
 #include "verse_display.h"
 #include <cstring>
+#include <cstdlib>
 #include <cstdio>
 #include <gtest/gtest.h>
 
@@ -120,7 +121,19 @@ TEST(StripBracket, UnclosedBracket_Unchanged) {
 // ---------------------------------------------------------------------------
 TEST(Fetch, Weather_Live_Today) {
     WeatherData w;
-    if (!cc_fetchWeather(&w, false)) { GTEST_SKIP() << "network unavailable (no curl)"; }
+    if (!cc_fetchWeather(&w, false)) {
+        // A fetch failure here used to be silent: Open-Meteo answered HTTP 400 for
+        // every request because the URL sent a POSIX TZ string as `timezone`, and the
+        // only symptom was a "No reading" column. Failing loudly (rather than skipping)
+        // when the network IS reachable is what turns that into a caught regression.
+        // Distinguish "no network" from "the request is malformed" by checking that the
+        // endpoint is reachable at all.
+        if (system("curl -sS -o /dev/null -m 15 https://api.open-meteo.com/v1/forecast?latitude=0&longitude=0") != 0)
+            GTEST_SKIP() << "network unavailable (no curl)";
+        FAIL() << "open-meteo reachable but cc_fetchWeather failed - check the URL "
+                  "(a POSIX timezone string is rejected with HTTP 400; use timezone=auto)";
+    }
+    ASSERT_TRUE(w.valid) << "a successful fetch must produce a valid reading";
     // Sanity: a real temperature and a condition string from the WMO map; alert
     // may be null (no severe weather right now).
     EXPECT_GT(w.temp, -50.0f);
@@ -130,7 +143,11 @@ TEST(Fetch, Weather_Live_Today) {
 
 TEST(Fetch, Weather_Live_Tomorrow) {
     WeatherData w;
-    if (!cc_fetchWeather(&w, true)) { GTEST_SKIP() << "network unavailable (no curl)"; }
+    if (!cc_fetchWeather(&w, true)) {
+        if (system("curl -sS -o /dev/null -m 15 https://api.open-meteo.com/v1/forecast?latitude=0&longitude=0") != 0)
+            GTEST_SKIP() << "network unavailable (no curl)";
+        FAIL() << "open-meteo reachable but the tomorrow forecast failed";
+    }
     EXPECT_GT(w.temp, -50.0f);
     EXPECT_LT(w.temp, 60.0f);
     EXPECT_TRUE(w.condition && w.condition[0]);

@@ -24,16 +24,10 @@
 // Location defaults (Burwood East, Melbourne). Overridable per-build with -D
 // flags; the device also sets them from secrets.h via net_impl_esp32.cpp. This
 // TU intentionally does NOT include the gitignored secrets.h, so the host suite
-// (and CI) builds green on a fresh checkout with no secrets file present.
-#ifndef CHROMAWOTD_LATITUDE
-#define CHROMAWOTD_LATITUDE -37.8528
-#endif
-#ifndef CHROMAWOTD_LONGITUDE
-#define CHROMAWOTD_LONGITUDE 145.1633
-#endif
-#ifndef CHROMAWOTD_TIMEZONE
-#define CHROMAWOTD_TIMEZONE "Australia/Melbourne"
-#endif
+// (and CI) builds green on a fresh checkout with no secrets file present. These
+// fallbacks live in config/config_compiletime.h; only the coordinates are needed here
+// now that the weather URL uses timezone=auto (Open-Meteo derives the zone from them).
+#include "config/config_compiletime.h"
 
 // ---------------------------------------------------------------------------
 // WMO code -> condition text + alert detection (SHARED host + device) -------
@@ -546,11 +540,14 @@ bool cc_fetchWeather(WeatherData* out, bool tomorrow) {
     if (!out)
         return false;
     char url[520];
+    // timezone=auto: Open-Meteo wants an IANA zone name and rejects a POSIX TZ string
+    // with HTTP 400 (the device's configured timezone is POSIX, for the local clock).
+    // "auto" derives the zone from the lat/lon below, so the API needs no timezone.
     snprintf(url, sizeof(url),
              "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
              "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-             "&timezone=%s&forecast_days=2",
-             CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE, CHROMAWOTD_TIMEZONE);
+             "&timezone=auto&forecast_days=2",
+             CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE);
     char json[4096];
     if (!cc_fetchJson(url, json, sizeof(json)))
         return false;
