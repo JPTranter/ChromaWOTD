@@ -23,13 +23,10 @@
 // The release notes are generated from the feat/fix commits since the previous v*
 // tag and include the flash procedure, so the Releases page is self-contained.
 //
-// IMPORTANT — released images carry NO credentials. Wi-Fi credentials are compiled
-// in from firmware/src/secrets.h (gitignored; there is no NVS/captive portal yet),
-// so a CI-built image necessarily has none and shows the bundled fallback content
-// behind a red `OFFLINE:` banner. Anyone wanting live content builds it themselves
-// with their own secrets.h — the release notes say so. `tools/merge_firmware.py`
-// enforces this by refusing to package an image that contains a developer's
-// secrets.h values.
+// IMPORTANT — released images carry NO credentials, and cannot. Credentials exist
+// only in the device's NVS, written by its setup portal; nothing is compiled in from
+// a source file. A freshly flashed device comes up in the setup wizard, where the
+// user joins its AP (scannable QR code) and enters their Wi-Fi details.
 //
 // OTA/signing posture (REVIEW S5): images are currently unsigned. If this ever
 // becomes a shared/shipped device, add signed updates before shipping OTA.

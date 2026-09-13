@@ -22,11 +22,10 @@
 #include <cstring>
 
 // Location defaults (Burwood East, Melbourne). Overridable per-build with -D
-// flags; the device also sets them from secrets.h via net_impl_esp32.cpp. This
-// TU intentionally does NOT include the gitignored secrets.h, so the host suite
-// (and CI) builds green on a fresh checkout with no secrets file present. These
-// fallbacks live in config/config_compiletime.h; only the coordinates are needed here
-// now that the weather URL uses timezone=auto (Open-Meteo derives the zone from them).
+// flags and live in config/config_compiletime.h, shared with the device so the two
+// can never disagree. Credentials are NOT here: they exist only in the device's NVS,
+// written by its setup portal. Only the coordinates are needed for the weather URL,
+// which now sends timezone=auto and lets Open-Meteo derive the zone from them.
 #include "config/config_compiletime.h"
 
 // ---------------------------------------------------------------------------

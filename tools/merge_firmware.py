@@ -135,29 +135,44 @@ def main():
         f"{', version literal ' + ver.group(0).decode() if ver else ''}"
     )
 
-    # --- Credential guard ----------------------------------------------------
-    # The firmware bakes Wi-Fi credentials in at COMPILE TIME (no NVS/captive
-    # portal yet), so a locally-built image contains them in plaintext. This tool
-    # is what builds release assets, so it must refuse to hand over an image that
-    # would publish the developer's network. The values are never printed.
-    secrets = ROOT / "firmware" / "src" / "secrets.h"
-    if secrets.is_file():
-        text = secrets.read_text(encoding="utf-8", errors="replace")
-        leaked = []
+    # --- Defence-in-depth: scan for credentials -------------------------------
+    # There is no longer any way to compile credentials in — they exist only in NVS,
+    # written by the device's setup portal (see config/config_compiletime.h). So this
+    # check should never fire. It is kept deliberately as a tripwire: if a credential
+    # path is ever reintroduced (a new macro, a generated header, a vendored include),
+    # the release pipeline refuses to publish rather than leaking the developer's
+    # network. That is the failure this project already came close to once.
+    #
+    # It scans the image for the *current* Wi-Fi config the build machine knows about,
+    # read from any of the places a future change might put it.
+    candidates = []
+    for rel in (
+        "firmware/src/secrets.h",
+        "firmware/include/secrets.h",
+        "firmware/src/wifi_config.h",
+    ):
+        p = ROOT / rel
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8", errors="replace")
         for macro in ("WIFI_SSID", "WIFI_PASSPHRASE"):
-            m = re.search(r"^\s*#define\s+" + macro + r'\s+"([^"]*)"', text, re.M)
-            if m and m.group(1) and m.group(1).encode() in data:
-                leaked.append(macro)
+            m = re.search(r"^\s*#define\s+" + macro + r'\s+"([^"]+)"', text, re.M)
+            if m:
+                candidates.append((rel, macro, m.group(1)))
+
+    if candidates:
+        leaked = [f"{macro} ({rel})" for rel, macro, val in candidates if val.encode() in data]
         if leaked:
             sys.exit(
                 "\nREFUSING TO PRODUCE A RELEASE IMAGE: it contains real credentials "
-                f"({', '.join(leaked)}) from firmware/src/secrets.h.\n"
-                "A publishable image must be built WITHOUT secrets.h — that is what CI "
-                "does, since the file is gitignored and absent from a fresh clone.\n"
-                "Build the release artifact from a clean checkout, or delete/blank "
-                "secrets.h first."
+                f"({', '.join(leaked)}).\n"
+                "Credentials must live only in the device's NVS via its setup portal; "
+                "nothing should ever be compiled in. If a credential path was just "
+                "reintroduced, remove it rather than building from a clean checkout."
             )
-        print("  credential scan        clean (no secrets.h values in the image)")
+        print("  credential scan        clean (no credential values in the image)")
+    else:
+        print("  credential scan        no compile-time credential source present")
 
     if problems:
         sys.exit(f"\nMERGE VERIFICATION FAILED: {', '.join(problems)}")

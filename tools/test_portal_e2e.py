@@ -3,7 +3,8 @@
 
 Sequence:
   1. wait for the device's serial port
-  2. flash a MERGED, UNPROVISIONED image (built from a clone with no secrets.h) at 0x0,
+  2. flash a MERGED, UNPROVISIONED image at 0x0, (any build is unprovisioned unless
+     the device's NVS holds config — credentials are never compiled in),
      which also blanks the NVS region -> the device must come up in setup mode
   3. capture the boot log to read the AP name and the per-boot password
   4. join that SoftAP from this machine, GET the form, POST a valid configuration

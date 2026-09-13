@@ -985,3 +985,40 @@ from a phone. Treat the captive-portal sheet behaviour (DNS catch-all, OS sign-i
 unproven until tested on the real device.
 
 (2026-09-13)
+
+
+## 44. The first hardware boot log found two bugs no host test could (RESOLVED)
+
+**Context.** The portal was configured end-to-end on the real device for the first time
+(scan/submit → NVS write → reboot → join the home network → render). Reading that boot log
+found two defects that every host test and every render had passed over.
+
+1. **Every weather fetch was failing with HTTP 400.** The URL sent the configured timezone as
+   `timezone=`, but the device stores a POSIX TZ string (`AEST-10AEDT,M10.1.0,M4.1.0/3`)
+   because that is what the local clock needs, and Open-Meteo expects an IANA name. Measured:
+   `AEST-10AEDT` → 400, `AEST-10AEDT,M10.1.0,M4.1.0/3` → 400, `Australia/Melbourne` → 200,
+   `auto` → 200. Two different needs were sharing one field. The API now always asks for
+   `timezone=auto` (it derives the zone from the lat/lon already sent) and the POSIX string
+   serves only the local clock.
+2. **Why it hid for the whole session:** the live-fetch tests `GTEST_SKIP()`-ed on any failure.
+   A permanent HTTP 400 looked exactly like "no network", so the suite stayed green while the
+   weather column was empty. They now probe the endpoint and FAIL — not skip — when it is
+   reachable but the request is malformed. Verified both ways: with the bug reintroduced the
+   test fails naming the cause; with the fix it passes.
+
+**Lessons.**
+- **A skip-on-failure test cannot distinguish "offline" from "broken".** If a test skips
+  whenever the thing under test fails, it can never report that thing being broken. Probe
+  reachability separately and fail on the difference.
+- **Check your probe's failure mode.** The first version of the reachability probe put a query
+  string in the `system()` call; `cmd.exe` splits on `&`, so it reported "offline" while the
+  endpoint was fine — the probe silently disabled the very check it existed to enable. Probe
+  URLs must contain no shell metacharacters.
+- **Retry before declaring a defect, but not before declaring a bug.** A transient timeout is
+  not a malformed request. One retry separates them: a real HTTP 400 fails deterministically
+  on both attempts, a slow link often succeeds on the second.
+- **Some properties are only observable on hardware.** Host tests and renders cannot see a
+  remote API rejecting a request, and they cannot see a config value that the portal wrote.
+  The boot log from a real device is a first-class test artifact.
+
+(2026-09-13)

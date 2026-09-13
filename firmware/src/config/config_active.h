@@ -1,6 +1,6 @@
 // config_active.h — the process-wide resolved device configuration.
 //
-// One instance, one resolution rule (NVS -> secrets.h -> built-in), consumed by
+// One instance, one resolution rule (NVS -> built-in defaults), consumed by
 // both main.cpp and the network layer. Previously each translation unit re-derived
 // its own defaults, and the copies had already drifted (Melbourne vs Sydney), so
 // "host and device agree" was quietly false. Keeping the resolved value in one place

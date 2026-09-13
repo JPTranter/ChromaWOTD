@@ -49,18 +49,19 @@ refreshing 2-4 times a day and deep-sleeping in between.
 
 ## Flashing
 
-> [!IMPORTANT]
-> **The attached image contains no Wi-Fi credentials**, so a freshly flashed board
-> will show the bundled fallback content behind a red `OFFLINE:` banner. This
-> project has no captive portal yet, so to get live verse/word/weather you must
-> build the firmware yourself with your own credentials (see below).
+> [!NOTE]
+> **A released image contains no credentials, and cannot.** Credentials are entered on
+> the device over its own setup portal (SoftAP + QR code) and stored there; nothing is
+> ever compiled into the firmware. So after flashing, the device comes up in its setup
+> wizard — join the `ChromaWOTD-XXXXXX` network shown on the screen (scan the QR code)
+> and enter your Wi-Fi details. They never leave the device.
 
-### Option A — flash the release image (no toolchain needed)
+### Flash the release image
 
 1. Install `esptool` (once): `pip install esptool`
 2. Connect the board over USB-C. If the serial port is missing, the device is
-   deep-asleep — double-tap **RESET** (or unplug/replug) to wake it. The board
-   uses the ESP32-S3's native USB Serial/JTAG, so no BOOT button is needed.
+   deep-asleep — double-tap **RESET** (or unplug/replug) to wake it. The board uses the
+   ESP32-S3's native USB Serial/JTAG, so no BOOT button is needed.
 3. Flash the merged image at offset 0:
 
    ```bash
@@ -68,18 +69,25 @@ refreshing 2-4 times a day and deep-sleeping in between.
    ```
 
    `<PORT>` is `COM13`-style on Windows, `/dev/ttyACM0` on Linux, `/dev/cu.usbmodem*` on macOS.
+4. **Set the device up**: the panel shows a Wi-Fi QR code. Scan it to join the setup
+   network, and the configuration page opens automatically (or browse to
+   `http://192.168.4.1`). Enter your Wi-Fi details, timezone and coordinates, then save.
+   The device restarts and connects.
 
-### Option B — build with your own credentials (gets live content)
+To change the settings later, or to move the device to another network: hold any button
+for 10 seconds to reset it, and the setup portal returns.
 
-1. `git clone https://github.com/{repo}.git && cd ChromaWOTD`
-2. `cp firmware/src/secrets.h.example firmware/src/secrets.h` and fill in
-   `WIFI_SSID`, `WIFI_PASSPHRASE`, `CHROMAWOTD_LATITUDE`, `CHROMAWOTD_LONGITUDE`
-   and `CHROMAWOTD_TIMEZONE`.
-3. `cd firmware && pio run -e s3 -t upload`
+### Building it yourself
 
-   To upload you may need the port to exist: while the device deep-sleeps its USB
-   port disappears. `python tools/flash_when_awake.py --seconds 420` polls for the
-   port and flashes the moment it appears.
+```bash
+git clone https://github.com/{repo}.git && cd ChromaWOTD
+cd firmware && pio run -e s3 -t upload
+```
+
+No credentials file is needed — the same portal configures a locally-built image.
+
+While the device deep-sleeps its USB port disappears, so an upload can find no port.
+`python tools/flash_when_awake.py --seconds 420` polls for it and flashes on sight.
 
 ### Recovering an unresponsive board
 
@@ -92,7 +100,8 @@ USB-C connector. This is the recovery path, not the routine one.
 The image is verified by `tools/merge_firmware.py` before it is attached: the
 bootloader, partition table, `boot_app0` and application are each checked for
 their expected signature at the expected offset, and a credential scan refuses to
-publish an image containing Wi-Fi details from a developer's `secrets.h`.
+publish an image containing Wi-Fi credentials (there is no compile-time path, so this
+is a tripwire against one being reintroduced).
 
 **Full changelog**: https://github.com/{repo}/compare/{prev}...{tag}
 """

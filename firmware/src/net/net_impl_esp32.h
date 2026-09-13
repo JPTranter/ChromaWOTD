@@ -9,7 +9,8 @@
 
 #include "net/net.h"
 
-// Connect to Wi-Fi (from secrets.h). Returns 0 on success, non-zero on failure.
+// Connect to Wi-Fi using the configured credentials (from the setup portal / NVS).
+// Returns 0 on success, non-zero on failure.
 // Bounded ~15s timeout; never logs the passphrase.
 int cc_wifiConnect();
 

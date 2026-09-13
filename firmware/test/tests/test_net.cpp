@@ -7,25 +7,28 @@
 // isn't present / the network is down, so the suite stays green offline.
 #include "net/net.h"
 #include "verse_display.h"
-#include <cstring>
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <gtest/gtest.h>
 
 namespace {
 // Count occurrences of a character (used to assert the date shape is YYYY-MM-DD).
 int countChar(const char* s, char c) {
     int n = 0;
-    for (; s && *s; ++s) if (*s == c) n++;
+    for (; s && *s; ++s)
+        if (*s == c)
+            n++;
     return n;
 }
-}  // namespace
+} // namespace
 
 // ---------------------------------------------------------------------------
 // WMO mapping (pure, always run) --------------------------------------------
 // ---------------------------------------------------------------------------
 TEST(Wmo, Clear_Is_Sun_NoAlert) {
-    char b[16]; bool alert = true;
+    char b[16];
+    bool alert = true;
     EXPECT_EQ(cc_wmoCondition(0, b, sizeof(b), &alert), (int)strlen("Clear"));
     EXPECT_STREQ(b, "Clear");
     EXPECT_FALSE(alert);
@@ -33,7 +36,8 @@ TEST(Wmo, Clear_Is_Sun_NoAlert) {
 
 TEST(Wmo, PartlyCloudy_1_2_3) {
     for (int c : {1, 2, 3}) {
-        char b[16]; bool alert = true;
+        char b[16];
+        bool alert = true;
         EXPECT_EQ(cc_wmoCondition(c, b, sizeof(b), &alert), (int)strlen("Partly cloudy"));
         EXPECT_STREQ(b, "Partly cloudy");
         EXPECT_FALSE(alert);
@@ -42,7 +46,8 @@ TEST(Wmo, PartlyCloudy_1_2_3) {
 
 TEST(Wmo, RainCodes_Give_Rain_NoAlert) {
     for (int c : {61, 63, 65, 66, 67, 80, 81, 82}) {
-        char b[16]; bool alert = true;
+        char b[16];
+        bool alert = true;
         EXPECT_EQ(cc_wmoCondition(c, b, sizeof(b), &alert), (int)strlen("Rain"));
         EXPECT_STREQ(b, "Rain");
         EXPECT_FALSE(alert);
@@ -50,7 +55,8 @@ TEST(Wmo, RainCodes_Give_Rain_NoAlert) {
 }
 
 TEST(Wmo, Thunderstorm_Sets_Alert) {
-    char b[16]; bool alert = false;
+    char b[16];
+    bool alert = false;
     EXPECT_EQ(cc_wmoCondition(95, b, sizeof(b), &alert), (int)strlen("Thunderstorm"));
     EXPECT_STREQ(b, "Thunderstorm");
     EXPECT_TRUE(alert);
@@ -116,21 +122,48 @@ TEST(StripBracket, UnclosedBracket_Unchanged) {
     EXPECT_STREQ(s, "\"[unclosed heading and no close");
 }
 
+namespace {
+// Is the network reachable? Used to DISTINGUISH a genuine offline skip from a
+// malformed request: a fetch failure with a reachable endpoint is a bug, not a skip.
+// The probe deliberately hits a URL with no query string — a URL containing '&' is
+// mangled by cmd.exe on Windows, which made an earlier version of this check report
+// "offline" while the endpoint was fine, silently skipping exactly the failure it was
+// meant to catch.
+bool networkReachable() {
+#ifdef _WIN32
+    return system("curl -sS -o nul -m 15 https://api.open-meteo.com") == 0;
+#else
+    return system("curl -sS -o /dev/null -m 15 https://api.open-meteo.com") == 0;
+#endif
+}
+
+// One retry before treating a failure as a defect. A live-fetch test sees transient
+// timeouts (curl 28) as well as real problems, and the two must not be confused: the
+// first version of these tests called ANY failure with a reachable endpoint a bug,
+// which made the suite fail intermittently on a slow link and would have trained us to
+// ignore it. A genuine malformed request (the HTTP 400 this guards against) fails
+// deterministically on both attempts.
+template <typename F>
+bool fetchWithRetry(F fetch) {
+    if (fetch())
+        return true;
+    return fetch();
+}
+} // namespace
+
 // ---------------------------------------------------------------------------
 // Live fetch (skipped when offline) -----------------------------------------
 // ---------------------------------------------------------------------------
 TEST(Fetch, Weather_Live_Today) {
     WeatherData w;
-    if (!cc_fetchWeather(&w, false)) {
+    if (!fetchWithRetry([&] { return cc_fetchWeather(&w, false); })) {
         // A fetch failure here used to be silent: Open-Meteo answered HTTP 400 for
         // every request because the URL sent a POSIX TZ string as `timezone`, and the
         // only symptom was a "No reading" column. Failing loudly (rather than skipping)
-        // when the network IS reachable is what turns that into a caught regression.
-        // Distinguish "no network" from "the request is malformed" by checking that the
-        // endpoint is reachable at all.
-        if (system("curl -sS -o /dev/null -m 15 https://api.open-meteo.com/v1/forecast?latitude=0&longitude=0") != 0)
+        // when the endpoint IS reachable is what turns that into a caught regression.
+        if (!networkReachable())
             GTEST_SKIP() << "network unavailable (no curl)";
-        FAIL() << "open-meteo reachable but cc_fetchWeather failed - check the URL "
+        FAIL() << "open-meteo reachable but cc_fetchWeather failed twice - check the URL "
                   "(a POSIX timezone string is rejected with HTTP 400; use timezone=auto)";
     }
     ASSERT_TRUE(w.valid) << "a successful fetch must produce a valid reading";
@@ -143,10 +176,10 @@ TEST(Fetch, Weather_Live_Today) {
 
 TEST(Fetch, Weather_Live_Tomorrow) {
     WeatherData w;
-    if (!cc_fetchWeather(&w, true)) {
-        if (system("curl -sS -o /dev/null -m 15 https://api.open-meteo.com/v1/forecast?latitude=0&longitude=0") != 0)
+    if (!fetchWithRetry([&] { return cc_fetchWeather(&w, true); })) {
+        if (!networkReachable())
             GTEST_SKIP() << "network unavailable (no curl)";
-        FAIL() << "open-meteo reachable but the tomorrow forecast failed";
+        FAIL() << "open-meteo reachable but the tomorrow forecast failed twice";
     }
     EXPECT_GT(w.temp, -50.0f);
     EXPECT_LT(w.temp, 60.0f);
@@ -155,7 +188,9 @@ TEST(Fetch, Weather_Live_Tomorrow) {
 
 TEST(Fetch, Verse_Live) {
     VerseData v;
-    if (!cc_fetchVerse(&v)) { GTEST_SKIP() << "network unavailable (no curl)"; }
+    if (!cc_fetchVerse(&v)) {
+        GTEST_SKIP() << "network unavailable (no curl)";
+    }
     EXPECT_TRUE(v.verse && v.verse[0]);
     EXPECT_TRUE(v.reference && v.reference[0]);
     EXPECT_TRUE(v.date && v.date[0]);
@@ -175,7 +210,7 @@ TEST(Fetch, Verse_Live) {
     // The rendered verse must be ASCII-safe (the renderer expects it).
     for (const unsigned char* p = (const unsigned char*)v.verse; *p; ++p)
         EXPECT_LT(*p, 0x80) << "non-ASCII byte 0x" << std::hex << (int)*p << " reached the renderer";
-    EXPECT_TRUE(v.highlight == nullptr);  // not set this phase
+    EXPECT_TRUE(v.highlight == nullptr); // not set this phase
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +309,9 @@ TEST(AwadParse, MalformedPageFails) {
 
 TEST(Fetch, Word_Live) {
     WordData w{};
-    if (!cc_fetchWord(&w)) { GTEST_SKIP() << "network unavailable (no curl) / page shape changed"; }
+    if (!cc_fetchWord(&w)) {
+        GTEST_SKIP() << "network unavailable (no curl) / page shape changed";
+    }
     EXPECT_TRUE(w.word && w.word[0]);
     EXPECT_TRUE(w.definition && w.definition[0]);
 }

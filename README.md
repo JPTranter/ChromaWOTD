@@ -258,12 +258,13 @@ CHROMAWOTD/
 >
 > - **TLS validation is mandatory.** Never call `WiFiClientSecure::setInsecure()`;
 >   ship root CAs and call `setCACert()` before every HTTPS request (S1).
-> - **Credentials live on the device, never in the repo.** They are set over the
->   first-boot captive portal and stored in NVS, and are never echoed to serial (S3).
->   Nothing is logged: the firmware prints `ssid=(set)`/`(empty)`, never the value.
->   Resolution order is NVS → `secrets.h` → built-in default, so a developer board
->   can keep using a compile-time `secrets.h` while a shipped unit is portal-configured.
->   Template: `firmware/src/secrets.h.example`.
+> - **Credentials live only on the device.** They are entered over the first-boot
+>   captive portal and stored in NVS; they are never echoed to serial (S3), and there
+>   is no compiled-in credential path at all — nothing is read from a source file, so
+>   a locally-built image cannot contain them. The firmware prints `ssid=(set)` or
+>   `(empty)`, never the value.
+>   Resolution order is NVS → built-in defaults, so only the portal configures a
+>   device. A device with no stored config boots to the setup screen.
 > - **Remote text is untrusted input** — the renderer's fixed buffers are the
 >   boundary; `snprintf`/bounded-copy only, never `sprintf` (S4).
 > - **Committing a secret is blocked, not just discouraged.** gitleaks runs on every
@@ -479,14 +480,17 @@ NVS region.
 ### Settings precedence
 
 ```
-NVS (set over the portal)  >  secrets.h (compile-time)  >  built-in defaults
+NVS (set over the portal)  >  built-in defaults
 ```
 
-So you can bake a configuration into your own build with `secrets.h` and still
-reconfigure a device later over the portal — the portal wins. This ordering is also
-what makes partial updates safe: flashing the **app-only** image writes from `0x10000`
-and leaves NVS at `0x9000` untouched, so your settings survive an update, while the
-merged image at `0x0` gives you a clean, factory-fresh device.
+Credentials exist **only** in NVS, written by the setup portal — there is no
+compile-time credential path, so nothing you flash can leak your network details. The
+built-in defaults below NVS cover location/timezone so a device still behaves
+coherently, but a device with no stored config boots to the setup screen.
+
+This ordering is also what makes updates safe: flashing the **app-only** image writes
+from `0x10000` and leaves NVS at `0x9000` untouched, so your settings survive an
+update, while the merged image at `0x0` gives you a clean, factory-fresh device.
 
 ### Releases
 
@@ -511,18 +515,13 @@ The Release workflow builds from a clean checkout and attaches:
 Release notes are generated from the feat/fix commits since the previous `v*` tag and
 **include the flash procedure**, so the Releases page is self-contained.
 
-Two things worth knowing about released images:
+A released image contains no credentials, and cannot: there is no way to compile them
+in. Flash it and the device comes up in its setup portal, where you enter your Wi-Fi
+details — they are stored on the device and never leave it.
 
-- **They contain no credentials.** Wi-Fi details are compiled in from `secrets.h`, which is
-  gitignored, so a CI-built image necessarily has none and will show the bundled fallback
-  content behind a red `OFFLINE:` banner until you build your own. There is no captive
-  portal or NVS storage yet (`docs/PROJECT_PLAN.md`).
-- **`tools/merge_firmware.py` refuses to package a credential-bearing image.** It verifies
-  each image segment's signature at its expected offset (a merge that silently omits
-  `otadata` produces an image that flashes fine then fails to boot) and scans for the
-  developer's `secrets.h` values. Build release artifacts only from a clean checkout — a
-  binary built on your own machine, where `secrets.h` exists, WILL contain your Wi-Fi
-  SSID and passphrase in plaintext.
+`tools/merge_firmware.py` still verifies what it packages: each image segment's
+signature at its expected offset (a merge that silently omits `otadata` produces an
+image that flashes fine then fails to boot), plus the app's presence.
 
 ### Flashing a released image (no toolchain required)
 

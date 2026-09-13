@@ -34,11 +34,10 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install platformio==6.1.19
 
-      # NOTE: this job deliberately builds WITHOUT firmware/src/secrets.h. That file
-      # is gitignored and holds the developer's Wi-Fi credentials at COMPILE TIME
-      # (there is no NVS/captive portal yet), so building from the repository is
-      # what guarantees a publishable image contains none. tools/merge_firmware.py
-      # enforces that too and will refuse an image that contains them.
+      # Credentials cannot enter this build: there is no compile-time credential path
+      # at all. Wi-Fi details are entered on the device over its setup portal and live
+      # in NVS. tools/merge_firmware.py additionally scans the packaged image as a
+      # tripwire, in case a credential path is ever reintroduced.
       - name: Inject the tag as the firmware version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |

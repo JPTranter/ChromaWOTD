@@ -19,18 +19,9 @@
 #endif
 #include <ArduinoJson.h>
 
-// Secrets are gitignored, so a fresh clone (and CI) has only secrets.h.example.
-// Probe for the real file with __has_include and fall back to the example, which
-// carries the same macro NAMES as commented-out placeholders — so the build
-// always succeeds and the #ifndef defaults below fill in safe values.
-#if __has_include("secrets.h")
-#include "secrets.h"
-#elif __has_include("secrets.h.example")
-#include "secrets.h.example"
-#endif
-
-// config/config.h owns DeviceConfig; this TU resolves the values via
-// cc_configActive(), populated by main.cpp at boot (NVS -> secrets.h -> built-in).
+// Configuration (NVS -> built-in defaults). NOTE: there is deliberately NO secrets.h
+// include here — credentials come only from the device's setup portal and live in
+// NVS, never from a source file, so a locally-built image can never contain them.
 #include "config/config.h"
 #include "config/config_active.h"
 #include "config/config_compiletime.h"
@@ -301,9 +292,9 @@ bool cc_fetchVerse(VerseData* v) {
 
 // Wi-Fi connect helper for main.cpp (kept here so network code stays out of the
 // layout monolith). Returns err_t (0 == connected). Connects with a bounded
-// timeout; never logs the passphrase. When the secrets aren't configured (no
-// WIFI_SSID) it returns immediately with an error so the device falls back to
-// the offline path rather than failing to compile.
+// timeout; never logs the passphrase. Returns an error immediately when no SSID is
+// configured (nothing in NVS), so the caller runs the setup portal instead of
+// attempting a connection with an empty name.
 int cc_wifiConnect() {
     const DeviceConfig& cfg = cc_configActive();
     if (cfg.ssid[0] == '\0') {

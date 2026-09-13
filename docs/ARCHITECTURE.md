@@ -124,7 +124,7 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
   ```text
   https://api.open-meteo.com/v1/forecast?latitude=<LAT>&longitude=<LON>&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=<TZ>&forecast_days=2
   ```
-- **Default Location**: Lat `-37.8528`, Lon `145.1633`, Timezone `"Australia/Melbourne"` (Burwood East, Victoria). Overridable per-build or in `secrets.h`.
+- **Default Location**: Lat `-37.8528`, Lon `145.1633`, Timezone POSIX string (Burwood East, Victoria). These are fallbacks only — the normal path is the setup portal; credentials are never compiled in.
 - **TLS Security**: Pinned Let's Encrypt **YR2** intermediate CA (`ROOT_CA_YR2`) chaining to ISRG Root YR. Calls never use `setInsecure()`.
 - **Stack Allocation**: Executed on a dedicated FreeRTOS task (`cc_sync`) with an explicit **16 KB stack** pinned to core 1, bypassing the fixed 8 KB Arduino loopTask limitation.
 
@@ -189,9 +189,13 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
 
 **Credentials live on the device and are never echoed to serial.**
 
-- **Resolution order** (implemented in `config/`): NVS → compile-time `secrets.h` →
-  built-in default. One shared instance (`config_active.cpp`), so host and device
-  cannot diverge — they did while each TU re-derived its own defaults.
+- **Resolution order** (implemented in `config/`): NVS → built-in defaults. One shared
+  instance (`config_active.cpp`), so host and device cannot diverge — they did while
+  each TU re-derived its own defaults.
+- **There is no compile-time credential path.** Credentials are never read from a
+  source file, so no build (local or CI) can produce an image containing them. An
+  earlier design supported a gitignored `secrets.h` that did bake them into the
+  binary; that file and its template were removed deliberately.
 - **Storage:** `Preferences` / NVS namespace `chromawotd`, one key per field:
   - `ssid` (string), `pass` (string), `tz` (POSIX string), `lat` / `lon` (float)
   - `host` (string, optional device name), `mode` (content mode), `cfgver` (the
@@ -204,9 +208,11 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
 - **Factory reset:** hold any button ≥10 s through a button wake
   (`sched/factory_reset.cpp`), which erases the namespace and returns to the portal.
 - **Output:** never logged. The firmware reports only `(set)` / `(empty)`, and
-  `Serial.printf` must not be given a credential field. (Note `secrets.h.example`
-  previously claimed values were "stored in NVS at runtime" — that was aspirational
-  until this work; it is now true.)
+  `Serial.printf` must not be given a credential field.
+- **Two different "timezone" needs, deliberately separated:** the local clock uses a
+  POSIX TZ string, while the weather API is asked for `timezone=auto` because
+  Open-Meteo rejects a POSIX string with HTTP 400 (that conflation silently broke
+  every weather fetch — see `cc_fetchWeather`).
 
 ### Remote String Safety (S4)
 

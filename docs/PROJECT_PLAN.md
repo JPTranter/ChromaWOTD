@@ -53,7 +53,7 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
   - [ ] Lockout during active ~25s screen sweep to ignore switch bounce/spam.
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
   - [x] Wi-Fi credentials, timezone POSIX string, latitude/longitude (2026-09-13).
-  - [x] Resolution order NVS → `secrets.h` → built-in default (one shared instance).
+  - [x] Resolution order NVS → built-in default (one shared instance); no compile-time credential path.
   - [ ] Active display layout & content mode.
   - [ ] Cached last successful verse, word, and weather data with timestamp.
 

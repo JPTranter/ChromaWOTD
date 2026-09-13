@@ -4,8 +4,8 @@
 //   1. NVS        — what the setup portal wrote (survives reflashing the app-only
 //                   image, because NVS lives at 0x9000 and an app-only write starts
 //                   at 0x10000).
-//   2. secrets.h  — compile-time values, so a developer's board keeps working
-//                   without going through the portal.
+//   2. built-in   — location/timezone defaults so a device still behaves coherently;
+//                   there is NO compile-time credential path.
 //   3. Built-in   — so a fresh clone still builds and boots.
 //
 // This is what makes "update the app but keep my settings" work: nothing here is

@@ -58,10 +58,10 @@ EPaper epaper;
 #endif
 
 // POSIX TZ string (Sydney/Melbourne, DST-aware). Superseded at runtime by the
-// configured timezone (NVS -> secrets.h -> this default); see config/config.h.
+// configured timezone (NVS -> built-in default); see config/config.h.
 static const char kTzPosixDefault[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
 
-// The device's resolved configuration (NVS -> secrets.h -> built-in) lives in
+// The device's resolved configuration (NVS -> built-in defaults) lives in
 // config_active.cpp as a single instance; g_cfg is a convenience reference to it so
 // this file reads naturally without copying the struct around.
 static DeviceConfig& g_cfg = *cc_configMutable();
@@ -157,7 +157,7 @@ static void syncTask(void* /*arg*/) {
         g_weather.valid = false;
         g_weather.condition = nullptr;
         g_weather.icon = WeatherIcon::PartlyCloudy;
-        Serial.println("sync: wifi FAILED (check secrets.h / signal)");
+        Serial.println("sync: wifi FAILED (check Wi-Fi details / signal)");
     } else {
         Serial.printf("sync: wifi OK, host=%s ip=%s\n", WiFi.getHostname(), WiFi.localIP().toString().c_str());
         configTzTime(activeTz(), "pool.ntp.org");
@@ -312,7 +312,7 @@ void setup() {
     epaper.setRotation(1);
     epaper.fillScreen(TFT_WHITE);
 
-    // --- Configuration: NVS (portal) over secrets.h over built-in defaults. ----
+    // --- Configuration: NVS (from the portal) over built-in defaults. ----------
     const bool hadNvs = cc_configInit(); // fills the shared instance
     Serial.printf("config: source=%s ssid=%s tz=%s\n", hadNvs ? "nvs" : "compile-time",
                   g_cfg.ssid[0] ? "(set)" : "(empty)", // never log the SSID itself

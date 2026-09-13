@@ -29,11 +29,12 @@ void cc_configDefaults(DeviceConfig* cfg) {
     if (!cfg)
         return;
     memset(cfg, 0, sizeof(*cfg));
-    // Values are strings on the right-hand side: cc_configCopy keeps them bounded.
-    // WIFI_SSID may legitimately be "" (fresh clone), which marks the device
-    // unprovisioned and is exactly what gates the setup portal.
-    cc_configCopy(cfg->ssid, sizeof(cfg->ssid), WIFI_SSID);
-    cc_configCopy(cfg->passphrase, sizeof(cfg->passphrase), WIFI_PASSPHRASE);
+    // The SSID is deliberately empty: credentials exist ONLY in NVS, written by the
+    // setup portal. An empty SSID is what cc_configIsProvisioned() reports as
+    // "unprovisioned", which sends a fresh device to the portal. There is no
+    // compiled-in credential path any more (see config_compiletime.h).
+    cfg->ssid[0] = '\0';
+    cfg->passphrase[0] = '\0';
     cc_configCopy(cfg->timezone, sizeof(cfg->timezone), CHROMAWOTD_TIMEZONE);
     cc_configCopy(cfg->hostname, sizeof(cfg->hostname), "");
     cfg->latitude = CHROMAWOTD_LATITUDE;
