@@ -137,7 +137,8 @@ static const uint32_t kExt1StreakLimit = 5;
 static VerseData g_verse = {};
 static WordData g_word = {};
 static WeatherData g_weather = {};
-static const char* g_offlineReason = nullptr;
+static const char* g_offlineReason = nullptr; // non-null when the NETWORK was unreachable
+static const char* g_partialReason = nullptr; // non-null when a single API failed while online
 static SemaphoreHandle_t g_syncDone = nullptr;
 static ContentMode g_mode = ContentMode::Verse;
 static bool g_tomorrow = false;
@@ -151,6 +152,11 @@ static void syncTask(void* /*arg*/) {
     Serial.println("sync: connecting wifi...");
     if (cc_wifiConnect() != 0) {
         g_offlineReason = "no wifi";
+        // No network means no reading at all: invalidate the weather so the panel does
+        // not render a defaulted 0°C as if it were a measurement.
+        g_weather.valid = false;
+        g_weather.condition = nullptr;
+        g_weather.icon = WeatherIcon::PartlyCloudy;
         Serial.println("sync: wifi FAILED (check secrets.h / signal)");
     } else {
         Serial.printf("sync: wifi OK, host=%s ip=%s\n", WiFi.getHostname(), WiFi.localIP().toString().c_str());
@@ -180,8 +186,11 @@ static void syncTask(void* /*arg*/) {
                 g_word = wd;
                 Serial.printf("sync: word OK (%s)\n", wd.word ? wd.word : "?");
             } else {
-                g_offlineReason = g_offlineReason ? g_offlineReason : "word API";
-                Serial.println("sync: word FAILED (bundled fallback)");
+                // Online but this API failed -> partial, not offline. NO invented word:
+                // g_word.definition stays null and the render path shows an explicit
+                // "no word" state rather than a bundled word pretending to be today's.
+                g_partialReason = g_partialReason ? g_partialReason : "word API";
+                Serial.println("sync: word FAILED (no content to show)");
             }
         } else {
             static VerseData fv;
@@ -190,33 +199,43 @@ static void syncTask(void* /*arg*/) {
                 g_verse = fv;
                 Serial.printf("sync: verse OK (%s)\n", fv.reference ? fv.reference : "?");
             } else {
-                g_offlineReason = g_offlineReason ? g_offlineReason : "verse API";
-                Serial.println("sync: verse FAILED");
+                g_partialReason = g_partialReason ? g_partialReason : "verse API";
+                Serial.println("sync: verse FAILED (no content to show)");
             }
         }
 
         Serial.println("sync: fetching weather...");
         if (!cc_fetchWeather(&g_weather, g_tomorrow)) {
-            g_offlineReason = g_offlineReason ? g_offlineReason : "weather API";
-            Serial.println("sync: weather FAILED");
+            // Mark the reading invalid so nothing draws a fabricated temperature. The
+            // struct is zero-initialised, so temp would read 0.0 — a confident and
+            // wrong "0°C" is worse than admitting there is no reading.
+            g_weather.valid = false;
+            g_weather.condition = nullptr;
+            g_weather.icon = WeatherIcon::PartlyCloudy;
+            g_partialReason = g_partialReason ? g_partialReason : "weather API";
+            Serial.println("sync: weather FAILED (no reading)");
         } else {
+            g_weather.valid = true;
             Serial.printf("sync: weather OK (%.1f C, %s)\n", g_weather.temp,
                           g_weather.condition ? g_weather.condition : "?");
         }
     }
 #else
-    g_offlineReason = "network disabled in build";
+    g_offlineReason = "no network in this build";
+    g_weather.valid = false;
 #endif
     xSemaphoreGive(g_syncDone);
     vTaskDelete(nullptr);
 }
 
-// Bundled word used when the A.Word.A.Day fetch/parse fails, so the afternoon
-// panel still shows something coherent (flagged by the OFFLINE banner).
-static const char* kFallbackWord = "serendipity";
-static const char* kFallbackPron = "(ser-uhn-DIP-i-tee)";
-static const char* kFallbackDef =
-    "noun: The occurrence and development of events by chance in a happy or beneficial way.";
+// There is deliberately NO bundled verse/word fallback. Inventing content (a canned
+// `serendipity` or Proverbs 3:5-6) presented as "the Word/Verse of the Day" made the
+// device look like it was working when it was not — the panel asserted a specific
+// daily reading it had no way to know. A failed fetch now produces an explicit
+// "unavailable" screen instead.
+//
+// (Cached last-good content, shown with an "as of" note, is the right long-term answer
+// and is still on PROJECT_PLAN — it is real data rather than invented data.)
 
 #ifdef CHROMAWOTD_BUTTON_PROBE
 // Bench diagnostic (env:probe): identify which pads the EE05's three side
@@ -367,48 +386,58 @@ void setup() {
     vSemaphoreDelete(g_syncDone);
 
     // --- Assemble the view --------------------------------------------------
+    // No content means an explicit "unavailable" screen, never invented text. The old
+    // behaviour substituted a canned verse/word, so a broken fetch was invisible.
     LayoutOptions opts;
     VerseData v = {};
+    const bool haveContent =
+        (g_mode == ContentMode::Word) ? (g_word.definition != nullptr) : (g_verse.verse != nullptr);
 
-    if (g_mode == ContentMode::Word) {
+    if (!haveContent) {
+        // A clear, unambiguous failure screen. The reason is carried by the weather
+        // column's alert so the two halves of the panel agree about what went wrong.
+        static char unavailable[NET_TEXT_MAX];
+        if (g_offlineReason) {
+            // Whole-network failure: tell the user what to do about it.
+            snprintf(unavailable, sizeof(unavailable),
+                     "No network connection. Check the Wi-Fi details, or move the device "
+                     "closer to the router.");
+        } else {
+            // Online, but this particular API failed.
+            snprintf(unavailable, sizeof(unavailable),
+                     "Today's content could not be fetched. The device will try again at "
+                     "the next scheduled refresh.");
+        }
+        v.verse = unavailable;
+        v.reference = nullptr;
+        v.date = g_haveTime ? g_date : "";
+        opts.headerTitle = (g_mode == ContentMode::Word) ? "Word unavailable" : "Verse unavailable";
+        opts.leftCaption = nullptr;
+    } else if (g_mode == ContentMode::Word) {
         // Word of the Day: definition + example in the body, the respelling
         // pronunciation as the black left caption, the headword as the red right
         // caption. Notes: the IPA-style pronunciation is pre-respelled by the
         // source, so it is plain ASCII and safe for the panel font.
         static char body[NET_TEXT_MAX];
-        const char* word = (g_word.definition ? g_word.word : kFallbackWord);
-        const char* def = (g_word.definition ? g_word.definition : kFallbackDef);
-        const char* ex = (g_word.definition ? g_word.example : nullptr);
+        const char* ex = g_word.example;
         if (ex && ex[0])
-            snprintf(body, sizeof(body), "%s  %s", def, ex);
+            snprintf(body, sizeof(body), "%s  %s", g_word.definition, ex);
         else
-            snprintf(body, sizeof(body), "%s", def);
+            snprintf(body, sizeof(body), "%s", g_word.definition);
 
         v.verse = body;
         v.highlight = nullptr;
-        v.reference = word; // red, right
-        v.date = g_haveTime ? g_date : "Word of the Day";
+        v.reference = g_word.word; // red, right
+        v.date = g_haveTime ? g_date : "";
         opts.headerTitle = "Word of the Day";
-        opts.leftCaption = g_word.pronunciation ? g_word.pronunciation : kFallbackPron;
-        if (!g_word.definition)
-            opts.leftCaption = kFallbackPron;
+        opts.leftCaption = g_word.pronunciation;
     } else {
-        if (g_verse.verse) {
-            v = g_verse;
-        } else {
-            static const char* fv = "Trust in the Lord with all your heart, and do not lean on your own "
-                                    "understanding. In all your ways acknowledge him, and he will make "
-                                    "straight your paths.";
-            static const char* fref = "Proverbs 3:5-6";
-            v.verse = fv;
-            v.reference = fref;
-            v.date = g_haveTime ? g_date : "Offline";
-        }
+        v = g_verse;
         opts.headerTitle = "Verse of the Day";
     }
 
     WeatherData& w = g_weather;
-    if (!w.condition) {
+    if (w.valid && !w.condition) {
         static char cbuf[32];
         snprintf(cbuf, sizeof(cbuf), "Temp %.0f", (double)w.temp);
         w.condition = cbuf;
@@ -416,13 +445,23 @@ void setup() {
     opts.weatherLabel = g_tomorrow ? "TOMORROW" : "FORECAST";
 
     // --- Render -------------------------------------------------------------
-    if (!verseHighlightFound(v)) {
-        Serial.println("NOTE: no highlight phrase in this content (expected for Word of the Day)");
+    if (!verseHighlightFound(v) && v.highlight) {
+        // A highlight was supplied and NOT found: worth surfacing, since the red accent
+        // would otherwise be silently missing. (No highlight at all is normal for the
+        // Word of the Day, so that case is not a warning.)
+        Serial.println("WARN: highlight phrase not found in the content");
     }
+
+    // The alert explains the failure. Only one alert can be shown, so a total network
+    // failure takes precedence over a single-API failure.
     if (g_offlineReason) {
         static char rbuf[NET_TEXT_MAX];
         snprintf(rbuf, sizeof(rbuf), "OFFLINE: %s", g_offlineReason);
-        w.alert = rbuf; // shows as the red alert in the weather column
+        w.alert = rbuf; // red alert in the weather column
+    } else if (g_partialReason) {
+        static char rbuf[NET_TEXT_MAX];
+        snprintf(rbuf, sizeof(rbuf), "PARTIAL: %s failed", g_partialReason);
+        w.alert = rbuf;
     }
 
     drawLayout(v, w, opts);

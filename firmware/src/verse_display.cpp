@@ -595,7 +595,14 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char*
     dev_drawFastHLine(cx - kHalf, 13, 2 * kHalf, CC_BLACK); // aligns with header bottom (headerH-1)
 
     char tbuf[16];
-    snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
+    // Only format a temperature when there IS a reading. When the fetch failed there is
+    // no number to show, and drawing a default would be a fabrication — so tbuf stays
+    // empty and the callers below skip the draw entirely.
+    if (w.valid) {
+        snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
+    } else {
+        tbuf[0] = '\0';
+    }
 
     if (w.alert) {
         // --- Alert pinned to bottom; icon + temp at the fixed top layout. -----
@@ -605,14 +612,24 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char*
         const GFXfont* prev = cc_setBodyFont(&Roboto5pt7b);
         const int alertLH = Roboto5pt7b.yAdvance;
 
-        drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
-        int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);
-        dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, 47, tbuf, CC_BLACK, 1);
+        if (w.valid) {
+            drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
+            int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);
+            dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, 47, tbuf, CC_BLACK, 1);
+        } else {
+            // No reading: say so instead of showing a made-up number. Centred in the
+            // space the icon+temp would have occupied.
+            drawWrappedTextCentered(cx, 26, kColW, 30, "No reading", CC_RED, 1);
+        }
 #else
         const int alertLH = 10;
-        drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
-        int tWidth = dev_measureText(tbuf, 2);
-        dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
+        if (w.valid) {
+            drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
+            int tWidth = dev_measureText(tbuf, 2);
+            dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
+        } else {
+            drawWrappedTextCentered(cx, 26, kColW, 30, "No reading", CC_RED, 1);
+        }
 #endif
 
         int lines = cc_wrappedLineCount(w.alert, kColW, 1);
@@ -637,6 +654,14 @@ static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char*
 
     // --- No alert: grow the icon to use the freed space, stack fills the column.
     const int availH = kColBot - kColTop; // 109
+
+    if (!w.valid) {
+        // Wi-Fi is up but the weather fetch failed: no reading to show. Draw the same
+        // explicit notice rather than an invented value; the caller still supplies an
+        // alert explaining what failed.
+        drawWrappedTextCentered(cx, 30, kColW, 40, "No reading", CC_RED, 1);
+        return;
+    }
 
     // Condition height depends on how many lines it wraps to (same estimate the
     // renderer uses), so the icon yields space as the condition grows.

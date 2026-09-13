@@ -11,17 +11,18 @@
 #include <cstring>
 
 bool cc_fetchJson(const char* url, char* out, size_t outsz) {
-    if (!url || !out || outsz < 2) return false;
+    if (!url || !out || outsz < 2)
+        return false;
 
     // Use pipe mode to grab stdout; curl exits non-zero on TLS/HTTP errors so
     // an invalid response is not mistaken for success. `-sS` keeps silent but
     // surfaces real errors. `--connect-timeout` bounds a hung network.
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "curl -sS --connect-timeout 15 --max-time 30 \"%s\"", url);
+    snprintf(cmd, sizeof(cmd), "curl -sS --connect-timeout 15 --max-time 30 \"%s\"", url);
 
     FILE* fp = popen(cmd, "r");
-    if (!fp) return false;
+    if (!fp)
+        return false;
     size_t total = 0;
     int c;
     while (total + 1 < outsz && (c = fgetc(fp)) != EOF) {

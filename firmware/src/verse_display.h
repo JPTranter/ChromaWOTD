@@ -36,6 +36,12 @@ struct WeatherData {
     const char* condition;
     const char* alert; // shown in red, or nullptr
     WeatherIcon icon;  // 0=sun, 1=cloud, 2=rain, 3=partly
+    // false == there is NO reading (the fetch failed). temp/condition/icon are then
+    // meaningless and must NOT be drawn: the old code defaulted to 0.0 and rendered a
+    // confident "0°C", which is a fabricated measurement rather than a missing one.
+    // Defaults to true so existing 4-element aggregate initialisers (tests, fixtures)
+    // keep their previous meaning.
+    bool valid = true;
 };
 
 // Optional presentation strings for the single landscape layout. Grouped in a

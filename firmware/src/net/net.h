@@ -23,8 +23,8 @@
 //     reusable state), so two consecutive fetches cannot clobber each other.
 
 #pragma once
+#include "verse_display.h" // VerseData, WeatherData, WeatherIcon
 #include <cstddef>
-#include "verse_display.h"   // VerseData, WeatherData, WeatherIcon
 
 #if defined(CHROMAWOTD_HOST)
 extern bool cc_fetchJson(const char* url, char* out, size_t outsz);
@@ -32,12 +32,12 @@ extern bool cc_fetchJson(const char* url, char* out, size_t outsz);
 extern bool cc_fetchJsonThrottled(const char* url, char* out, size_t outsz);
 #endif
 
-static constexpr int NET_TEXT_MAX = 230;   // char-buffer cap for fetched text/condition
+static constexpr int NET_TEXT_MAX = 230; // char-buffer cap for fetched text/condition
 
 // --- Weather (Open-Meteo) ---
 struct ProofWeather {
     float temp;
-    const char* condition;   // may be null (no human text from Open-Meteo)
+    const char* condition; // may be null (no human text from Open-Meteo)
 };
 
 // Map a WMO `weather_code` to a bounded condition string in `buf`.
@@ -71,10 +71,10 @@ bool cc_fetchVerse(VerseData* out);
 // --- Word of the Day (Wordsmith A.Word.A.Day) ---
 // Fields point at internal static storage; valid until the next fetch/parse call.
 struct WordData {
-    const char* word;           // "breviloquent"
-    const char* pronunciation;  // respelling incl. parens: "(bre-VIL-uh-kwuhnt)"
-    const char* definition;     // "adjective: Using few words."
-    const char* example;        // quoted usage sentence, or nullptr
+    const char* word;          // "breviloquent"
+    const char* pronunciation; // respelling incl. parens: "(bre-VIL-uh-kwuhnt)"
+    const char* definition;    // "adjective: Using few words."
+    const char* example;       // quoted usage sentence, or nullptr
 };
 
 // Parse an A.Word.A.Day page (wordsmith.org/words/today.html) into a WordData.

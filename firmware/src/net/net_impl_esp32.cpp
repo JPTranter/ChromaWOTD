@@ -11,11 +11,11 @@
 #include "net/net.h"
 
 #include <Arduino.h>
+#include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include <HTTPClient.h>
 #ifdef CHROMAWOTD_MDNS
-#include <ESPmDNS.h>   // only pulled in when mDNS is enabled (heavy component)
+#include <ESPmDNS.h> // only pulled in when mDNS is enabled (heavy component)
 #endif
 #include <ArduinoJson.h>
 
@@ -127,22 +127,29 @@ namespace {
 
 // Pick the root CA for a host.
 const char* caForHost(const char* host) {
-    if (strstr(host, "open-meteo.com")) return ROOT_CA_YR2;
-    if (strstr(host, "wordsmith.org"))  return ROOT_CA_YE1;
-    return ROOT_CA_AMAZON;   // default: biblegateway
+    if (strstr(host, "open-meteo.com"))
+        return ROOT_CA_YR2;
+    if (strstr(host, "wordsmith.org"))
+        return ROOT_CA_YE1;
+    return ROOT_CA_AMAZON; // default: biblegateway
 }
 
 // One throttled GET with TLS CA validation. Returns bytes written to out (the
 // response body), or -1 on any failure. out is always NUL-terminated when >= 0.
 int fetchHttpGet(const char* host, const char* path, char* out, size_t outsz) {
     WiFiClientSecure client;
-    client.setCACert(caForHost(host));   // S1: validate, never setInsecure()
-    if (!client.connect(host, 443)) return -1;
+    client.setCACert(caForHost(host)); // S1: validate, never setInsecure()
+    if (!client.connect(host, 443))
+        return -1;
 
     HTTPClient http;
-    if (!http.begin(client, host, 443, path, true)) return -1;   // https=true
+    if (!http.begin(client, host, 443, path, true))
+        return -1; // https=true
     int code = http.GET();
-    if (code != HTTP_CODE_OK) { http.end(); return -1; }
+    if (code != HTTP_CODE_OK) {
+        http.end();
+        return -1;
+    }
 
     // getString() blocks until the whole body is read (respects Content-Length /
     // chunked encoding). A byte-at-a-time WiFiClient::available()/read() loop
@@ -158,18 +165,20 @@ int fetchHttpGet(const char* host, const char* path, char* out, size_t outsz) {
     return (int)n;
 }
 
-}  // namespace
+} // namespace
 
 // Public hook: throttled fetch used by cc_fetchWeather / cc_fetchVerse.
 // Splits the https URL into host + path, then does the CA-validated GET.
 bool cc_fetchJsonThrottled(const char* url, char* out, size_t outsz) {
     // "https://" 8 bytes, then host up to the first '/', then path.
-    if (strncmp(url, "https://", 8) != 0) return false;
+    if (strncmp(url, "https://", 8) != 0)
+        return false;
     const char* host = url + 8;
     const char* slash = strchr(host, '/');
     char hostBuf[128];
     size_t hl = slash ? (size_t)(slash - host) : strlen(host);
-    if (hl >= sizeof(hostBuf)) return false;
+    if (hl >= sizeof(hostBuf))
+        return false;
     memcpy(hostBuf, host, hl);
     hostBuf[hl] = '\0';
     const char* path = slash ? slash : "/";
@@ -181,26 +190,29 @@ bool cc_fetchJsonThrottled(const char* url, char* out, size_t outsz) {
 bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
     char url[520];
     snprintf(url, sizeof(url),
-        "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
-        "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-        "&timezone=%s&forecast_days=2",
-        (double)cc_configActive().latitude, (double)cc_configActive().longitude,
-        cc_configActive().timezone);
+             "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
+             "&daily=weather_code,temperature_2m_max,temperature_2m_min"
+             "&timezone=%s&forecast_days=2",
+             (double)cc_configActive().latitude, (double)cc_configActive().longitude, cc_configActive().timezone);
     char json[4096];
-    if (!cc_fetchJsonThrottled(url, json, sizeof(json))) return false;
+    if (!cc_fetchJsonThrottled(url, json, sizeof(json)))
+        return false;
 
     JsonDocument doc;
-    if (deserializeJson(doc, json)) return false;
+    if (deserializeJson(doc, json))
+        return false;
 
     double temp = 0.0;
     int wmo = -1;
-    JsonArray tmax  = doc["daily"]["temperature_2m_max"];
+    JsonArray tmax = doc["daily"]["temperature_2m_max"];
     JsonArray codes = doc["daily"]["weather_code"];
     size_t dayIdx = tomorrow ? 1 : 0;
-    if (tmax.size() <= dayIdx || codes.size() <= dayIdx) return false;
+    if (tmax.size() <= dayIdx || codes.size() <= dayIdx)
+        return false;
     temp = tmax[dayIdx].as<double>();
-    wmo  = codes[dayIdx].as<int>();
-    if (wmo < 0) return false;
+    wmo = codes[dayIdx].as<int>();
+    if (wmo < 0)
+        return false;
 
     static char cond[NET_TEXT_MAX];
     static char alert[NET_TEXT_MAX];
@@ -208,12 +220,11 @@ bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
     cc_wmoCondition(wmo, cond, sizeof(cond), &needAlert);
     w->temp = (float)temp;
     w->condition = cond;
-    w->alert = needAlert ? (cc_alertFromWmo(wmo, alert, sizeof(alert)), alert)
-                         : nullptr;
-    w->icon = (wmo == 0) ? WeatherIcon::Sun
+    w->alert = needAlert ? (cc_alertFromWmo(wmo, alert, sizeof(alert)), alert) : nullptr;
+    w->icon = (wmo == 0)             ? WeatherIcon::Sun
             : (wmo >= 1 && wmo <= 3) ? WeatherIcon::PartlyCloudy
-            : (wmo >= 80) ? WeatherIcon::Rain
-            : WeatherIcon::Cloud;
+            : (wmo >= 80)            ? WeatherIcon::Rain
+                                     : WeatherIcon::Cloud;
     return true;
 }
 
@@ -222,8 +233,8 @@ bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
 // the sync task only owns 16 KB of stack.
 bool cc_fetchWord(WordData* out) {
     static char html[16384];
-    if (!cc_fetchJsonThrottled("https://wordsmith.org/words/today.html",
-                               html, sizeof(html))) return false;
+    if (!cc_fetchJsonThrottled("https://wordsmith.org/words/today.html", html, sizeof(html)))
+        return false;
     return cc_parseAwad(html, out);
 }
 
@@ -231,12 +242,15 @@ bool cc_fetchWord(WordData* out) {
 bool cc_fetchVerse(VerseData* v) {
     char url[] = "https://www.biblegateway.com/votd/get/?format=json&version=NIV";
     char json[4096];
-    if (!cc_fetchJsonThrottled(url, json, sizeof(json))) return false;
+    if (!cc_fetchJsonThrottled(url, json, sizeof(json)))
+        return false;
 
     JsonDocument doc;
-    if (deserializeJson(doc, json)) return false;
+    if (deserializeJson(doc, json))
+        return false;
     JsonObject votd = doc["votd"];
-    if (!votd) return false;
+    if (!votd)
+        return false;
 
     static char text[NET_TEXT_MAX];
     static char ref[NET_TEXT_MAX];
@@ -249,7 +263,7 @@ bool cc_fetchVerse(VerseData* v) {
 
     const char* y = votd["year"].as<const char*>() ? votd["year"].as<const char*>() : "";
     const char* m = votd["month"].as<const char*>() ? votd["month"].as<const char*>() : "";
-    const char* d = votd["day"].as<const char*>()  ? votd["day"].as<const char*>()  : "";
+    const char* d = votd["day"].as<const char*>() ? votd["day"].as<const char*>() : "";
     // Bound each component explicitly: they come from a remote payload, so the
     // compiler cannot prove "%s-%s-%s" fits and warns about truncation. Clamping
     // to the field widths the API actually uses keeps the format string honest
@@ -261,12 +275,12 @@ bool cc_fetchVerse(VerseData* v) {
     snprintf(date, sizeof(date), "%s-%s-%s", yb, mb, db);
 
     cc_htmlDecode(text);
-    cc_stripLeadingBracket(text);   // shared with host (net.cpp)
+    cc_stripLeadingBracket(text); // shared with host (net.cpp)
 
-    v->verse     = text;
+    v->verse = text;
     v->highlight = nullptr;
     v->reference = ref;
-    v->date      = date;
+    v->date = date;
     return true;
 }
 
@@ -300,7 +314,8 @@ int cc_wifiConnect() {
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
         delay(200);
     }
-    if (WiFi.status() != WL_CONNECTED) return 1;
+    if (WiFi.status() != WL_CONNECTED)
+        return 1;
 
 #ifdef CHROMAWOTD_MDNS
     // Optional mDNS responder: registers the A record so "<name>.local" resolves
@@ -317,4 +332,4 @@ int cc_wifiConnect() {
     return 0;
 }
 
-#endif  // !CHROMAWOTD_HOST
+#endif // !CHROMAWOTD_HOST
