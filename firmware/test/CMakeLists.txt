@@ -55,8 +55,13 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/text/wrap.cpp
     ${CC_SRC_DIR}/net/net.cpp
     ${CC_SRC_DIR}/net/net_host_curl.cpp
+    ${CC_SRC_DIR}/net/portal.cpp
+    ${CC_SRC_DIR}/config/config.cpp
+    ${CC_SRC_DIR}/config/config_active.cpp
+    ${CC_SRC_DIR}/config/config_nvs_host.cpp
     ${CC_SRC_DIR}/sched/wake_schedule.cpp
     ${CC_SRC_DIR}/sched/content_policy.cpp
+    ${CC_SRC_DIR}/sched/factory_reset.cpp
 )
 target_include_directories(chroma_canvas PUBLIC
     ${CC_HARN_DIR}
@@ -150,6 +155,11 @@ endif()
 # Network module (shared pure mapping + host curl fetch; live-fetch tests are
 # skipped when offline).
 cc_test(test_net tests/test_net.cpp)
+
+# Device configuration: defaults, validation, coordinate parsing, the NVS
+# round-trip and the portal's AP credential rule. These decide whether a device
+# can connect at all, so they are asserted rather than eyeballed.
+cc_test(test_config tests/test_config.cpp)
 
 # Wake schedule arithmetic (pure; no backend needed).
 add_executable(test_sched tests/test_sched.cpp)

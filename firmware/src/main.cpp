@@ -45,15 +45,32 @@ EPaper epaper;
 
 #include "net/net.h"
 #include "sched/content_policy.h"
+#include "sched/factory_reset.h"
 #include "sched/wake_schedule.h"
 #include "verse_display.h"
+
+#include "config/config.h"
+#include "config/config_active.h"
+#include "net/portal.h"
 
 #ifdef CHROMAWOTD_NETWORK
 #include "net/net_impl_esp32.h"
 #endif
 
-// POSIX TZ string (Sydney/Melbourne, DST-aware).
-static const char kTzPosix[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
+// POSIX TZ string (Sydney/Melbourne, DST-aware). Superseded at runtime by the
+// configured timezone (NVS -> secrets.h -> this default); see config/config.h.
+static const char kTzPosixDefault[] = "AEST-10AEDT,M10.1.0,M4.1.0/3";
+
+// The device's resolved configuration (NVS -> secrets.h -> built-in) lives in
+// config_active.cpp as a single instance; g_cfg is a convenience reference to it so
+// this file reads naturally without copying the struct around.
+static DeviceConfig& g_cfg = *cc_configMutable();
+
+// POSIX TZ for the current boot. Points at the configured timezone, or the built-in
+// default if the configured string is empty. Used by configTzTime() and setenv("TZ").
+static const char* activeTz() {
+    return g_cfg.timezone[0] ? g_cfg.timezone : kTzPosixDefault;
+}
 
 // Fallback sleep when the wall clock isn't trustworthy: retry soon rather than
 // sleeping until a bogus "next slot". Never sleep less than this (wake-loop guard).
@@ -71,6 +88,43 @@ static const int kMinSleepSec = 60;
 // what caused the deep-sleep wake storm — see LESSONS §34.
 static const gpio_num_t kButtonPins[] = {GPIO_NUM_2, GPIO_NUM_3, GPIO_NUM_8};
 static const int kButtonCount = sizeof(kButtonPins) / sizeof(kButtonPins[0]);
+
+// --- Button sampling for the factory-reset gesture ---------------------------
+// These MUST use the RTC domain. The buttons are armed as RTC pull-ups before
+// sleep, and pinMode()/digitalRead() hand the pad back to the digital domain,
+// undoing the pull-up (LESSONS §34) — a digital read here would report the wrong
+// level and the gesture would never register.
+//
+// Configure the pads once (idempotent) so a boot that never sleeps still reads them
+// correctly.
+static void ensureButtonPadsReady() {
+    static bool done = false;
+    if (done)
+        return;
+    for (int i = 0; i < kButtonCount; i++) {
+        rtc_gpio_init(kButtonPins[i]);
+        rtc_gpio_set_direction(kButtonPins[i], RTC_GPIO_MODE_INPUT_ONLY);
+        rtc_gpio_pulldown_dis(kButtonPins[i]);
+        rtc_gpio_pullup_en(kButtonPins[i]);
+    }
+    done = true;
+}
+
+// True when at least one button is currently held down (active-low).
+static bool cc_anyButtonDown() {
+    ensureButtonPadsReady();
+    for (int i = 0; i < kButtonCount; i++)
+        if (rtc_gpio_get_level(kButtonPins[i]) == 0)
+            return true;
+    return false;
+}
+
+// True when a button was already down at wake. On an ext1 wake the asserting pin is
+// necessarily low, so this is a cheap gate that avoids sampling the whole 10 s hold
+// window on every button press.
+static bool cc_latchedButtonHeld() {
+    return cc_anyButtonDown();
+}
 
 // Safety net: consecutive button-wake cycles observed, kept in RTC memory so it
 // survives deep sleep. If a button line misbehaves (floats, or is stuck low) the
@@ -100,7 +154,7 @@ static void syncTask(void* /*arg*/) {
         Serial.println("sync: wifi FAILED (check secrets.h / signal)");
     } else {
         Serial.printf("sync: wifi OK, host=%s ip=%s\n", WiFi.getHostname(), WiFi.localIP().toString().c_str());
-        configTzTime(kTzPosix, "pool.ntp.org");
+        configTzTime(activeTz(), "pool.ntp.org");
 
         // Bounded NTP wait: the content mode + weather window depend on it.
         struct tm tmv;
@@ -239,6 +293,64 @@ void setup() {
     epaper.setRotation(1);
     epaper.fillScreen(TFT_WHITE);
 
+    // --- Configuration: NVS (portal) over secrets.h over built-in defaults. ----
+    const bool hadNvs = cc_configInit(); // fills the shared instance
+    Serial.printf("config: source=%s ssid=%s tz=%s\n", hadNvs ? "nvs" : "compile-time",
+                  g_cfg.ssid[0] ? "(set)" : "(empty)", // never log the SSID itself
+                  g_cfg.timezone);
+
+    // --- Factory reset: a button that stays held through the wake --------------
+    // Only meaningful on a BUTTON wake; a timer wake has nobody holding anything.
+#ifdef CHROMAWOTD_BUTTON_WAKE
+    if (wakeCause == ESP_SLEEP_WAKEUP_EXT1 && cc_latchedButtonHeld()) {
+        ResetHoldState hold;
+        cc_resetHoldBegin(&hold);
+        bool reset = false;
+        Serial.printf("reset: button held, checking for %u ms...\n", (unsigned)CC_RESET_HOLD_MS);
+        while (!reset) {
+            if (cc_resetHoldSample(&hold, cc_anyButtonDown())) {
+                reset = true;
+                break;
+            }
+            if (!cc_anyButtonDown()) {
+                Serial.println("reset: released early - normal refresh");
+                break;
+            }
+            delay(CC_RESET_SAMPLE_MS);
+        }
+        if (reset) {
+            Serial.println("reset: wiping stored configuration");
+            cc_configEraseNvs();
+            // Rebuild from defaults so the wipe is visible immediately, then fall
+            // into the setup portal below (the SSID will be empty).
+            cc_configInit();
+        }
+    }
+#endif
+
+    // --- First-boot setup portal ----------------------------------------------
+    // No usable network config (nothing in NVS and nothing compiled in) means the
+    // device cannot do anything useful, so raise the SoftAP wizard instead of
+    // showing fallback content forever.
+#ifdef CHROMAWOTD_NETWORK
+    if (!cc_configIsProvisioned(g_cfg)) {
+        PortalInfo pinfo;
+        cc_portalMakeInfo((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), esp_random(), &pinfo);
+        cc_portalDrawScreen(pinfo, nullptr);
+        epaper.update(); // panel is the only channel the user can read
+        epaper.sleep();
+
+        Serial.printf("setup: starting portal '%s'\n", pinfo.apName);
+        // No timeout: setup mode persists until configured, because falling back
+        // to a dead end would leave the user with no way forward.
+        if (cc_portalRun(pinfo, 0)) {
+            Serial.println("setup: configured - rebooting into normal operation");
+            delay(500);
+            ESP.restart();
+        }
+    }
+#endif
+
     // --- Sync (Phase 3): fetch content on a big-stack task, wait for it. ----
     g_weather.temp = 0.0f;
     g_weather.icon = WeatherIcon::PartlyCloudy;
@@ -314,7 +426,7 @@ void setup() {
 
     // --- Sleep until the next slot, or until a button is pressed ------------
 #ifdef CHROMAWOTD_DEEP_SLEEP
-    setenv("TZ", kTzPosix, 1); // ensure localtime() works even if NTP failed
+    setenv("TZ", activeTz(), 1); // ensure localtime() works even if NTP failed
     tzset();
 
     uint64_t sleepSec = kFallbackSleepSec;

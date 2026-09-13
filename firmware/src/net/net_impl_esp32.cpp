@@ -29,18 +29,11 @@
 #include "secrets.h.example"
 #endif
 
-#ifndef WIFI_SSID
-// No credentials configured (fresh clone / CI). The firmware must still BUILD —
-// cc_wifiConnect() returns early when WIFI_SSID is absent and the device takes
-// its offline path, so placeholder values here are never used to connect.
-#define WIFI_SSID ""
-#define WIFI_PASSPHRASE ""
-#endif
-#ifndef CHROMAWOTD_LATITUDE
-#define CHROMAWOTD_LATITUDE  -33.8688
-#define CHROMAWOTD_LONGITUDE 151.2093
-#define CHROMAWOTD_TIMEZONE  "Australia/Sydney"
-#endif
+// config/config.h owns DeviceConfig; this TU resolves the values via
+// cc_configActive(), populated by main.cpp at boot (NVS -> secrets.h -> built-in).
+#include "config/config.h"
+#include "config/config_active.h"
+#include "config/config_compiletime.h"
 
 // Root CAs the device trusts. Extracted from the live TLS chains (2026-09-12):
 //   - Amazon Root CA 1            -> www.biblegateway.com (leaf + Amazon RSA 2048 M04)
@@ -191,8 +184,8 @@ bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
         "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
         "&daily=weather_code,temperature_2m_max,temperature_2m_min"
         "&timezone=%s&forecast_days=2",
-        CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE, CHROMAWOTD_TIMEZONE);
-
+        (double)cc_configActive().latitude, (double)cc_configActive().longitude,
+        cc_configActive().timezone);
     char json[4096];
     if (!cc_fetchJsonThrottled(url, json, sizeof(json))) return false;
 
@@ -291,14 +284,18 @@ bool cc_fetchVerse(VerseData* v) {
 // WIFI_SSID) it returns immediately with an error so the device falls back to
 // the offline path rather than failing to compile.
 int cc_wifiConnect() {
-#ifndef WIFI_SSID
-    return 1;
-#else
+    const DeviceConfig& cfg = cc_configActive();
+    if (cfg.ssid[0] == '\0') {
+        // Not provisioned: the caller runs the setup portal instead. Return an error
+        // rather than attempting a connection with an empty SSID.
+        return 1;
+    }
     // Set the hostname BEFORE begin() so it is carried in the DHCP request and
     // the router can show "ChromaWOTD" instead of the default "espressif".
     WiFi.mode(WIFI_STA);
-    WiFi.setHostname(CHROMAWOTD_HOSTNAME);
-    WiFi.begin(WIFI_SSID, WIFI_PASSPHRASE);
+    const char* host = cfg.hostname[0] ? cfg.hostname : CHROMAWOTD_HOSTNAME;
+    WiFi.setHostname(host);
+    WiFi.begin(cfg.ssid, cfg.passphrase);
     unsigned long t0 = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
         delay(200);
@@ -311,14 +308,13 @@ int cc_wifiConnect() {
     // is cheap — but the DHCP hostname above already makes the router show
     // "ChromaWOTD", which is all the default build needs. Enable with
     // -DCHROMAWOTD_MDNS=1 if you also want to reach it by name.
-    if (MDNS.begin(CHROMAWOTD_HOSTNAME)) {
+    if (MDNS.begin(host)) {
         Serial.printf("sync: mdns %s.local up\n", CHROMAWOTD_HOSTNAME);
     } else {
         Serial.println("sync: WARN mdns begin failed (hostname still set via DHCP)");
     }
 #endif
     return 0;
-#endif
 }
 
 #endif  // !CHROMAWOTD_HOST

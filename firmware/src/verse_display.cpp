@@ -7,6 +7,7 @@
 // Shared UTF-8 -> single-byte decoder and wrapping math live in text/ (D1) so
 // they are pure, unit-testable units rather than hidden in this monolith.
 #include "draw/weather_icon.h"
+#include "net/portal.h" // PortalInfo, for the setup screen at the end of this file
 #include "text/glyphs.h"
 #include "text/wrap.h"
 
@@ -728,4 +729,37 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
     // 5. Right-hand weather column (alert pinned to bottom)
     dev_fillRect(kSplitX + 1, 0, kPanelW - kSplitX - 1, kPanelH, CC_WHITE);
     drawLandscapeWeatherColumn(kWeatherCx, w, opts.weatherLabel);
+}
+
+// Setup screen for the first-boot captive portal (see net/portal.cpp). Lives here
+// because the dev_drawString* helpers above are file-static and this must reuse
+// exactly the same text/degree/decoding path as every other screen — a second copy
+// in portal.cpp would be the thing that drifts.
+//
+// Layout: a big red AP name and password (the user has to transcribe them from a
+// 4-colour panel, so size matters more than elegance), then the two steps.
+void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
+    static constexpr int kW = 296;
+    static constexpr int kH = 128;
+    static constexpr int kHeaderH = 16;
+
+    dev_fillRect(0, 0, kW, kH, CC_WHITE);
+    dev_fillRect(0, 0, kW, kHeaderH, CC_YELLOW);
+    dev_drawString(6, 4, "ChromaWOTD setup", CC_BLACK, 1);
+    dev_drawFastHLine(0, kHeaderH - 1, kW, CC_BLACK);
+
+    if (statusLine && statusLine[0]) {
+        // A rejected save: show the reason in red rather than the steps, so it is
+        // unambiguous why the panel came back to this screen.
+        dev_drawString(6, 24, "Could not save:", CC_RED, 1);
+        drawWrappedTextCentered(kW / 2, 36, kW - 12, 84, statusLine, CC_RED, 1, 10);
+        return;
+    }
+
+    dev_drawString(6, 22, "1. Join Wi-Fi network:", CC_BLACK, 1);
+    dev_drawString(14, 32, info.apName, CC_RED, 2);
+    dev_drawString(6, 54, "2. Password:", CC_BLACK, 1);
+    dev_drawString(14, 64, info.apPassword, CC_BLACK, 2);
+    dev_drawString(6, 88, "3. Open http://192.168.4.1 and save", CC_BLACK, 1);
+    dev_drawString(6, 102, "Long-press a button 10s to reset", CC_BLACK, 1);
 }
