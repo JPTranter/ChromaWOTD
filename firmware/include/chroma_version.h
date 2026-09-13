@@ -1,13 +1,35 @@
 #pragma once
 
-// Firmware version string, reported on boot and (later) in the setup portal.
+// Firmware version string, reported on boot (`Serial.printf("CHROMAWOTD %s boot")`).
 //
-// Release checklist (REVIEW DOC7): before tagging a release —
-//   1. Bump CHROMAWOTD_VERSION to the new semver.
-//   2. Run `python tools/verify_all.py --clean` and confirm ALL GREEN
-//      (firmware build + host tests + render ledger byte-match).
-//   3. `git tag v<version>` and push the tag.
-//   4. Confirm the tagged CI run builds `firmware.bin` from a clean checkout.
+// This is the version for a LOCAL build. A release build overrides it: the Release
+// workflow injects the git tag, so a released artifact can never claim a version it
+// was not built as. Keep this in step with the next tag so a manual build reports
+// something meaningful.
+//
+// HOW TO CUT A RELEASE
+//   1. Confirm the tree is green and committed:
+//        python tools/verify_all.py --clean      # ALL GREEN required
+//   2. Bump the version below to the new semver and commit it with the release work.
+//   3. Tag and push — pushing the tag is what triggers the Release workflow:
+//        git tag -a v0.1.0 -m "ChromaWOTD v0.1.0"
+//        git push origin v0.1.0
+//   4. Watch it and confirm the assets:
+//        gh run watch --repo JPTranter/ChromaWOTD
+//        gh release view v0.1.0 --repo JPTranter/ChromaWOTD
+//      Expected assets: ChromaWOTD-v0.1.0.bin (merged, flash at 0x0),
+//      ChromaWOTD-v0.1.0-app.bin (app only, 0x10000), ChromaWOTD-v0.1.0.elf.
+//
+// The release notes are generated from the feat/fix commits since the previous v*
+// tag and include the flash procedure, so the Releases page is self-contained.
+//
+// IMPORTANT — released images carry NO credentials. Wi-Fi credentials are compiled
+// in from firmware/src/secrets.h (gitignored; there is no NVS/captive portal yet),
+// so a CI-built image necessarily has none and shows the bundled fallback content
+// behind a red `OFFLINE:` banner. Anyone wanting live content builds it themselves
+// with their own secrets.h — the release notes say so. `tools/merge_firmware.py`
+// enforces this by refusing to package an image that contains a developer's
+// secrets.h values.
 //
 // OTA/signing posture (REVIEW S5): images are currently unsigned. If this ever
 // becomes a shared/shipped device, add signed updates before shipping OTA.

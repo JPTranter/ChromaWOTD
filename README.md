@@ -455,6 +455,53 @@ forces a short sleep for bench observation; `-DCHROMAWOTD_HOSTNAME` overrides th
 hostname (default `ChromaWOTD`), and `-DCHROMAWOTD_MDNS=1` additionally answers to
 `ChromaWOTD.local` (~24 KB flash).
 
+### Releases
+
+Releases are cut by pushing a `v*` tag; the tag drives everything.
+
+```bash
+python tools/verify_all.py --clean     # confirm ALL GREEN first
+# bump CHROMAWOTD_VERSION in firmware/include/chroma_version.h, commit
+git tag -a v0.1.0 -m "ChromaWOTD v0.1.0"
+git push origin v0.1.0                 # <- triggers the Release workflow
+gh release view v0.1.0                 # confirm the assets landed
+```
+
+The Release workflow builds from a clean checkout and attaches:
+
+| Asset | Use |
+| :--- | :--- |
+| `ChromaWOTD-<tag>.bin` | **Merged flash image** (bootloader + partitions + `boot_app0` + app). Flash at `0x0` in one command. |
+| `ChromaWOTD-<tag>-app.bin` | Application only (`0x10000`) for updating an already-flashed board. |
+| `ChromaWOTD-<tag>.elf` | Unstripped, for debugging. |
+
+Release notes are generated from the feat/fix commits since the previous `v*` tag and
+**include the flash procedure**, so the Releases page is self-contained.
+
+Two things worth knowing about released images:
+
+- **They contain no credentials.** Wi-Fi details are compiled in from `secrets.h`, which is
+  gitignored, so a CI-built image necessarily has none and will show the bundled fallback
+  content behind a red `OFFLINE:` banner until you build your own. There is no captive
+  portal or NVS storage yet (`docs/PROJECT_PLAN.md`).
+- **`tools/merge_firmware.py` refuses to package a credential-bearing image.** It verifies
+  each image segment's signature at its expected offset (a merge that silently omits
+  `otadata` produces an image that flashes fine then fails to boot) and scans for the
+  developer's `secrets.h` values. Build release artifacts only from a clean checkout — a
+  binary built on your own machine, where `secrets.h` exists, WILL contain your Wi-Fi
+  SSID and passphrase in plaintext.
+
+### Flashing a released image (no toolchain required)
+
+```bash
+pip install esptool
+esptool.py --chip esp32s3 --port <PORT> write_flash 0x0 ChromaWOTD-v0.1.0.bin
+```
+
+`<PORT>` is `COM13`-style on Windows, `/dev/ttyACM0` on Linux, `/dev/cu.usbmodem*` on macOS.
+The merged image erases and rewrites the bootloader and partition table, so it works on a
+blank board as well as an existing one.
+
 ---
 
 ## CodeGraph Navigation

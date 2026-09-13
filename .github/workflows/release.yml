@@ -1,0 +1,85 @@
+name: Release
+
+# Builds the firmware when a v* tag is pushed and attaches flashable artifacts to
+# the GitHub Release, together with notes that include the flash procedure.
+#
+# The version comes from the TAG, not from chroma_version.h: the tag is injected
+# into the build so an artifact can never claim a version it was not built as.
+# The release title/body are generated from git history since the previous v* tag
+# (see gen_release_notes.py), so every release carries a "what changed" summary.
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:        # allow a manual dry-run of the build (no release)
+
+permissions:
+  contents: write           # required to create the release and upload assets
+
+jobs:
+  firmware:
+    name: Build firmware artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # full history: needed to diff against the previous tag
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO Core
+        run: pip install platformio==6.1.19
+
+      # NOTE: this job deliberately builds WITHOUT firmware/src/secrets.h. That file
+      # is gitignored and holds the developer's Wi-Fi credentials at COMPILE TIME
+      # (there is no NVS/captive portal yet), so building from the repository is
+      # what guarantees a publishable image contains none. tools/merge_firmware.py
+      # enforces that too and will refuse an image that contains them.
+      - name: Inject the tag as the firmware version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          printf '#pragma once\n#define CHROMAWOTD_VERSION "%s"\n' "${GITHUB_REF_NAME}" \
+            > firmware/include/chroma_version.h
+
+      - name: Build firmware
+        run: pio run -e s3
+        working-directory: firmware
+
+      - name: Merge into a single flashable image
+        id: package
+        run: |
+          TAG="${GITHUB_REF_NAME:-manual}"
+          mkdir -p release
+          python tools/merge_firmware.py --out "release/ChromaWOTD-${TAG}.bin"
+          cp firmware/.pio/build/s3/firmware.bin "release/ChromaWOTD-${TAG}-app.bin"
+          cp firmware/.pio/build/s3/firmware.elf "release/ChromaWOTD-${TAG}.elf"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          ls -la release
+
+      - name: Generate release notes
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python .github/workflows/gen_release_notes.py \
+            --tag "${GITHUB_REF_NAME}" --out release/NOTES.md
+          cat release/NOTES.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ChromaWOTD-firmware-${{ steps.package.outputs.tag }}
+          path: release/
+          retention-days: 30
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.notes.outputs.title }}
+          files: |
+            release/ChromaWOTD-*.bin
+            release/ChromaWOTD-*.elf
+          body_file: release/NOTES.md
