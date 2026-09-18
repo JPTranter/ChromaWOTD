@@ -1,7 +1,7 @@
 # CHROMAWOTD — Status
 
-**Updated:** 2026-09-13
-**Phase:** 1 — Display bring-up & Layout Prototype (complete)
+**Updated:** 2026-09-18
+**Phase:** 5 — Buttons, time-based content, device configuration (NVS) & setup portal (complete)
 **Firmware version:** 0.1.0
 
 | Item | State |
@@ -40,22 +40,34 @@
 | Stored config can be wiped by the NVS stack | ⚠️ **DIAGNOSED, not fixed.** The 20 KB NVS partition is shared with WiFi/BLE/DHCP state; when it fills, the Arduino core's `nvs_flash_init()` erases and reformats the WHOLE partition, silently destroying the stored credentials (the device just re-offers the setup portal). Our entries were well formed and no code of ours erased them. Needs a dedicated NVS partition and/or a read-back check after save (see LESSONS §45) |
 | Weather API timezone | ✅ Fixed: the URL sent a POSIX TZ string, which Open-Meteo rejects with HTTP 400, so **every** weather fetch had been failing silently. Now `timezone=auto`; the live tests fail (not skip) when the endpoint is reachable but the request is malformed |
 | Public repo & CI | ✅ Published at [github.com/JPTranter/ChromaWOTD](https://github.com/JPTranter/ChromaWOTD) (public, `master`). The workflow had **never run** before the push; the first run exposed four pre-existing breakages, all fixed — firmware could not build without `secrets.h` (now `__has_include` + defaults), `.clang-format` used pre-v18 enum spellings, the lint gate used an unpinned formatter version (now `clang-format==23.1.1`), and `weather_icon_sheet.png` was a ledger orphan. **All 3 CI jobs green** (see LESSONS §42) |
+| Phases 2–5 review fixes | ✅ `docs/CODE_REVIEW.md` findings addressed 2026-09-18: portal-timeout fall-through no longer wipes the setup screen (BUG-01), the portal's content mode is honoured (BUG-02), the setup form pre-fills real defaults instead of `(0,0)` and keeps the typed SSID (BUG-03/INC-04), the e2e portal tool's default timezone is an IANA name (BUG-04), NVS writes are actually checked and empty values delete their key (BUG-05/DES-03), TLS pins **roots** instead of Let's Encrypt intermediates (DES-01), an unset clock is reported as such rather than as an API outage (DES-02), plus the stale pin comment, duplicate macro, host coordinate source, SoftAP teardown, bench-tool port and the three documentation drifts. See LESSONS §46. **BUG-06 (NVS wipe) deliberately still open** — needs a bench session |
 
 ## Next steps
 
-> A full critical review of the code and project — security, design, readability and
-> hygiene, with a priority order — is in [`docs/REVIEW.md`](REVIEW.md). The items below
-> are the product road map; REVIEW.md is the quality backlog.
+> Two critical reviews exist: [`docs/REVIEW.md`](REVIEW.md) (Phase 1 — all findings
+> resolved) and [`docs/CODE_REVIEW.md`](CODE_REVIEW.md) (Phases 2–5). The Phases 2–5
+> findings were addressed on 2026-09-18 except BUG-06; see LESSONS §46 and the status
+> table above. The list below is the remaining product work.
 
-1. **Dual Button Controls & Deep Sleep Wakeup**:
-   - Only the **Refresh & Content Toggle** button is needed — the display has a single
-     light/landscape presentation, so there is no mode/theme button.
-   - Refresh & Content Toggle wakes the device to refresh weather and switch between
-     **Verse of the Day** (Scripture) and **Word of the Day** (Vocabulary).
-   - Non-volatile memory (`Preferences` / NVS) to store the active content mode across sleep intervals.
-2. Wire WiFi NTP time synchronization and timezone handling.
-3. Implement Open-Meteo weather fetch and ArduinoJson parsing (endpoint verified live: 610 B payload for Burwood East).
-4. Implement dual content fetch: Scripture Verse + Vocabulary Word (BibleGateway VOTD JSON verified live; Wordnik / Merriam-Webster still to evaluate).
+1. **NVS wipe on a full partition (BUG-06 / LESSONS §45) — DIAGNOSED, not fixed.**
+   The 20 KB `nvs` partition is shared with the Wi-Fi/BLE/DHCP stack, and the Arduino core
+   reformats the whole partition when it runs out of room, silently destroying the stored
+   credentials (the device then just re-offers the setup portal). The fix is a dedicated
+   partition: `firmware/partitions.csv` + `board_build.partitions`, with
+   `Preferences::begin("chromawotd", false, "nvs_cfg")`.
+   **Deliberately not done here:** changing the partition table moves flash offsets, so it
+   needs a FULL flash and hardware verification, plus an update to the app-only-flash
+   workflow (`tools/merge_firmware.py` and the docs). It cannot be validated without a
+   board on the bench.
+2. **TLS trust roots (DES-01) — fixed 2026-09-18.** The pinned Let's Encrypt intermediates
+   (YR2 / YE1) are replaced by a root bundle (ISRG Root X1 + ISRG Root X2 + Amazon Root
+   CA 1), so a server may rotate its intermediate without breaking the fetches. Verified on
+   the host against the live chains of all three hosts; **not yet exercised on hardware**
+   in this session (no port attached).
+3. **Cached last-good content** — show the previous verse/word with an "as of" note instead
+   of the "unavailable" screen. Real data rather than invented data; still on PROJECT_PLAN.
+4. **Weather icon mapping for Drizzle / Rain 61–67** — accepted known limitation
+   (LESSONS §35); revisit only if the text-only distinction proves insufficient.
 
 ## Layout follow-ups (from the 2026-09-12 review, not yet done)
 
@@ -63,4 +75,6 @@
   (single landscape, light presentation, 2026-09-12).
 - `drawWrappedTextCentered`/`drawVerseBlock` geometry constants could still move into a
   block-descriptor type, but it is far lower priority with only one layout.
-- `main.cpp` still ships a hardcoded fixture and never sleeps; both are Phase 2/4 work.
+- ~~`main.cpp` still ships a hardcoded fixture and never sleeps; both are Phase 2/4 work.~~
+  **Stale (removed 2026-09-18):** `main.cpp` runs the real sync → render → deep-sleep cycle;
+  the fixture only survives in the host preview tooling (`layout_render`).

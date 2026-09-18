@@ -1,15 +1,17 @@
 # CHROMAWOTD — Architecture
 
-**Last updated:** 2026-09-12
+**Last updated:** 2026-09-18
 **Firmware version:** 0.1.0
-**Phase:** 1 — Display bring-up & Layout Prototype (complete)
+**Phase:** 5 — Buttons, time-based content, device configuration (NVS) & setup portal (complete)
 
 ---
 
 ## Overview
 
 CHROMAWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow) showing:
-- **Verse of the Day** (scripture) or **Word of the Day** (vocabulary) — toggled via button
+- **Verse of the Day** (scripture) or **Word of the Day** (vocabulary) — chosen by TIME OF DAY
+  (00:00–11:59 verse, 12:00–23:59 word), or pinned to one of the two from the setup portal.
+  There is no button toggle: every button just runs a refresh.
 - **Local weather** (temperature, condition, icon, alerts)
 - **Date** in the header
 
@@ -75,7 +77,8 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 1. **Boot** (`setup()`):
    - Initialize serial, display, NVS
    - If first boot or factory reset → enter setup wizard (captive portal)
-   - Otherwise → load cached credentials from NVS / secrets
+   - Otherwise → load the stored configuration from NVS, which the setup portal writes.
+     There is no compile-time credential path and no `secrets.h`
 
 2. **Sync**:
    - Connect to Wi-Fi
@@ -120,12 +123,20 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 
 ### 2. Weather Data Source & Transport (Where from)
 - **API Provider**: [Open-Meteo](https://open-meteo.com/) REST API.
-- **Query URL**:
+- **Query URL** — note `timezone=auto`, NOT the configured zone (see below):
   ```text
-  https://api.open-meteo.com/v1/forecast?latitude=<LAT>&longitude=<LON>&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=<TZ>&forecast_days=2
+  https://api.open-meteo.com/v1/forecast?latitude=<LAT>&longitude=<LON>&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2
   ```
-- **Default Location**: Lat `-37.8528`, Lon `145.1633`, Timezone POSIX string (Burwood East, Victoria). These are fallbacks only — the normal path is the setup portal; credentials are never compiled in.
-- **TLS Security**: Pinned Let's Encrypt **YR2** intermediate CA (`ROOT_CA_YR2`) chaining to ISRG Root YR. Calls never use `setInsecure()`.
+- **Location**: `cc_configActive().latitude/longitude` — NVS when provisioned, otherwise the
+  built-in defaults (lat `-37.8528`, lon `145.1633`, Burwood East, Victoria). Nothing is compiled
+  in but those defaults; credentials are never compiled in at all.
+- **Timezone**: stored as an **IANA name** (`Australia/Melbourne`); the POSIX rule newlib needs is
+  derived from it in `config/tz_map.cpp`. The weather URL deliberately does *not* send it: Open-Meteo
+  answers a POSIX string with HTTP 400, so the request sends `timezone=auto` and the API derives the
+  zone from the coordinates.
+- **TLS Security**: a bundle of **root** trust anchors — ISRG Root X1, ISRG Root X2 and Amazon
+  Root CA 1 (`ROOT_CA_BUNDLE`) — applied to every request, so a server can rotate its
+  intermediate certificate without breaking the device. Calls never use `setInsecure()`.
 - **Stack Allocation**: Executed on a dedicated FreeRTOS task (`cc_sync`) with an explicit **16 KB stack** pinned to core 1, bypassing the fixed 8 KB Arduino loopTask limitation.
 
 ### 3. Data Selection & Mapping (What data)
@@ -152,23 +163,39 @@ The weather subsystem populates `WeatherData` (`temp`, `condition`, `alert`, `ic
 
 ### 4. Failure Modes & Degradation Hierarchy (Failure behaviour)
 The device prioritizes maintaining a coherent ePaper image with visible diagnostics rather than failing silently or hanging:
-- **Wi-Fi Connection Failure (`cc_wifiConnect() != 0`)**:
-  - Sets `g_offlineReason = "no wifi"`.
-  - Skips network fetches. Uses fallback scripture text and default weather (`temp = 0.0f`, `icon = PartlyCloudy`, condition `"Temp 0"`).
-  - Weather column displays red alert banner: `OFFLINE: no wifi`.
-- **NTP Time Sync Failure (`getLocalTime` timeout)**:
-  - Header date displays `"Offline"`.
-  - Content mode defaults to Verse of the Day; weather outlook defaults to daytime (`g_tomorrow = false`, `"FORECAST"`).
-  - Sleep duration falls back to 1 hour (`kFallbackSleepSec`) instead of an invalid slot rollover.
-- **Weather API / TLS / JSON Parse Failure (`cc_fetchWeather` returns false)**:
-  - Leaves existing `WeatherData` untouched (or initializes to defaults).
-  - Sets `g_offlineReason = "weather API"`.
-  - Condition synthesizes `"Temp 0"` if empty.
-  - Weather column displays red alert banner: `OFFLINE: weather API`.
-  - Verse or Word content still renders normally if its separate fetch succeeded.
+- **No invented data (deliberate).** A failed fetch NEVER substitutes canned content or a
+  defaulted reading. There is no bundled verse/word fallback: the body becomes an explicit
+  "unavailable" screen and the weather column carries the reason as a red `OFFLINE:` /
+  `PARTIAL:` alert. An earlier build showed a canned verse and a defaulted `0°C`, so a broken
+  device looked like a working one.
+- **Wi-Fi Connection Failure (`cc_wifiConnect() != 0`, or no SSID stored)**:
+  - Sets `g_offlineReason = "no wifi"` and marks weather **invalid** (`WeatherData::valid = false`),
+    so nothing renders a fabricated temperature.
+  - Skips all fetches; the body becomes "No network connection. Check the Wi-Fi details, or move
+    the device closer to the router."
+  - Weather column displays the red alert `OFFLINE: no wifi`.
+- **NTP Time Sync Failure (`getLocalTime` timeout, 6 s)**:
+  - `g_haveTime` stays false and the header date is blank.
+  - Content mode falls back to the **verse** (the time-of-day rule needs a clock); the outlook
+    falls back to today (`FORECAST`).
+  - TLS **will** fail: the clock is still 1970, before every certificate's `notBefore`. The boot
+    log says so explicitly, and a failed fetch reports
+    `PARTIAL: <api> failed (device clock not set)` instead of implying the servers are down.
+  - Sleep falls back to 1 hour (`kFallbackSleepSec`) rather than an invalid slot rollover.
+- **Single API / TLS / parse failure while online** (`cc_fetchWeather`/`cc_fetchVerse`/`cc_fetchWord`
+  returns false):
+  - Sets `g_partialReason` (first failure wins); weather is marked invalid when it is the weather.
+  - Body becomes the "Today's content could not be fetched..." screen; the weather column shows
+    `PARTIAL: <api> failed`.
+  - Whatever genuinely succeeded still renders.
 - **Network Disabled in Build (`#ifndef CHROMAWOTD_NETWORK`)**:
-  - Sets `g_offlineReason = "network disabled in build"`.
-  - Renders offline banner and bundled fallback content.
+  - Sets `g_offlineReason = "no network in this build"`; renders the offline banner and the
+    unavailable-content screen (there is no bundled fallback content).
+- **Setup portal window expires (`cc_portalRun()` returns false)**:
+  - The device deep-sleeps **without** running the sync/render cycle, so the setup screen (QR code
+    + per-boot AP password) stays on the panel and the next wake re-opens the portal.
+  - Previously it fell through into the sync path and repainted an OFFLINE error over the setup
+    instructions (see LESSONS §46).
 - **Visual Column Reflow on Alert vs Normal**:
   - **With Alert or Offline Banner**: Weather icon drops to minimum size (`kIconMin = 24px`) pinned at top; red divider and red `ALERT:` label are drawn; alert text wraps at bottom in compact 5pt font.
   - **Without Alert**: Icon dynamically expands (up to `kIconMax = 48px`) to fill the vertical whitespace in the weather column.

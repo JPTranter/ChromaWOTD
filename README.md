@@ -4,7 +4,7 @@ An ambient, low-power ePaper information display showing a daily scripture verse
 vocabulary word depending on the time of day, local weather, and glanceable colour-coded
 alerts on a 2.9" quadruple-colour (black, white, red, yellow) ePaper panel. It refreshes a few
 times a day at scheduled slots (or on a button press) and deep-sleeps in between. Built upon
-the architectural and hardware lessons of the sibling [eClock](../eClock) project.
+the architectural and hardware lessons of the sibling eClock project.
 
 ---
 
@@ -281,7 +281,7 @@ pre-commit install
 pre-commit run --all-files    # optional: scan the whole tree now
 ```
 
-Two layers, matching the sibling [eClock](../eClock) project:
+Two layers, matching the sibling eClock project:
 
 | Layer | Scope | Config |
 | :--- | :--- | :--- |

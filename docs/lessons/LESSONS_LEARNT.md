@@ -1078,3 +1078,79 @@ correct reading, which is how the real story (a healthy but freshly-reformatted 
 emerged. Fetch the struct definition before interpreting binary layouts.
 
 (2026-09-13)
+
+
+## 46. Reviewing a review: what the Phases 2–5 pass got right, wrong and missed (RESOLVED)
+
+`docs/CODE_REVIEW.md` listed 24 findings against Phases 2–5. Every one was re-checked
+against the on-disk source before acting. Two of the lessons here are about how the
+findings were FRAMED, not whether they were true.
+
+**All 24 were real, and the citations were accurate to the line.** Verified individually:
+the portal-timeout fall-through (`main.cpp:382` logged "sleeping" and then fell straight
+into the sync path), a `contentMode` that was stored, validated and offered in the portal
+form but never read (`main.cpp:184`), a zero-initialised `g_candidate` that rendered
+`(0,0)` — the exact combination validation rejects — an e2e tool whose default timezone
+(`AEST-10AEDT,M10.1.0,M4.1.0/3`) is neither an IANA name nor one of the legacy forms
+`tz_map.cpp` maps, unsigned `putBytes() >= 0` checks that can never fail, two pinned
+Let's Encrypt intermediates, and six inconsistencies including a stale `GPIO2/3/5` comment
+in a file that uses `GPIO2/3/8`.
+
+**A "resolved" status is not permanent — re-read the claims made about the fix.**
+`docs/STATUS.md` still described Phase 1 and carried a "Next steps" list (button toggle,
+NTP sync, Open-Meteo fetch) whose every item was already complete, plus a flatly false line
+("`main.cpp` still ships a hardcoded fixture and never sleeps"). A status document that is
+not updated in the same commit as the change becomes a source of wrong facts within days,
+which is worse than having no document.
+
+**Aggregate findings that share a root cause, and cost them as one piece of work.**
+BUG-05 (`>= 0` on an unsigned return) and DES-03 (an empty value does not delete its key)
+are the same three lines and the same fix — a `putStr()` helper that compares the returned
+length AND removes the key when the new value is empty. Filed separately they read as two
+jobs; they are one. Note the subtlety BOTH directions: the `> 0` checks on the other keys
+were also wrong, because a legitimately empty value (an open network's blank passphrase)
+returns 0 and would have been reported as a write failure.
+
+**A severity label must survive the project's own definition of it.** BUG-01 was filed P0,
+where the review's own scale says P0 = "must be fixed before shipping network code". That
+code had already shipped, and the defect is a self-recovering UX regression (a button press
+re-opens the portal). It is a P1. Inflation at the top of the list devalues the whole list.
+
+**Pin ROOTS, never the intermediates a server happens to be serving.** `net_impl_esp32.cpp`
+pinned the Let's Encrypt intermediates YR2 (Open-Meteo) and YE1 (Wordsmith) because those
+are what the live TLS chains contained. Both are re-issued on a rotation schedule and both
+expire 2028-09-02; the day a different intermediate appears, every fetch fails TLS
+verification — and with no OTA that means a physical reflash. Replaced with a bundle of
+true self-signed trust anchors: ISRG Root X1, ISRG Root X2 and Amazon Root CA 1, valid to
+2035 / 2040 / 2038.
+
+*Verify this class of change on the host before touching firmware.* `openssl s_client
+-showcerts` yields the real chain, and `openssl verify -CAfile <bundle> -untrusted <chain>
+<leaf>` proves the bundle is sufficient. Doing exactly that caught a second, unreported
+defect: the Amazon certificate in the source was the CROSS-SIGNED variant (issuer =
+Starfield G2, a certificate the server never sends), which strict verification rejects with
+"unable to get issuer certificate". mbedTLS had been tolerating it by matching the public
+key, so it worked on hardware while being wrong. The self-signed Amazon Root CA 1 verifies.
+Checked 2026-09-18 against all three live chains; **not** exercised on hardware (no port
+attached this session).
+
+**An unset clock was being reported as an API outage.** `WiFiClientSecure` validates
+`notBefore`/`notAfter` against the system clock, so after a failed NTP sync the clock reads
+1970, every handshake is rejected, and three healthy APIs look broken. Now logged
+explicitly where it happens and surfaced on the panel as
+`PARTIAL: <api> failed (device clock not set)`.
+
+**Fixed here vs deliberately left.** Fixed: BUG-01…BUG-05, DES-01…DES-03, INC-01…INC-06,
+DOC-01…DOC-03, plus two extra defects found while verifying — the second stale pin comment
+in `main.cpp`'s file header, and ARCHITECTURE.md §4 still describing fallback content and
+alert strings the code had already deleted (drift the review only partly cited). Left open:
+**BUG-06**, the shared 20 KB NVS partition. Its remediation is a custom `partitions.csv`,
+which moves flash offsets — so it needs a full flash, hardware verification, and updates to
+the app-only-flash workflow and `merge_firmware.py`. Shipping an unverified partition table
+that could brick the boot is worse than keeping a diagnosed bug in the backlog.
+
+The regression is now covered by a host test: `cc_resolveContentMode()` is pure and
+`test_sched.cpp` locks the forced-mode behaviour — which is how "a stored setting nothing
+reads" should have been caught in the first place.
+
+(2026-09-18)
