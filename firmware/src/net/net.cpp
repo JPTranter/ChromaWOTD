@@ -21,12 +21,12 @@
 #include <cstdlib>
 #include <cstring>
 
-// Location defaults (Burwood East, Melbourne). Overridable per-build with -D
-// flags and live in config/config_compiletime.h, shared with the device so the two
-// can never disagree. Credentials are NOT here: they exist only in the device's NVS,
-// written by its setup portal. Only the coordinates are needed for the weather URL,
-// which now sends timezone=auto and lets Open-Meteo derive the zone from them.
-#include "config/config_compiletime.h"
+// The weather URL's coordinates come from the RESOLVED configuration (NVS ->
+// built-in defaults), exactly as the device path does — so the host and the device
+// send the same request. Reading the compile-time macros directly here meant the
+// two could silently disagree once a device had been provisioned. Credentials are
+// NOT here: they exist only in the device's NVS, written by its setup portal.
+#include "config/config_active.h"
 
 // ---------------------------------------------------------------------------
 // WMO code -> condition text + alert detection (SHARED host + device) -------
@@ -542,11 +542,12 @@ bool cc_fetchWeather(WeatherData* out, bool tomorrow) {
     // timezone=auto: Open-Meteo wants an IANA zone name and rejects a POSIX TZ string
     // with HTTP 400 (the device's configured timezone is POSIX, for the local clock).
     // "auto" derives the zone from the lat/lon below, so the API needs no timezone.
+    // Coordinates come from the resolved config, matching the device path.
     snprintf(url, sizeof(url),
              "https://api.open-meteo.com/v1/forecast?latitude=%f&longitude=%f"
              "&daily=weather_code,temperature_2m_max,temperature_2m_min"
              "&timezone=auto&forecast_days=2",
-             CHROMAWOTD_LATITUDE, CHROMAWOTD_LONGITUDE);
+             (double)cc_configActive().latitude, (double)cc_configActive().longitude);
     char json[4096];
     if (!cc_fetchJson(url, json, sizeof(json)))
         return false;
