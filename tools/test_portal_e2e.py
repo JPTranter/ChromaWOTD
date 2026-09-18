@@ -88,7 +88,12 @@ def main():
     ap.add_argument("--pass", dest="password", default="testpassphrase123")
     ap.add_argument("--latitude", default="-37.8528")
     ap.add_argument("--longitude", default="145.1633")
-    ap.add_argument("--tz", default="AEST-10AEDT,M10.1.0,M4.1.0/3")
+    ap.add_argument(
+        "--tz",
+        default="Australia/Melbourne",
+        help="IANA timezone name (the form the portal picker offers; a bare POSIX "
+        "string is rejected by cc_configValidate)",
+    )
     args = ap.parse_args()
 
     print(f"[1/5] waiting up to {args.wait}s for the serial port...")

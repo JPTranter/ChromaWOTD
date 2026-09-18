@@ -34,8 +34,6 @@ import datetime
 import sys
 import time
 
-DEFAULT_PORT = "COM13"
-
 
 def now():
     return datetime.datetime.now().strftime("%H:%M:%S")
@@ -135,7 +133,9 @@ def mode_capture(port, seconds):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
-        "--port", default=DEFAULT_PORT, help=f"serial port (default {DEFAULT_PORT})"
+        "--port",
+        default=None,
+        help="serial port (default: the first detected, e.g. COM13)",
     )
     parser.add_argument(
         "--seconds", type=float, default=90.0, help="observation window (default 90)"
@@ -152,6 +152,20 @@ def main():
     except ImportError:
         print("ERROR: pyserial not installed (pip install pyserial)")
         return 2
+
+    # Auto-detect the port rather than hardcoding a bench-specific COM number: the
+    # assignment changes with the USB port/hub, and a stale default silently watches
+    # nothing.
+    if not args.port:
+        detected = list_serials()
+        if not detected:
+            print("ERROR: no serial port detected; pass --port COMx")
+            return 2
+        args.port = detected[0]
+        if len(detected) > 1:
+            print(f"note: {len(detected)} ports found ({', '.join(detected)}); using {args.port}")
+        else:
+            print(f"using detected port {args.port}")
 
     if args.presence:
         return mode_presence(args.port, args.seconds)
