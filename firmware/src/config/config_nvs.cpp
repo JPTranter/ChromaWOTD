@@ -46,6 +46,24 @@ bool readStr(Preferences& p, const char* key, char* dst, size_t dstsz, bool* any
     *any = true;
     return true;
 }
+
+// Store a string key, or REMOVE it when the value is empty. A helper rather than a
+// putBytes() call per site, for two reasons:
+//   * Preferences::putBytes() returns size_t, so the `>= 0` test it used to carry was
+//     ALWAYS true — a failed write passed silently. Comparing the returned length
+//     against the length requested is the only real check.
+//   * An empty value must DELETE the key, not write a zero-length blob: otherwise a
+//     cleared passphrase (open network) or hostname leaves the previous value in NVS,
+//     and readStr() would overlay it as though it were current.
+bool putStr(Preferences& p, const char* key, const char* value, size_t cap) {
+    const size_t n = strnlen(value, cap);
+    if (n == 0) {
+        p.remove(key); // an absent key is fine; nothing to clear
+        return true;
+    }
+    // Length WITHOUT a trailing NUL; readStr() adds it back on the way out.
+    return p.putBytes(key, value, n) == n;
+}
 } // namespace
 
 bool cc_configLoadFromNvs(DeviceConfig* cfg) {
@@ -88,12 +106,13 @@ bool cc_configSaveToNvs(const DeviceConfig& cfg) {
 
     // putBytes with an explicit length writes the string WITHOUT a trailing NUL;
     // readStr() adds it back. This avoids storing a length that includes padding.
+    // putStr() also deletes a key whose new value is empty (see its comment).
     bool ok = true;
-    ok &= p.putBytes(kKeySsid, cfg.ssid, strnlen(cfg.ssid, sizeof(cfg.ssid))) > 0;
-    ok &= p.putBytes(kKeyPass, cfg.passphrase, strnlen(cfg.passphrase, sizeof(cfg.passphrase))) >= 0;
-    ok &= p.putBytes(kKeyTz, cfg.timezone, strnlen(cfg.timezone, sizeof(cfg.timezone))) > 0;
-    ok &= p.putBytes(kKeyHost, cfg.hostname, strnlen(cfg.hostname, sizeof(cfg.hostname))) >= 0;
-    ok &= p.putBytes(kKeyVer, cfg.configuredBy, strnlen(cfg.configuredBy, sizeof(cfg.configuredBy))) >= 0;
+    ok &= putStr(p, kKeySsid, cfg.ssid, sizeof(cfg.ssid));
+    ok &= putStr(p, kKeyPass, cfg.passphrase, sizeof(cfg.passphrase));
+    ok &= putStr(p, kKeyTz, cfg.timezone, sizeof(cfg.timezone));
+    ok &= putStr(p, kKeyHost, cfg.hostname, sizeof(cfg.hostname));
+    ok &= putStr(p, kKeyVer, cfg.configuredBy, sizeof(cfg.configuredBy));
     ok &= p.putFloat(kKeyLat, cfg.latitude) > 0;
     ok &= p.putFloat(kKeyLon, cfg.longitude) > 0;
     ok &= p.putUChar(kKeyMode, cfg.contentMode) > 0;

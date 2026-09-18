@@ -3,7 +3,7 @@
 //
 // Behaviour:
 //   * Sleeps between scheduled refreshes (06:30 / 12:30 / 18:00) and wakes on
-//     the RTC timer OR any of the three user buttons (BUTTON1/2/3 = GPIO2/3/5,
+//     the RTC timer OR any of the three user buttons (BUTTON1/2/3 = GPIO2/3/8,
 //     active-low) — a button press runs exactly the same sync+render cycle.
 //   * Content by local time: 00:00–11:59 Verse of the Day, 12:00–23:59 Word of
 //     the Day (Word from A.Word.A.Day, with the respelling pronunciation).
@@ -170,18 +170,26 @@ static void syncTask(void* /*arg*/) {
         configTzTime(activeTz(), "pool.ntp.org");
 
         // Bounded NTP wait: the content mode + weather window depend on it.
-        struct tm tmv;
+        struct tm tmv{};
         if (getLocalTime(&tmv, 6000)) {
             g_haveTime = true;
             snprintf(g_date, sizeof(g_date), "%04d-%02d-%02d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
             Serial.printf("sync: time OK %s %02d:%02d:%02d\n", g_date, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
         } else {
+            // Without wall time the clock sits at 1970 — BEFORE the notBefore of every
+            // certificate in any chain — so every TLS handshake below fails
+            // verification and the fetches look like an API outage. Name the cause
+            // rather than letting it be misread as the servers being down.
             Serial.println("sync: WARN ntp time not available");
+            Serial.println("sync: WARN clock is unset - TLS certificate validation cannot succeed "
+                           "(no cert is valid at 1970); fetches will be reported as failed");
         }
 
-        // Without a clock we cannot pick content by time: default to the verse
-        // and today's weather rather than showing the wrong thing.
-        g_mode = g_haveTime ? cc_contentModeForHour(tmv.tm_hour) : ContentMode::Verse;
+        // Content follows the time of day unless the setup portal pinned a mode
+        // (contentMode 1 = verse only, 2 = word only); see cc_resolveContentMode.
+        // Without a clock the time-based rule cannot run, so it falls back to the
+        // verse rather than showing the wrong half of the day's content.
+        g_mode = cc_resolveContentMode(g_cfg.contentMode, g_haveTime, g_haveTime ? tmv.tm_hour : 0);
         g_tomorrow = g_haveTime ? cc_useTomorrowForecast(tmv.tm_hour) : false;
         Serial.printf("sync: mode=%s weather=%s\n", g_mode == ContentMode::Word ? "word" : "verse",
                       g_tomorrow ? "tomorrow" : "today");
@@ -296,6 +304,95 @@ static void runButtonProbe() {
 }
 #endif
 
+// --- Deep-sleep arming, shared by the normal cycle and the setup-portal path ---
+// Never returns in a deep-sleep build. In a debug build (CHROMAWOTD_DEEP_SLEEP
+// unset) it logs and returns, leaving loop() to idle without redrawing.
+//
+// Extracted so the expired-setup-portal path can sleep with the SAME wake sources
+// as a normal cycle — otherwise an unprovisioned device would either stay awake
+// forever or sleep with no wake armed.
+static void armSleepAndSleep(esp_sleep_wakeup_cause_t wakeCause) {
+#ifdef CHROMAWOTD_DEEP_SLEEP
+    setenv("TZ", activeTz(), 1); // ensure localtime() works even if NTP failed
+    tzset();
+
+    uint64_t sleepSec = kFallbackSleepSec;
+    struct tm tmNow;
+    if (getLocalTime(&tmNow, 100)) {
+        int s = cc_secondsUntilNextWake(tmNow);
+        if (s < kMinSleepSec)
+            s = kMinSleepSec;
+        sleepSec = (uint64_t)s;
+    }
+#ifdef CHROMAWOTD_WAKE_TEST_SEC
+    sleepSec = CHROMAWOTD_WAKE_TEST_SEC;
+#endif
+
+    // Button wake: BUTTON1/2/3 = GPIO2/3/8, active-low.
+    //
+    // EXPERIMENTAL — gated behind CHROMAWOTD_BUTTON_WAKE (off by default) until
+    // the pin behaviour is confirmed on real hardware. Enabling it on a board
+    // where these pads do not idle high produces a wake storm (boot -> sync ->
+    // wake instantly -> repeat), because a level-triggered ext1 low-level wake
+    // fires immediately if any armed pin already reads low.
+    //
+    // Correct configuration requires ALL of:
+    //   * rtc_gpio_init() + RTC_GPIO_MODE_INPUT_ONLY so the pad is owned by the
+    //     RTC domain (rtc_gpio_pullup_en() is a no-op otherwise),
+    //   * reading the level via rtc_gpio_get_level() — NOT digitalRead(), since
+    //     pinMode() hands the pad back to the digital domain and undoes the RTC
+    //     pull-up,
+    //   * arming only pins that actually idle HIGH.
+#ifdef CHROMAWOTD_BUTTON_WAKE
+    uint64_t btnMask = 0;
+    if (wakeCause == ESP_SLEEP_WAKEUP_EXT1)
+        g_ext1Streak++;
+    else
+        g_ext1Streak = 0;
+    if (g_ext1Streak >= kExt1StreakLimit) {
+        Serial.printf("button wake suppressed for one cycle (%lu consecutive button wakes) - timer only\n",
+                      (unsigned long)g_ext1Streak);
+        g_ext1Streak = 0;
+    }
+    for (int i = 0; i < kButtonCount && g_ext1Streak < kExt1StreakLimit; i++) {
+        gpio_num_t pin = kButtonPins[i];
+        rtc_gpio_init(pin);
+        rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
+        rtc_gpio_pulldown_dis(pin);
+        rtc_gpio_pullup_en(pin);
+        bool released = (rtc_gpio_get_level(pin) == 1);
+        Serial.printf("button GPIO%d idle=%s\n", (int)pin, released ? "HIGH (armed)" : "LOW (floating? NOT armed)");
+        if (released)
+            btnMask |= (1ULL << (int)pin);
+    }
+    if (btnMask) {
+        // ANY_LOW, not ALL_LOW: the chip wakes when ANY armed pin goes low, which
+        // is what a single button press does. Only pins that idle HIGH are armed
+        // above, so a press pulls exactly one pin low and wakes the chip.
+        //
+        // ESP_EXT1_WAKEUP_ALL_LOW is deprecated on ESP32-S3 and is defined as an
+        // alias of ANY_LOW (=0) — the legacy ALL_LOW semantics (wake only when ALL
+        // selected pins are simultaneously low) exist on the original ESP32 alone.
+        // Using the alias spammed -Wdeprecated-declarations, and naming it ALL_LOW
+        // misdescribed the hardware-verified behaviour (a single press wakes).
+        esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ANY_LOW);
+    } else {
+        Serial.println("button wake disabled (no pin idles HIGH) - timer only");
+    }
+#else
+    Serial.println("button wake: not enabled in this build (timer-only sleep)");
+#endif
+    esp_sleep_enable_timer_wakeup(sleepSec * 1000000ULL);
+    Serial.printf("awake-status: wake_cause=%d, sleeping %llu s (or on button)\n", (int)wakeCause,
+                  (unsigned long long)sleepSec);
+    Serial.flush();
+    esp_deep_sleep_start(); // does not return
+#else
+    (void)wakeCause;
+    Serial.println("sleep: CHROMAWOTD_DEEP_SLEEP not set - idling (debug build)");
+#endif
+}
+
 void setup() {
     Serial.begin(115200);
     delay(2000);
@@ -379,7 +476,15 @@ void setup() {
             delay(500);
             ESP.restart();
         }
+        // The window closed without configuration. Do NOT fall through into the
+        // sync/render path below: the device is still unprovisioned, so the sync
+        // fails and repaints the panel OVER the setup screen — wiping the QR code
+        // and the per-boot AP password (which stay readable at zero power) with an
+        // OFFLINE error. Sleep instead; the next wake (a button press, or the next
+        // scheduled slot) re-opens the portal with a freshly generated credential.
         Serial.println("setup: window expired, sleeping (press a button to retry)");
+        armSleepAndSleep(wakeCause);
+        return; // debug build only (no deep sleep): idle in loop(), keep the setup screen
     }
 #endif
 
@@ -467,7 +572,13 @@ void setup() {
         w.alert = rbuf; // red alert in the weather column
     } else if (g_partialReason) {
         static char rbuf[NET_TEXT_MAX];
-        snprintf(rbuf, sizeof(rbuf), "PARTIAL: %s failed", g_partialReason);
+        // When the clock never synced, a failed fetch is almost certainly TLS
+        // rejecting a 1970 "now", not an API outage. Say which, so the panel is not
+        // actively misleading about whose fault it is.
+        if (!g_haveTime)
+            snprintf(rbuf, sizeof(rbuf), "PARTIAL: %s failed (device clock not set)", g_partialReason);
+        else
+            snprintf(rbuf, sizeof(rbuf), "PARTIAL: %s failed", g_partialReason);
         w.alert = rbuf;
     }
 
@@ -477,84 +588,7 @@ void setup() {
     epaper.sleep();
 
     // --- Sleep until the next slot, or until a button is pressed ------------
-#ifdef CHROMAWOTD_DEEP_SLEEP
-    setenv("TZ", activeTz(), 1); // ensure localtime() works even if NTP failed
-    tzset();
-
-    uint64_t sleepSec = kFallbackSleepSec;
-    struct tm tmNow;
-    if (getLocalTime(&tmNow, 100)) {
-        int s = cc_secondsUntilNextWake(tmNow);
-        if (s < kMinSleepSec)
-            s = kMinSleepSec;
-        sleepSec = (uint64_t)s;
-    }
-#ifdef CHROMAWOTD_WAKE_TEST_SEC
-    sleepSec = CHROMAWOTD_WAKE_TEST_SEC;
-#endif
-
-    // Button wake: BUTTON1/2/3 = GPIO2/3/5, active-low.
-    //
-    // EXPERIMENTAL — gated behind CHROMAWOTD_BUTTON_WAKE (off by default) until
-    // the pin behaviour is confirmed on real hardware. Enabling it on a board
-    // where these pads do not idle high produces a wake storm (boot -> sync ->
-    // wake instantly -> repeat), because a level-triggered ext1 low-level wake
-    // fires immediately if any armed pin already reads low.
-    //
-    // Correct configuration requires ALL of:
-    //   * rtc_gpio_init() + RTC_GPIO_MODE_INPUT_ONLY so the pad is owned by the
-    //     RTC domain (rtc_gpio_pullup_en() is a no-op otherwise),
-    //   * reading the level via rtc_gpio_get_level() — NOT digitalRead(), since
-    //     pinMode() hands the pad back to the digital domain and undoes the RTC
-    //     pull-up,
-    //   * arming only pins that actually idle HIGH.
-#ifdef CHROMAWOTD_BUTTON_WAKE
-    uint64_t btnMask = 0;
-    if (wakeCause == ESP_SLEEP_WAKEUP_EXT1)
-        g_ext1Streak++;
-    else
-        g_ext1Streak = 0;
-    if (g_ext1Streak >= kExt1StreakLimit) {
-        Serial.printf("button wake suppressed for one cycle (%lu consecutive button wakes) - timer only\n",
-                      (unsigned long)g_ext1Streak);
-        g_ext1Streak = 0;
-    }
-    for (int i = 0; i < kButtonCount && g_ext1Streak < kExt1StreakLimit; i++) {
-        gpio_num_t pin = kButtonPins[i];
-        rtc_gpio_init(pin);
-        rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
-        rtc_gpio_pulldown_dis(pin);
-        rtc_gpio_pullup_en(pin);
-        bool released = (rtc_gpio_get_level(pin) == 1);
-        Serial.printf("button GPIO%d idle=%s\n", (int)pin, released ? "HIGH (armed)" : "LOW (floating? NOT armed)");
-        if (released)
-            btnMask |= (1ULL << (int)pin);
-    }
-    if (btnMask) {
-        // ANY_LOW, not ALL_LOW: the chip wakes when ANY armed pin goes low, which
-        // is what a single button press does. Only pins that idle HIGH are armed
-        // above, so a press pulls exactly one pin low and wakes the chip.
-        //
-        // ESP_EXT1_WAKEUP_ALL_LOW is deprecated on ESP32-S3 and is defined as an
-        // alias of ANY_LOW (=0) — the legacy ALL_LOW semantics (wake only when ALL
-        // selected pins are simultaneously low) exist on the original ESP32 alone.
-        // Using the alias spammed -Wdeprecated-declarations, and naming it ALL_LOW
-        // misdescribed the hardware-verified behaviour (a single press wakes).
-        esp_sleep_enable_ext1_wakeup(btnMask, ESP_EXT1_WAKEUP_ANY_LOW);
-    } else {
-        Serial.println("button wake disabled (no pin idles HIGH) - timer only");
-    }
-#else
-    Serial.println("button wake: not enabled in this build (timer-only sleep)");
-#endif
-    esp_sleep_enable_timer_wakeup(sleepSec * 1000000ULL);
-    Serial.printf("awake-status: wake_cause=%d, sleeping %llu s (or on button)\n", (int)wakeCause,
-                  (unsigned long long)sleepSec);
-    Serial.flush();
-    esp_deep_sleep_start(); // does not return
-#else
-    Serial.println("sleep: CHROMAWOTD_DEEP_SLEEP not set - idling (debug build)");
-#endif
+    armSleepAndSleep(wakeCause); // does not return in a deep-sleep build
 }
 
 void loop() {

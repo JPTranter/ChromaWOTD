@@ -49,6 +49,7 @@ void cc_portalMakeInfo(uint32_t macLow, uint32_t seed, PortalInfo* out) {
 
 #include "chroma_version.h" // CHROMAWOTD_VERSION, recorded as configuredBy
 #include "config/config.h"
+#include "config/config_active.h"
 #include "config/tz_map.h"
 #include "draw/target.h"
 #include "net/net.h" // NET_TEXT_MAX, shared text helpers
@@ -96,6 +97,12 @@ String page(const char* statusLine) {
     char hostEsc[128];
     htmlEscape(g_candidate.hostname, hostEsc, sizeof(hostEsc));
 
+    // Echo the SSID back as well. The other fields already round-trip their values,
+    // so without this a validation failure on ANY field emptied the SSID box and the
+    // user had to retype the (long, case-sensitive) network name.
+    char ssidEsc[128];
+    htmlEscape(g_candidate.ssid, ssidEsc, sizeof(ssidEsc));
+
     char latBuf[24], lonBuf[24];
     snprintf(latBuf, sizeof(latBuf), "%.4f", (double)g_candidate.latitude);
     snprintf(lonBuf, sizeof(lonBuf), "%.4f", (double)g_candidate.longitude);
@@ -118,7 +125,9 @@ String page(const char* statusLine) {
     }
     h += F("<form method='POST' action='/save'>");
     h += F("<label>Wi-Fi network name (SSID)</label>");
-    h += F("<input name='ssid' required maxlength='32' autocapitalize='none' autocomplete='off'>");
+    h += F("<input name='ssid' required maxlength='32' autocapitalize='none' autocomplete='off' value='");
+    h += ssidEsc;
+    h += F("'>");
     h += F("<label>Wi-Fi password <span class='hint'>(leave blank for open networks)</span></label>");
     h += F("<input name='pass' type='password' maxlength='63' autocomplete='off'>");
     h += F("<label>Timezone</label>");
@@ -173,8 +182,6 @@ String page(const char* statusLine) {
 }
 
 void handleRoot() {
-    const DeviceConfig defaults = g_candidate;
-    (void)defaults;
     g_server.send(200, "text/html", page(nullptr));
 }
 
@@ -253,6 +260,12 @@ void handleSave() {
 
 bool cc_portalRun(const PortalInfo& info, uint32_t timeoutMs) {
     g_info = info;
+    // Seed the form from the current resolved configuration (the built-in defaults,
+    // or whatever is already stored). Without this the zero-initialised g_candidate
+    // rendered lat/lon as 0.0000 — and (0,0) is explicitly rejected by validation, so
+    // a user who edited only the Wi-Fi fields could never save. It also pre-selects
+    // the current timezone/content mode instead of leaving them blank.
+    g_candidate = cc_configActive();
     WiFi.mode(WIFI_AP);
     // Password required: an open AP would let anyone nearby reconfigure the device.
     if (!WiFi.softAP(info.apName, info.apPassword)) {
@@ -311,6 +324,10 @@ bool cc_portalRun(const PortalInfo& info, uint32_t timeoutMs) {
 
     g_server.stop();
     g_dns.stop();
+    // Drop the SoftAP radio explicitly rather than relying on the caller's next
+    // WiFi.mode() switch: a left-up AP is an unnecessary exposure and keeps the
+    // radio drawing current.
+    WiFi.softAPdisconnect(true);
     delay(200);
     return g_saved;
 }

@@ -6,10 +6,20 @@
 
 #pragma once
 
+#include <cstdint>
+
 enum class ContentMode { Verse, Word };
 
 // 00:00–11:59 -> Verse of the Day; 12:00–23:59 -> Word of the Day.
 ContentMode cc_contentModeForHour(int hour24);
+
+// Resolve which content to show, honouring the portal's forced-mode setting:
+//   0 = time-based (the default), 1 = force verse, 2 = force word.
+// Any other value is treated as 0. A forced mode wins regardless of the clock;
+// the time-based rule needs a valid clock, so without one it falls back to the
+// verse (showing the wrong half of the day's content is worse than always
+// showing scripture until NTP succeeds).
+ContentMode cc_resolveContentMode(uint8_t configuredMode, bool haveTime, int hour24);
 
 // Evening (18:00–23:59) shows TOMORROW's outlook; earlier hours show today's.
 // This applies to button-triggered syncs too, not just the 18:00 slot.
