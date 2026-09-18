@@ -78,3 +78,33 @@ TEST(ContentPolicy, TomorrowForecastFrom18) {
     for (int h = 18; h < 24; h++)
         EXPECT_TRUE(cc_useTomorrowForecast(h)) << "hour " << h;
 }
+
+// --- Forced mode from the setup portal (contentMode) ------------------------
+// The portal offers "time-based / verse only / word only". These lock the
+// resolution rule so the stored setting cannot silently be ignored again (it was:
+// main.cpp read only the clock and never looked at cfg.contentMode).
+TEST(ContentPolicy, ForcedVerseOverridesTheClock) {
+    for (int h = 0; h < 24; h++)
+        EXPECT_EQ(cc_resolveContentMode(1, true, h), ContentMode::Verse) << "hour " << h;
+    EXPECT_EQ(cc_resolveContentMode(1, false, 0), ContentMode::Verse); // holds with no clock
+}
+
+TEST(ContentPolicy, ForcedWordOverridesTheClock) {
+    for (int h = 0; h < 24; h++)
+        EXPECT_EQ(cc_resolveContentMode(2, true, h), ContentMode::Word) << "hour " << h;
+    EXPECT_EQ(cc_resolveContentMode(2, false, 0), ContentMode::Word);
+}
+
+TEST(ContentPolicy, TimeBasedModeFollowsTheHour) {
+    for (int h = 0; h < 24; h++)
+        EXPECT_EQ(cc_resolveContentMode(0, true, h), cc_contentModeForHour(h)) << "hour " << h;
+    // Any out-of-range value is treated as time-based (validation allows 0..2, but
+    // NVS is not trusted to hold only what validation accepted).
+    EXPECT_EQ(cc_resolveContentMode(7, true, 9), ContentMode::Verse);
+    EXPECT_EQ(cc_resolveContentMode(255, true, 20), ContentMode::Word);
+}
+
+TEST(ContentPolicy, WithoutAClockTimeBasedModeFallsBackToVerse) {
+    for (int h = 0; h < 24; h++)
+        EXPECT_EQ(cc_resolveContentMode(0, false, h), ContentMode::Verse) << "hour " << h;
+}
