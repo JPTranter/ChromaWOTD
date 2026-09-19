@@ -1,4 +1,4 @@
-// wrap.h — line-capacity and width-budget math for CHROMAWOTD's greedy text
+// wrap.h — line-capacity and width-budget math for ChromaWOTD's greedy text
 // wrapper. Pure (no font/backend state) so it can be unit-tested in isolation;
 // the caller supplies maxH/size/lineHeight/maxW/charWidth already resolved.
 

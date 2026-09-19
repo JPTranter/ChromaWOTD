@@ -1,4 +1,4 @@
-// net_impl_esp32.cpp — Device-only network implementation for CHROMAWOTD.
+// net_impl_esp32.cpp — Device-only network implementation for ChromaWOTD.
 //
 // The device side of the cc_fetchJson hook: WiFi connect + WiFiClientSecure with
 // TLS root-CA validation (S1: never setInsecure) + HTTPClient, then a small

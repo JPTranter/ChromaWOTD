@@ -1,4 +1,4 @@
-// target.h — DisplayTarget interface for CHROMAWOTD.
+// target.h — DisplayTarget interface for ChromaWOTD.
 //
 // The layout engine (verse_display.cpp) draws through this interface rather than
 // calling Seeed GFX or CcCanvas directly. Two implementations exist:

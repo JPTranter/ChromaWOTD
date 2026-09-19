@@ -1,4 +1,4 @@
-# CHROMAWOTD — Architecture
+# ChromaWOTD — Architecture
 
 **Last updated:** 2026-09-18
 **Firmware version:** 0.1.0
@@ -8,7 +8,7 @@
 
 ## Overview
 
-CHROMAWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow) showing:
+ChromaWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow) showing:
 - **Verse of the Day** (scripture) or **Word of the Day** (vocabulary) — chosen by TIME OF DAY
   (00:00–11:59 verse, 12:00–23:59 word), or pinned to one of the two from the setup portal.
   A tap runs a refresh; a **hold of ~0.5-10 s inverts the content mode for that refresh**

@@ -1,4 +1,4 @@
-// content_policy.h — time-of-day presentation policy for CHROMAWOTD.
+// content_policy.h — time-of-day presentation policy for ChromaWOTD.
 //
 // PURE (no Arduino/ESP32 headers): given the local hour, decide which content to
 // show and whether the weather column shows today's or tomorrow's outlook.

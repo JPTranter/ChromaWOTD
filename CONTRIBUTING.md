@@ -1,6 +1,6 @@
-# Contributing to CHROMAWOTD
+# Contributing to ChromaWOTD
 
-Thank you for your interest in contributing to CHROMAWOTD! This guide will help you get started.
+Thank you for your interest in contributing to ChromaWOTD! This guide will help you get started.
 
 ## Table of Contents
 
@@ -330,4 +330,4 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 ---
 
-**Thank you for contributing to CHROMAWOTD!** 🌿
+**Thank you for contributing to ChromaWOTD!** 🌿

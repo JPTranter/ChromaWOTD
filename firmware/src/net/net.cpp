@@ -1,4 +1,4 @@
-// net.cpp — network parse + mapping logic for CHROMAWOTD.
+// net.cpp — network parse + mapping logic for ChromaWOTD.
 //
 // Two layers live here:
 //   (1) PURE, compiled for BOTH host and device:

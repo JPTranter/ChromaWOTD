@@ -1,4 +1,4 @@
-# clang-format configuration for CHROMAWOTD
+# clang-format configuration for ChromaWOTD
 #
 # Based on LLVM style with minor adjustments for C++17 and PlatformIO conventions.
 #

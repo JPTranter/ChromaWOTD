@@ -1,6 +1,6 @@
 # Scripture API Research & BibleGateway Integration
 
-This document details the research into free daily Bible verse (Verse of the Day / VOTD) endpoints for CHROMAWOTD.
+This document details the research into free daily Bible verse (Verse of the Day / VOTD) endpoints for ChromaWOTD.
 
 ## Decision: BibleGateway as Primary Source
 
@@ -30,7 +30,7 @@ BibleGateway provides an unauthenticated JSON endpoint underlying their custom w
 }
 ```
 
-### Key Advantages for CHROMAWOTD
+### Key Advantages for ChromaWOTD
 1. **Curated & Authoritative**: Provides the widely followed official BibleGateway daily verse.
 2. **Translation Choice**: Switching versions is a simple query parameter update (`&version=ESV`, `&version=NIV`, etc.).
 3. **Integrated Date Fields**: Includes `day`, `month`, and `year` to corroborate system time.

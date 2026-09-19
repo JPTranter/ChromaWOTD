@@ -1,4 +1,4 @@
-// glyphs.h — UTF-8 -> ASCII decoding for CHROMAWOTD.
+// glyphs.h — UTF-8 -> ASCII decoding for ChromaWOTD.
 //
 // TFT_eSPI's built-in font is ASCII/CP437 and must never receive multi-byte
 // UTF-8: it would draw one garbage glyph per byte. Real API text (BibleGateway,

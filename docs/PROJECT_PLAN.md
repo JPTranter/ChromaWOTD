@@ -1,4 +1,4 @@
-# CHROMAWOTD — Project Plan
+# ChromaWOTD — Project Plan
 
 ## Concept
 

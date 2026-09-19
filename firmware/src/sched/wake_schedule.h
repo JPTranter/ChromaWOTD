@@ -1,4 +1,4 @@
-// wake_schedule.h — daily refresh schedule for CHROMAWOTD.
+// wake_schedule.h — daily refresh schedule for ChromaWOTD.
 //
 // PURE (no ESP32/Arduino headers): given the current local time, return the
 // number of seconds until the next scheduled refresh. Host-testable; the

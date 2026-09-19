@@ -1,4 +1,4 @@
-// CHROMAWOTD — 2.9" quad-colour ePaper Verse/Word of the Day + weather display.
+// ChromaWOTD — 2.9" quad-colour ePaper Verse/Word of the Day + weather display.
 // Seeed EE05 (XIAO ESP32-S3 Plus) + 2.9" BWRY ePaper (JD79661 panel / JD79667 driver IC).
 //
 // Behaviour:

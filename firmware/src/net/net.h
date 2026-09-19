@@ -1,4 +1,4 @@
-// net.h — Network data fetching + parsing + mapping for CHROMAWOTD (Phase 3).
+// net.h — Network data fetching + parsing + mapping for ChromaWOTD (Phase 3).
 //
 // Surface shared by BOTH the host harness and the device:
 //   - the VerseData / WeatherData structs the layout engine renders

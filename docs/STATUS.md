@@ -1,4 +1,4 @@
-# CHROMAWOTD — Status
+# ChromaWOTD — Status
 
 **Updated:** 2026-09-18
 **Phase:** 5 — Buttons, time-based content, device configuration (NVS) & setup portal (complete)

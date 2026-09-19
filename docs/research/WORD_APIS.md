@@ -1,7 +1,7 @@
 # Word-of-the-Day API Research & A.Word.A.Day Integration
 
 Research into a free daily vocabulary word (Word of the Day / WOTD) source for
-CHROMAWOTD's afternoon presentation. The decisive constraint is not the payload
+ChromaWOTD's afternoon presentation. The decisive constraint is not the payload
 format — it is that **the panel font is printable ASCII only** (see
 `LESSONS_LEARNT.md` §33), so a source that publishes a *respelling* pronunciation
 is worth far more than one that publishes IPA.
@@ -30,7 +30,7 @@ by a value div — with these labels:
 | `NOTES` | Running commentary |
 | `A THOUGHT FOR TODAY` | Daily quotation |
 
-### Key Advantages for CHROMAWOTD
+### Key Advantages for ChromaWOTD
 1. **The pronunciation is a respelling, not IPA.** `(bre-VIL-uh-kwuhnt)` is pure
    ASCII and renders on the panel as-is. This is the reason this source was
    chosen and is the single most important property of the feed.

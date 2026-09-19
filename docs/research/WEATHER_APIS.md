@@ -1,6 +1,6 @@
 # Weather API Research & Comparison: Open Sources vs. BoM (Bureau of Meteorology)
 
-This document evaluates weather data sources for CHROMAWOTD's weather and alert rendering engine on the ESP32-S3.
+This document evaluates weather data sources for ChromaWOTD's weather and alert rendering engine on the ESP32-S3.
 
 ## Comparison Matrix
 
@@ -45,7 +45,7 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
 
 ---
 
-## Architectural Recommendation for CHROMAWOTD
+## Architectural Recommendation for ChromaWOTD
 
 1. **Default / International / Fast Path**: **Open-Meteo**
    * Default engine for simplicity, universal GPS/lat-long coordinate lookup, and micro-payload size (~400 bytes).
@@ -53,7 +53,7 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
    * If deployed in Australia and configured with a BoM geohash (or resolved from lat/long), query:
      1. `/locations/{geohash}/observations` for exact ambient temperature.
      2. `/locations/{geohash}/forecasts/daily` for condition text and rain likelihood.
-     3. `/locations/{geohash}/warnings` to trigger CHROMAWOTD's red alert line in the footer row.
+     3. `/locations/{geohash}/warnings` to trigger ChromaWOTD's red alert line in the footer row.
 
 ---
 

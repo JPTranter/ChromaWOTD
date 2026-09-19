@@ -25,7 +25,7 @@ the architectural and hardware lessons of the sibling eClock project.
 > Refreshing every minute would destroy the display's lifespan, consume excessive power, and
 > present an annoying visual distraction.
 >
-> **Architectural Decision:** CHROMAWOTD is purposefully engineered as an **infrequent,
+> **Architectural Decision:** ChromaWOTD is purposefully engineered as an **infrequent,
 > glanceable ambient display** that refreshes 2–4 times per day (e.g., morning wake, noon update,
 > evening forecast, night rest). Between refresh intervals, the ESP32-S3 enters deep sleep.
 
@@ -206,7 +206,7 @@ disappears (expected, not a crash; see `LESSONS_LEARNT.md` §32).
 ## Repository Structure
 
 ```
-CHROMAWOTD/
+ChromaWOTD/
 ├── .codegraph/                  CodeGraph symbol database (index files gitignored)
 ├── docs/
 │   ├── ARCHITECTURE.md          Data flow, refresh/power sequence, security, presentation
@@ -562,7 +562,7 @@ blank board as well as an existing one.
 This repository is indexed by **CodeGraph** (`.codegraph/`). To explore symbols, trace call graphs, or analyze blast radius with minimal token usage:
 
 * **CLI**: Run `codegraph explore "<symbol or question>"` in the terminal.
-* **MCP Tool**: Call `codegraph_explore` with `projectPath: "C:/Users/jptra/Projects/CHROMAWOTD"`.
+* **MCP Tool**: Call `codegraph_explore` with `projectPath: "C:/Users/jptra/Projects/ChromaWOTD"`.
 
 ---
 

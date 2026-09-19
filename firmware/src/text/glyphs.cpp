@@ -1,4 +1,4 @@
-// glyphs.cpp — the single UTF-8 -> ASCII decoder for CHROMAWOTD.
+// glyphs.cpp — the single UTF-8 -> ASCII decoder for ChromaWOTD.
 // See glyphs.h for the contract.
 
 #include "glyphs.h"

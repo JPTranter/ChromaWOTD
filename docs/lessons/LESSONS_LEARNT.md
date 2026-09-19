@@ -1,4 +1,4 @@
-# CHROMAWOTD — Lessons Learnt
+# ChromaWOTD — Lessons Learnt
 
 Inherited from the sibling eClock project (read `../eClock/docs/lessons/LESSONS_LEARNT.md`
 for the full history). New lessons get appended here with continuing numbers,
