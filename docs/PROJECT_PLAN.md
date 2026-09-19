@@ -85,26 +85,42 @@ signature of a fresh reformat. Not yet proven that `NO_FREE_PAGES` was the speci
 trigger (the core's failure line only logs if the *re*-init fails, so a successful
 reformat is silent).
 
-**Planned fix (do this, in order):**
-1. **Give our config its own NVS partition.** There is currently **no**
-   `firmware/partitions.csv` and no `board_build.partitions` override in
-   `platformio.ini` — the build uses the board's default table, which is why we share a
-   single 20 KB NVS with the WiFi stack. So the fix starts by *creating* a partition
-   table CSV (copy the current default as the baseline, e.g. from the framework's
-   `tools/partitions/default.csv`) and adding a second `data, nvs` entry with its own
-   label. Then open it with `nvs_flash_init_partition(label)` and
-   `Preferences::begin(name, ro, label)`. This isolates our data from the WiFi stack
-   entirely — writing more defensively into the shared partition does not address the
-   cause. Note that changing the partition table requires a full `write_flash` (the
-   layout moves), not an app-only update, and existing devices will lose their NVS.
+**Fix implemented 2026-09-19 — awaiting bench verification (LESSONS §48).**
+
+1. **Our config now has its own NVS partition — DONE.** `firmware/partitions.csv` adds a
+   dedicated 16 KB `nvs_cfg` (`data, nvs`) entry, `platformio.ini` sets
+   `board_build.partitions`, and `config_nvs.cpp` passes the label to all three
+   `Preferences::begin()` calls.
+   *Baseline correction:* the table to copy is the framework's **`default_8MB.csv`**, not
+   `default.csv` — the board definition sets `"partitions": "default_8MB.csv"`, whose
+   app0 size of `0x330000` is the 3342336-byte slot PlatformIO reports. `default.csv` has
+   a `0x140000` app0 and different `app1`/`spiffs` offsets, so copying it would lay out
+   the flash wrongly.
+   *Ordering is load-bearing:* `nvs` must stay the FIRST `data, nvs` entry, because the
+   core locates its erase target with `esp_partition_find_first(DATA, NVS, NULL)` — a
+   NULL label, i.e. the first match by subtype. Put `nvs_cfg` above `nvs` and the core
+   would erase `nvs_cfg` instead.
+   *Offsets are unchanged* for `nvs`/`otadata`/`app0`, so `tools/merge_firmware.py` needs
+   no change and an app-only flash at `0x10000` still works — but the table itself
+   (`partitions.bin` @ `0x8000`) must be re-flashed once, alongside the app.
+   `spiffs` and `app1` are both unused by this project, which is where the space comes
+   from. Existing devices DO lose their stored config once (our namespace moves to a new,
+   empty partition), so the setup portal has to be re-run; the old values remain in the
+   old partition, so re-flashing the old table restores them if a rollback is ever needed.
+   `Preferences::begin()` calls `nvs_flash_init_partition(label)` itself, so no separate
+   init call is required.
 2. **Read-back verification after save.** `cc_configSaveToNvs()` should load the values
    back and compare before the portal reports success; a silent write failure is
-   currently indistinguishable from success.
+   currently indistinguishable from success. *(Still open.)*
 3. **Warn on unexpected loss.** If the device has ever been provisioned (a flag in a
    separate namespace, or an RTC/marker value) and now finds nothing, say so on the panel
-   instead of quietly showing the setup portal.
-4. Re-test: fill the WiFi NVS (many connect/disconnect cycles) and confirm our config
-   survives a reformat of the other partition.
+   instead of quietly showing the setup portal. *(Still open.)*
+4. **Re-test — tooling in place, bench run outstanding.** Two envs reproduce the failure
+   deterministically instead of relying on filling WiFi NVS by hand over many
+   connect/disconnect cycles: `env:nvsprobe_legacy` (old table — config shares `nvs`) and
+   `env:nvsprobe` (new table — config in `nvs_cfg`). Each fills the shared partition until
+   writes fail, reboots so the core's `nvs_flash_init()` sees a full partition, then
+   reports whether the config survived. Run as a pair to *demonstrate* the fix.
 
 ### Phase 3 — Weather, Dual Content Sources & Sync Indicators
 - [ ] **Syncing & Status Feedback**:

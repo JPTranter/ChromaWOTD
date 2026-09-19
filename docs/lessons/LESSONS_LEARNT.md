@@ -1191,3 +1191,66 @@ serial port", which is precisely the state a developer is least likely to have w
 edit it.
 
 (2026-09-19)
+
+
+## 48. BUG-06 fixed: our config gets its own NVS partition (FIX IMPLEMENTED, bench run pending)
+
+§45 diagnosed it; this is the fix. The trigger lives in the Arduino core:
+
+```c
+// cores/esp32/esp32-hal-misc.c (initArduino)
+esp_err_t err = nvs_flash_init();
+if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    const esp_partition_t* partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, NULL);  // <-- NULL label
+    esp_partition_erase_range(partition, 0, partition->size);            // wipes EVERYTHING
+}
+```
+
+We cannot stop the core doing that. We can stop it reaching US: the configuration now lives in
+its own `nvs_cfg` partition (`firmware/partitions.csv`), opened with
+`Preferences::begin("chromawotd", ro, "nvs_cfg")`. `Preferences::begin()` calls
+`nvs_flash_init_partition(label)` itself — verified in the core source — so no extra init call
+is needed; the label alone was the whole code change (three call sites).
+
+**The ordering constraint is the load-bearing part, and it is invisible.** The core finds its
+erase target with a **NULL label**, i.e. `esp_partition_find_first(type, subtype, NULL)` — the
+FIRST matching entry in the table, not the one named "nvs". So `nvs` must remain the first
+`data, nvs` row: move `nvs_cfg` above it and the core would erase **our** partition instead, and
+the bug would come back pointing the other way. Any future table edit has to preserve this.
+
+**Baseline trap: the docs said `default.csv`; the board builds `default_8MB.csv`.** The plan
+told the next developer to copy the framework's `tools/partitions/default.csv` as the baseline.
+That table has a `0x140000` app0 and different `app1`/`spiffs` offsets — laying the flash out
+wrongly. The board definition (`espressif32/boards/seeed_xiao_esp32s3.json`) actually sets
+`"partitions": "default_8MB.csv"`, which is provable from the build itself: its app0 of
+`0x330000` is exactly the 3342336-byte app slot PlatformIO prints in every build summary. When
+a doc names a file, confirm the artefact really consumes it before copying from it.
+
+**Keeping the offsets identical is what made this safe.** `nvs`, `otadata` and `app0` keep
+their baseline offsets, so `tools/merge_firmware.py`'s LAYOUT still holds, an app-only flash at
+`0x10000` still lands on app0, and the bootloader at `0x0` is untouched — the update is
+`partitions.bin` @ `0x8000` + `firmware.bin` @ `0x10000`, not a full 0x0 merged image. Space
+came from `spiffs` (unused, no filesystem code) and `app1` (the OTA slot, unused: there is no
+OTA).
+
+**Making the proof deterministic instead of waiting for it.** The original re-test was "fill the
+WiFi NVS over many connect/disconnect cycles" — slow, and not guaranteed. Instead two envs do
+it head-on: `env:nvsprobe_legacy` (old table) and `env:nvsprobe` (new table) each write distinct
+keys into the SHARED `nvs` namespace until writes fail, `ESP.restart()`, and then report on the
+next boot whether the shared partition was reformatted and whether our config survived. Running
+it as a pair *demonstrates* the fix — one env shows the config destroyed, the other shows it
+intact — rather than asserting it. A local check confirms `nvsprobe_legacy` builds a partition
+table **byte-identical** to the one previously flashed (md5 `801ba716…`), so the "before" case
+really is the old layout.
+
+**A verification script can report a confident falsehood in either direction.** A throwaway
+parser I wrote to decode `partitions.bin` declared the new table broken: it claimed no
+`data, nvs` entry existed and that the core would therefore erase nothing. The parser had the
+wrong constant — `ESP_PARTITION_SUBTYPE_DATA_NVS` is `0x02`, not `0x01` (`0x01` is
+`DATA_PHY`). Printing the RAW subtype bytes alongside the verdict is what exposed it. This is
+§46's "a green signal that cannot fail" inverted: a RED signal that cannot be right is just as
+useless, and the same fix applies — check the checker against values you can see, before
+believing its conclusion about values you cannot.
+
+(2026-09-19)
