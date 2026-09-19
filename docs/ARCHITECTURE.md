@@ -20,7 +20,7 @@ CHROMAWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow
 | zone | contents |
 |---|---|
 | header band (18 px, yellow) | **what** you are reading: the citation (`Proverbs 3:5-6`), or the word with its respelling (`breviloquent (bre-VIL-uh-kwuhnt)`), drawn one size up at 7pt; the date sits at the right at the **same size**, formatted `DOW DD MMM` (`Sat 19 Sep`) by `text/date_format.h` |
-| body | the verse / definition, **full panel width**, auto-sized by a ladder from 8pt down to 5.5pt |
+| body | the verse / definition, **full panel width**, auto-sized by a ladder from 10pt down to 5.5pt |
 | footer row | status / warnings at the LEFT in red; weather as text at the RIGHT (`25°C Partly cloudy`) |
 
 There is deliberately **no weather column and no mode title**: the mode name was the least
@@ -369,9 +369,11 @@ python tools/verify_all.py --fix        # resync docs/images after intentional c
 
 ## Open Questions
 
-- **Font:** The verse body uses Roboto 5.5pt (mono-hinted, `-DCHROMAWOTD_FONT_FREESANS`),
-  with 5pt and 6pt candidates for auto-sizing and a dedicated 10pt temperature font.
-  Future work may explore other densities for different content layouts.
+- **Font:** The verse body auto-sizes through a Roboto ladder at **10 / 9 / 8 / 7 / 6 / 5.5 / 5pt**
+  (mono-hinted, `-DCHROMAWOTD_FONT_FREESANS`), picking the largest whose wrapped line count fits
+  the block. Short content gets 10pt; the longest realistic verse lands on 5.5pt. There is also a
+  dedicated 10pt temperature font. Future work may explore other densities or vertical centring
+  for short content, which still leaves the lower block empty at the top rung.
 - **State machine:** Documented here, but implementation deferred to Phase 2 (REVIEW D7).
 
 ---

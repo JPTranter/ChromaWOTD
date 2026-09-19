@@ -1525,3 +1525,38 @@ as one line instead of a large left item beside a small right one — and the co
 measures with that same font, so its reserve is honest rather than optimistic.
 
 (2026-09-19)
+
+
+## 55. Raising the ladder's ceiling to 10pt, for short content (RESOLVED)
+
+With the verse owning the panel (§53), the remaining waste was visible: a Word-of-the-Day
+definition is typically short, and at the 8pt ceiling it sat in the top half of the block with
+the lower third empty. The ladder is now **10 / 9 / 8 / 7 / 6 / 5.5 / 5pt** (Roboto 9 and 10pt
+tables generated from the same source TTF as the rest).
+
+Measured on the device font path, the ladder's picks are now:
+
+| content | before | now |
+|---|---|---|
+| Word-of-the-Day definition (~75 chars) | 8pt | **10pt** |
+| very short verse (11–56 chars) | 8pt | **10pt** |
+| the 153-char fixture verse | 8pt | 8pt (unchanged) |
+| 191 chars | 7pt | 7pt |
+| 316 chars (longest realistic) | 5.5pt | 5.5pt |
+
+So the change is additive: short content gains two rungs and long content is untouched — which is
+the point of a ladder rather than a font choice. Cost: ~3.8 KB of flash for the two tables.
+
+*Not* addressed, and now the visible consequence: a two-line verse can leave the lower third of
+the block empty, because the block is TOP-aligned and the ladder cannot fix that — a bigger font
+would need a rung the height budget cannot hold. The honest next step, if it bothers the eye, is
+vertical centring of the verse block (a layout change, not a font change). Flagged rather than
+quietly added.
+
+Tests: the two "largest rung" expectations moved to `Pt10`, and a case was added for the actual
+motivating content (a word definition). The ladder's monotonicity test still passes unchanged,
+which is the property that keeps a longer text from ever selecting a bigger face. The render
+ledger is unaffected: it is built from the default host build, where the ladder is compiled out
+(LESSONS §38), so those renders cannot move with a font decision.
+
+(2026-09-19)

@@ -387,7 +387,7 @@ The suites are:
 | `test_layout_landscape` | Single-layout geometry: header band extent, no divider, the verse occupying the full width, the right margin |
 | `test_layout_alert` | Alert banner pinned to the bottom of the weather column; locates the (dynamic) red divider rule by its run-length signature and asserts its relation to the temperature block and alert text |
 | `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers (per font family), temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
-| `test_verse_autosize` | The verse body auto-size ladder (Roboto 6/5.5/5pt) — compiled **with** `-DCHROMAWOTD_FONT_FREESANS=1` so the selection the panel makes is actually covered |
+| `test_verse_autosize` | The verse body auto-size ladder (Roboto 10/9/8/7/6/5.5/5pt) — compiled **with** `-DCHROMAWOTD_FONT_FREESANS=1` so the selection the panel makes is actually covered |
 | `test_net` | WMO code → condition/icon/alert mapping, JSON extraction, A.Word.A.Day HTML parsing (incl. printable-ASCII and newline-collapse guards), plus live-fetch smoke tests that skip when there is no network |
 | `test_sched` | Next-wake slot math (midnight roll-over, slot boundaries, never 0) and the time-based content/forecast policy |
 
