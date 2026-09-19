@@ -1,4 +1,4 @@
-# CHROMAWOTD — 4-colour ePaper verse, word & weather display
+# ChromaWOTD — 4-colour ePaper verse, word & weather display
 
 An ambient, low-power ePaper information display showing a daily scripture verse or a
 vocabulary word depending on the time of day, local weather, and glanceable colour-coded
