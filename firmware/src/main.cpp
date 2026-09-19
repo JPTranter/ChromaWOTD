@@ -152,10 +152,75 @@ static bool g_tomorrow = false;
 static bool g_haveTime = false;
 static char g_date[32] = ""; // "YYYY-MM-DD" for the header
 
+#ifdef CHROMAWOTD_WIFI_DIAG
+// --- Wi-Fi reachability diagnostic (env:wifidiag) -----------------------------
+// A join failing with WL_NO_SSID_AVAIL means the SSID was never SEEN in a scan, which
+// is a completely different fault from a refused association. This separates the two
+// candidate causes — no AP in range, versus an RF chain whose calibration was destroyed
+// — and reports the shared partition's per-namespace entry counts, because a reformat
+// (BUG-06's own mechanism) takes the Wi-Fi stack's `phy` / `nvs.net80211` data with it.
+// That is the cost side of the fix: our config is protected, the Wi-Fi stack's is not.
+//
+// Prints NO credential material. The configured SSID is reported only as
+// visible/not-visible, never by name.
+#include <nvs.h>
+
+static void runWifiDiag() {
+    Serial.println("=== CHROMAWOTD WIFI DIAG ===");
+
+    nvs_stats_t st = {};
+    if (nvs_get_stats(nullptr, &st) == ESP_OK) {
+        Serial.printf("diag: shared nvs: used=%u free=%u total=%u namespaces=%u\n",
+                      (unsigned)st.used_entries, (unsigned)st.free_entries, (unsigned)st.total_entries,
+                      (unsigned)st.namespace_count);
+    } else {
+        Serial.println("diag: shared nvs: stats unavailable");
+    }
+
+    static const char* kNss[] = {"nvs.net80211", "phy", "misc", "dhcp_state", "bss"};
+    for (const char* ns : kNss) {
+        nvs_handle_t h;
+        if (nvs_open(ns, NVS_READONLY, &h) == ESP_OK) {
+            size_t used = 0;
+            if (nvs_get_used_entry_count(h, &used) == ESP_OK)
+                Serial.printf("diag: namespace %-13s present, entries used=%u\n", ns, (unsigned)used);
+            else
+                Serial.printf("diag: namespace %-13s present, entry count unavailable\n", ns);
+            nvs_close(h);
+        } else {
+            Serial.printf("diag: namespace %-13s ABSENT\n", ns);
+        }
+    }
+
+    WiFi.mode(WIFI_STA);
+    const int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+    const char* want = cc_configActive().ssid;
+    bool foundOwn = false;
+    for (int i = 0; i < n && !foundOwn; i++) {
+        if (want[0] && WiFi.SSID(i) == want)
+            foundOwn = true;
+    }
+    Serial.printf("diag: scan found %d AP(s); our configured SSID visible = %s\n", n,
+                  foundOwn ? "YES" : "NO");
+    if (n == 0)
+        Serial.println("diag: NO APs visible at all -> the RF chain is the problem, not "
+                       "the credentials");
+    else if (!foundOwn)
+        Serial.println("diag: other APs visible but ours is not -> the AP is off / out of range");
+    else
+        Serial.println("diag: our SSID IS visible -> the fault is in associating, not in scanning");
+    Serial.println("=== end WIFI DIAG ===");
+    Serial.flush();
+}
+#endif
+
 // Runs the whole network Sync phase on its own task/stack (see STACK NOTE
 // above), then signals g_syncDone and deletes itself.
 static void syncTask(void* /*arg*/) {
 #ifdef CHROMAWOTD_NETWORK
+#ifdef CHROMAWOTD_WIFI_DIAG
+    runWifiDiag();
+#endif
     Serial.println("sync: connecting wifi...");
     if (cc_wifiConnect() != 0) {
         g_offlineReason = "no wifi";
