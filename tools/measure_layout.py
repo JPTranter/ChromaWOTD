@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """Measure (and assert) the alignment invariants of a rendered layout PNG.
 
-Layout work kept coming down to the same manual question: *is this caption level
-with the date, and does this rule line up with the body text margin?* Eyeballing
-a 296x128 PNG is unreliable and pixel-scanning it by hand was repeated several
-times. This tool does that scan and prints the answer.
+Layout work kept coming down to the same manual question: *does this content line up
+with the margins and with the other things sharing its row?* Eyeballing a 296x128 PNG
+is unreliable and pixel-scanning it by hand was repeated several times. This tool does
+that scan and prints the answer.
 
 Checked invariants (all measured on INK, not on pen origins):
 
-  1. header alignment  — the weather-column caption's top ink row equals the
-                         header title/date's top ink row (both are drawn at y=2;
-                         a caption drawn lower reads as "touching" the rule).
-  2. rule extent       — the caption rule spans exactly the body text block's
-                         margins (left == right == kVerseMargin).
-  3. body margin       — the body text's leftmost ink sits on that same margin.
-  4. caption margin    — the left (pronunciation) caption's leftmost ink also
-                         sits on that margin, despite '(' carrying a left bearing.
+  1. band extent   — the yellow header band ends exactly at HEADER_H, and the header
+                     text sits INSIDE it (text escaping the band is the classic
+                     "raised a font size and forgot the band" regression).
+  2. body margin   — the body text's leftmost ink sits on the text margin (MARGIN).
+  3. footer row    — the warning (left) and the weather text (right) start on the SAME
+                     ink row, so the footer reads as one line. Skips when only one of
+                     the two is present.
+  4. right margin  — no ink reaches the panel's last two columns.
 
 Usage
 -----
@@ -37,10 +37,10 @@ DEFAULT_IMAGE = os.path.join(ROOT, "docs", "images", "layout_landscape.png")
 
 # Panel geometry — mirrors the constants in firmware/src/verse_display.cpp.
 PANEL_W, PANEL_H = 296, 128
-SPLIT_X = 226  # vertical divider
-HEADER_H = 14  # yellow band height (rule sits at HEADER_H - 1)
-MARGIN = 4  # kVerseMargin: body text block left/right margin
-RULE_Y = 109  # kReferenceY
+HEADER_H = 18  # yellow band height (its separator rule sits at HEADER_H - 1)
+MARGIN = 4  # kVerseMargin: text block left/right margin
+FOOTER_Y0 = 110  # top of the footer row's scan window (kRowY is 115)
+EDGE_GUARD = 2  # columns at the right edge that must stay clear
 
 PAPER = (245, 242, 234)
 YELLOW = (232, 183, 26)
@@ -51,8 +51,15 @@ def is_ink(p):
     return p != PAPER and p != YELLOW and p[0] < 120 and p[1] < 120 and p[2] < 120
 
 
-def is_red(p):
-    return p[0] > 140 and p[1] < 90 and p[2] < 90
+def is_yellow(p):
+    return p == YELLOW
+
+
+def is_content(p):
+    """Any pigment at all. The footer row holds a RED warning on the left and BLACK
+    weather text on the right, so an ink-only predicate would silently miss the warning
+    and report the row as empty."""
+    return p != PAPER and p != YELLOW
 
 
 def load(path):
@@ -67,64 +74,59 @@ def measure(path):
     px = img.load()
     m = {"path": path, "size": (W, H)}
 
-    def rows(x0, x1, y0, y1, pred):
-        return [y for y in range(y0, y1) if any(pred(px[x, y]) for x in range(x0, x1))]
+    def top_ink_row(x0, x1, y0, y1, pred=is_ink):
+        for y in range(y0, y1):
+            if any(pred(px[x, y]) for x in range(x0, x1)):
+                return y
+        return None
 
-    def col_min(x0, x1, y0, y1, pred):
-        for x in range(x0, x1):
+    def left_ink_col(y0, y1, x0=1, x1=None, pred=is_ink):
+        for x in range(x0, x1 if x1 is not None else W):
             for y in range(y0, y1):
                 if pred(px[x, y]):
                     return x
         return None
 
-    # 1. header: left band (title+date) vs right column (weather caption)
-    left_rows = rows(1, SPLIT_X - 1, 0, HEADER_H, is_ink)
-    right_rows = rows(SPLIT_X + 1, W - 1, 0, HEADER_H, is_ink)
-    m["header_left_top"] = left_rows[0] if left_rows else None
-    m["header_right_top"] = right_rows[0] if right_rows else None
+    # 1. where the yellow band actually ends (scan down the left edge)
+    band_end = None
+    for y in range(H):
+        if not any(is_yellow(px[x, y]) for x in range(0, W, 8)):
+            band_end = y
+            break
+    m["band_end"] = band_end
 
-    # 2. caption rule extent (red horizontal run on the rule row)
-    rule = [x for x in range(1, SPLIT_X) if is_red(px[x, RULE_Y])]
-    m["rule"] = (min(rule), max(rule)) if rule else None
+    # header text: must sit inside the band
+    m["header_top"] = top_ink_row(1, W - 1, 0, HEADER_H)
 
-    # 3. body text left margin
-    m["body_left"] = col_min(1, SPLIT_X, HEADER_H + 2, RULE_Y - 4, is_ink)
+    # 2. body text left ink (below the band, above the footer row)
+    m["body_left"] = left_ink_col(HEADER_H + 2, FOOTER_Y0 - 2)
 
-    # 4. left caption ink (black text below the rule)
-    m["caption_left"] = col_min(1, SPLIT_X, RULE_Y + 2, PANEL_H, is_ink)
-    m["caption_top"] = None
-    cap_rows = [
-        y for y in range(RULE_Y + 1, PANEL_H) if any(is_ink(px[x, y]) for x in range(1, SPLIT_X))
-    ]
-    if cap_rows:
-        m["caption_top"] = cap_rows[0]
+    # 3. footer row: the two items that share it must share a baseline
+    mid = PANEL_W // 2
+    m["footer_left_top"] = top_ink_row(1, mid, FOOTER_Y0, PANEL_H, is_content)
+    m["footer_right_top"] = top_ink_row(mid, W - 1, FOOTER_Y0, PANEL_H, is_content)
+
+    # 4. the right edge must stay clear. Scan BELOW the band: the band's separator rule
+    # spans the full width by design, so counting it here would always fail.
+    m["right_ink"] = left_ink_col(HEADER_H, H, PANEL_W - EDGE_GUARD, PANEL_W)
     return m
 
 
 def check(m):
     """Return a list of (ok, description) for each invariant."""
     out = []
-    lt, rt = m["header_left_top"], m["header_right_top"]
+
+    band = m["band_end"]
+    header_top = m["header_top"]
+    band_ok = band is not None and abs(band - HEADER_H) <= 1
+    header_inside = header_top is not None and band is not None and header_top < band
     out.append(
         (
-            lt is not None and lt == rt,
-            f"weather caption level with header date (left top y={lt}, right top y={rt})",
+            band_ok and header_inside,
+            f"header band ends at y={band} (want {HEADER_H}) and text sits inside it "
+            f"(top ink y={header_top})",
         )
     )
-
-    rule = m["rule"]
-    if rule is None:
-        out.append((True, "caption rule not present (nothing to align)"))
-    else:
-        left_ok = abs(rule[0] - MARGIN) <= 1
-        right_ok = abs(rule[1] - (SPLIT_X - MARGIN)) <= 1
-        out.append(
-            (
-                left_ok and right_ok,
-                f"rule spans body margins (got x{rule[0]}..{rule[1]}, "
-                f"want x{MARGIN}..{SPLIT_X - MARGIN})",
-            )
-        )
 
     body = m["body_left"]
     out.append(
@@ -134,21 +136,25 @@ def check(m):
         )
     )
 
-    cap = m["caption_left"]
-    if cap is None:
-        out.append((True, "no left caption in this render (nothing to align)"))
+    fl, fr = m["footer_left_top"], m["footer_right_top"]
+    if fl is None or fr is None:
+        out.append((True, "only one item on the footer row (nothing to level)"))
     else:
         out.append(
             (
-                abs(cap - MARGIN) <= 1,
-                f"left caption ink on body margin (got x={cap}, want x={MARGIN})",
+                abs(fl - fr) <= 1,
+                f"warning and weather share a footer baseline (left top y={fl}, right top y={fr})",
             )
         )
 
-    # caption must sit BELOW the rule, not touch it
-    if m["caption_top"] is not None:
-        gap = m["caption_top"] - RULE_Y
-        out.append((gap >= 1, f"caption sits below the rule (gap {gap} px)"))
+    edge = m["right_ink"]
+    out.append(
+        (
+            edge is None,
+            f"right edge clear (first ink at x={edge}, none allowed before "
+            f"x={PANEL_W - EDGE_GUARD})",
+        )
+    )
     return out
 
 
@@ -189,12 +195,13 @@ def main():
             continue
         m = measure(path)
         print(f"\n=== {os.path.basename(path)}  ({m['size'][0]}x{m['size'][1]}) ===")
+        print(f"  band ends at      : y={m['band_end']} (text top ink y={m['header_top']})")
+        print(f"  body left ink     : x={m['body_left']}")
         print(
-            f"  header top ink   : left y={m['header_left_top']}  right y={m['header_right_top']}"
+            f"  footer row        : left top y={m['footer_left_top']}  "
+            f"right top y={m['footer_right_top']}"
         )
-        print(f"  caption rule     : {('x%d..%d' % m['rule']) if m['rule'] else 'none'}")
-        print(f"  body left ink    : x={m['body_left']}")
-        print(f"  left caption ink : x={m['caption_left']} (top y={m['caption_top']})")
+        print(f"  right edge ink    : x={m['right_ink']}")
         print("  invariants:")
         for ok, desc in check(m):
             print(f"    {'PASS' if ok else 'FAIL'}: {desc}")

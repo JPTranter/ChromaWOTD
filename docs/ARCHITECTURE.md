@@ -12,8 +12,20 @@ CHROMAWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow
 - **Verse of the Day** (scripture) or **Word of the Day** (vocabulary) — chosen by TIME OF DAY
   (00:00–11:59 verse, 12:00–23:59 word), or pinned to one of the two from the setup portal.
   There is no button toggle: every button just runs a refresh.
-- **Local weather** (temperature, condition, icon, alerts)
-- **Date** in the header
+- **Local weather** (temperature + condition as TEXT, in the footer row; warnings in red)
+- **Date** in the header band
+
+**Presentation** — the panel is used to give the text maximum room:
+
+| zone | contents |
+|---|---|
+| header band (18 px, yellow) | **what** you are reading: the citation (`Proverbs 3:5-6`), or the word with its respelling (`breviloquent (bre-VIL-uh-kwuhnt)`), drawn one size up at 7pt; the date sits at the right |
+| body | the verse / definition, **full panel width**, auto-sized by a ladder from 8pt down to 5.5pt |
+| footer row | status / warnings at the LEFT in red; weather as text at the RIGHT (`25°C Partly cloudy`) |
+
+There is deliberately **no weather column and no mode title**: the mode name was the least
+informative text on the panel, and the 70 px the weather column occupied cost the verse a type
+size (LESSONS §53).
 
 The device refreshes **2–4 times per day** (full ~25 s pigment sweep per refresh). Between refreshes, the ESP32-S3 enters deep sleep to conserve power.
 
@@ -86,8 +98,8 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
    - Evaluate time-based policies:
      - 00:00–11:59: Verse of the Day (BibleGateway VOTD)
      - 12:00–23:59: Word of the Day (A.Word.A.Day)
-     - 00:00–17:59: Today's expected maximum + condition (`FORECAST`)
-     - 18:00–23:59: Tomorrow's expected maximum + condition (`TOMORROW`)
+     - 00:00–17:59: Today's expected maximum + condition (footer row, unlabelled)
+     - 18:00–23:59: Tomorrow's expected maximum + condition (footer row, prefixed `TOMORROW`)
    - Fetch content and weather over CA-validated HTTPS on a dedicated 16 KB FreeRTOS task (`cc_sync`)
    - Parse JSON/HTML into `VerseData` and `WeatherData` structs
 
@@ -140,15 +152,18 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 - **Stack Allocation**: Executed on a dedicated FreeRTOS task (`cc_sync`) with an explicit **16 KB stack** pinned to core 1, bypassing the fixed 8 KB Arduino loopTask limitation.
 
 ### 3. Data Selection & Mapping (What data)
-The weather subsystem populates `WeatherData` (`temp`, `condition`, `alert`, `icon`) and `LayoutOptions::weatherLabel`:
+The weather subsystem populates `WeatherData` (`temp`, `condition`, `alert`, `icon`) and
+`LayoutOptions::weatherLabel`. Note the layout draws only `temp` and `condition`: the ICON is no
+longer rendered anywhere (the condition words carry more), though the field and the drawing
+primitive remain — see LESSONS §53:
 - **00:00–17:59 (Daytime outlook)**:
   - Temperature: Today's expected maximum (`daily.temperature_2m_max[0]`).
   - Condition: Today's expected forecast condition (`daily.weather_code[0]`).
-  - Label: `"FORECAST"`.
+  - Label: none (the temperature is understood as today's).
 - **18:00–23:59 (Evening / next day outlook)**:
   - Temperature: Tomorrow's expected maximum (`daily.temperature_2m_max[1]`).
   - Condition: Tomorrow's expected forecast condition (`daily.weather_code[1]`).
-  - Label: `"TOMORROW"`.
+  - Label: `TOMORROW`, drawn in red immediately before the temperature.
 - **WMO Code Mapping (`cc_wmoCondition`)**:
   - `0` → "Clear"
   - `1, 2, 3` → "Partly cloudy"
@@ -158,14 +173,14 @@ The weather subsystem populates `WeatherData` (`temp`, `condition`, `alert`, `ic
   - `71, 73, 75, 77, 85, 86` → "Snow"
   - `95, 96, 99` → "Thunderstorm" (triggers alert)
   - All other codes → "Cloudy"
-- **Vector Icons (`WeatherIcon`)**: Coarse 4-icon vector engine (`Sun` = 0, `Cloud` = 1, `Rain` = 2, `PartlyCloudy` = 3). WMO 0 maps to Sun; 1–3 to PartlyCloudy; ≥80 to Rain; remainder to Cloud.
+- **Vector Icons (`WeatherIcon`)**: Coarse 4-icon vector engine (`Sun` = 0, `Cloud` = 1, `Rain` = 2, `PartlyCloudy` = 3). WMO 0 maps to Sun; 1–3 to PartlyCloudy; ≥80 to Rain; remainder to Cloud. **Not drawn by the layout any more** (the condition text replaced it); the module and its tests remain.
 - **Alert Text**: WMO codes 95, 96, 99 produce `"Severe weather warning"`.
 
 ### 4. Failure Modes & Degradation Hierarchy (Failure behaviour)
 The device prioritizes maintaining a coherent ePaper image with visible diagnostics rather than failing silently or hanging:
 - **No invented data (deliberate).** A failed fetch NEVER substitutes canned content or a
   defaulted reading. There is no bundled verse/word fallback: the body becomes an explicit
-  "unavailable" screen and the weather column carries the reason as a red `OFFLINE:` /
+  "unavailable" screen and the footer row carries the reason as a red `OFFLINE:` /
   `PARTIAL:` alert. An earlier build showed a canned verse and a defaulted `0°C`, so a broken
   device looked like a working one.
 - **Wi-Fi Connection Failure (`cc_wifiConnect() != 0`, or no SSID stored)**:
@@ -173,11 +188,11 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
     so nothing renders a fabricated temperature.
   - Skips all fetches; the body becomes "No network connection. Check the Wi-Fi details, or move
     the device closer to the router."
-  - Weather column displays the red alert `OFFLINE: no wifi`.
+  - The footer row displays the red warning `OFFLINE: no wifi` at the left.
 - **NTP Time Sync Failure (`getLocalTime` timeout, 6 s)**:
   - `g_haveTime` stays false and the header date is blank.
   - Content mode falls back to the **verse** (the time-of-day rule needs a clock); the outlook
-    falls back to today (`FORECAST`).
+    falls back to today (no `TOMORROW` marker).
   - TLS **will** fail: the clock is still 1970, before every certificate's `notBefore`. The boot
     log says so explicitly, and a failed fetch reports
     `PARTIAL: <api> failed (device clock not set)` instead of implying the servers are down.
@@ -185,8 +200,9 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
 - **Single API / TLS / parse failure while online** (`cc_fetchWeather`/`cc_fetchVerse`/`cc_fetchWord`
   returns false):
   - Sets `g_partialReason` (first failure wins); weather is marked invalid when it is the weather.
-  - Body becomes the "Today's content could not be fetched..." screen; the weather column shows
-    `PARTIAL: <api> failed`.
+  - Body becomes the "Today's content could not be fetched..." screen; the footer row shows
+    `PARTIAL: <api> failed` at the left, truncated with `...` if it cannot fit alongside the
+    weather text.
   - Whatever genuinely succeeded still renders.
 - **Network Disabled in Build (`#ifndef CHROMAWOTD_NETWORK`)**:
   - Sets `g_offlineReason = "no network in this build"`; renders the offline banner and the
@@ -196,9 +212,10 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
     + per-boot AP password) stays on the panel and the next wake re-opens the portal.
   - Previously it fell through into the sync path and repainted an OFFLINE error over the setup
     instructions (see LESSONS §46).
-- **Visual Column Reflow on Alert vs Normal**:
-  - **With Alert or Offline Banner**: Weather icon drops to minimum size (`kIconMin = 24px`) pinned at top; red divider and red `ALERT:` label are drawn; alert text wraps at bottom in compact 5pt font.
-  - **Without Alert**: Icon dynamically expands (up to `kIconMax = 48px`) to fill the vertical whitespace in the weather column.
+- **Footer row sharing (warning vs weather)**: both live on one row and neither may overprint
+  the other. The weather half degrades first (drop the condition, then the `TOMORROW` label —
+  the temperature always survives), and the warning is truncated with a visible `...` using the
+  space that remains. Nothing is silently clipped.
 
 ---
 
@@ -286,7 +303,7 @@ Implemented 2026-09-12 (REVIEW D1):
 ```
 firmware/src/
   verse_display.h           data structs + enums (VerseData, WeatherData, WeatherIcon, Theme, Orientation)
-  verse_display.cpp         font metrics + the layout view functions (header, verse block, weather column)
+  verse_display.cpp         font metrics + the layout view functions (header band, verse block, footer row)
   text/
     glyphs.{h,cpp}          cc_utf8ToAscii / cc_utf8ToAsciiN — one decoder, length-bounded
     wrap.{h,cpp}            cc_lineCapacity, cc_lineBudget — pure line/budget math

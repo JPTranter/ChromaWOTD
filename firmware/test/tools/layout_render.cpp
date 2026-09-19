@@ -27,6 +27,10 @@ const char* verseFontName(VerseFontSize s) {
         return "Pt5";
     case VerseFontSize::Pt55:
         return "Pt55";
+    case VerseFontSize::Pt7:
+        return "7pt";
+    case VerseFontSize::Pt8:
+        return "8pt";
     case VerseFontSize::Pt6:
         return "Pt6";
     }

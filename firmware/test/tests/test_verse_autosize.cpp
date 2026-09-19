@@ -11,7 +11,9 @@
 namespace {
 
 // The layout's verse text block (drawLayout -> drawVerseBlock).
-const int kW = kVerseMaxW;   // 218
+// The verse owns the whole panel now (no weather column), so the block is wider than it
+// was, and the ladder above it now tops out at 8pt rather than 6pt.
+const int kW = kVerseMaxW;   // 288
 const int kH = kVerseMaxH;   // 82
 
 // 2026-09-13 BibleGateway VOTD (NIV), after cc_stripLeadingBracket removes the
@@ -19,15 +21,15 @@ const int kH = kVerseMaxH;   // 82
 const char* kTodaysVerse =
     "\"Rejoice in the Lord always. I will say it again: Rejoice!\"";
 
-// 191 chars: wraps to 4 lines at 6pt (capacity 3) but 4 lines at 5.5pt
-// (capacity 4) -> the middle rung of the ladder.
+// 191 chars: too long for the 8pt rung, fits at 7pt -> a middle rung, not an end one.
 const char* kMediumVerse =
     "The Lord is my shepherd, I lack nothing. He makes me lie down in green "
     "pastures, he leads me beside quiet waters, he refreshes my soul. He guides "
     "me along the right paths for his name's sake.";
 
-// 316 chars: needs more lines than even 5pt capacity allows to be comfortable;
-// the ladder must bottom out at the smallest font.
+// 316 chars: the longest realistic content. The ladder must step all the way down —
+// and note it now lands on 5.5pt rather than 5pt, because the wider block buys a rung
+// even for the worst case.
 const char* kLongVerse =
     "But the fruit of the Spirit is love, joy, peace, forbearance, kindness, "
     "goodness, faithfulness, gentleness and self-control. Against such things "
@@ -37,21 +39,31 @@ const char* kLongVerse =
 
 }  // namespace
 
-TEST(VerseAutosize, TodaysVerseSelects6pt) {
-    // Short two-line verse: the largest candidate must win.
-    EXPECT_EQ(cc_verseFontSize(kTodaysVerse, kW, kH), VerseFontSize::Pt6);
+TEST(VerseAutosize, ShortVerseSelectsTheLargestRung) {
+    // A short verse gets the biggest face the ladder offers — the whole point of giving
+    // the text the full panel width.
+    EXPECT_EQ(cc_verseFontSize(kTodaysVerse, kW, kH), VerseFontSize::Pt8);
 }
 
-TEST(VerseAutosize, MediumVerseSelects55pt) {
-    EXPECT_EQ(cc_verseFontSize(kMediumVerse, kW, kH), VerseFontSize::Pt55);
+TEST(VerseAutosize, MediumVerseSelects7pt) {
+    EXPECT_EQ(cc_verseFontSize(kMediumVerse, kW, kH), VerseFontSize::Pt7);
 }
 
-TEST(VerseAutosize, LongVerseSelects5pt) {
-    EXPECT_EQ(cc_verseFontSize(kLongVerse, kW, kH), VerseFontSize::Pt5);
+TEST(VerseAutosize, LongVerseStepsDownTo55pt) {
+    // Previously 5pt; the wider block buys a rung even for the longest realistic verse.
+    EXPECT_EQ(cc_verseFontSize(kLongVerse, kW, kH), VerseFontSize::Pt55);
+}
+
+TEST(VerseAutosize, LongestVerseIsStillReadableAtWorst) {
+    // The ladder must never bottom out below 5.5pt for realistic content: a floor of 5pt
+    // on this panel would be smaller than the 6pt the device shipped with before, which
+    // would defeat the exercise.
+    EXPECT_GT(static_cast<int>(cc_verseFontSize(kLongVerse, kW, kH)),
+              static_cast<int>(VerseFontSize::Pt5));
 }
 
 TEST(VerseAutosize, LadderIsMonotonicInLength) {
-    // Longer text never selects a LARGER font (enum order: Pt5 < Pt55 < Pt6).
+    // Longer text never selects a LARGER font (enum order: Pt5 < Pt55 < Pt6 < Pt7 < Pt8).
     EXPECT_GE(static_cast<int>(cc_verseFontSize(kTodaysVerse, kW, kH)),
               static_cast<int>(cc_verseFontSize(kMediumVerse, kW, kH)));
     EXPECT_GE(static_cast<int>(cc_verseFontSize(kMediumVerse, kW, kH)),
@@ -60,5 +72,5 @@ TEST(VerseAutosize, LadderIsMonotonicInLength) {
 
 TEST(VerseAutosize, EmptyVerseSelectsLargest) {
     // No text wraps to zero lines: the largest font trivially fits.
-    EXPECT_EQ(cc_verseFontSize("", kW, kH), VerseFontSize::Pt6);
+    EXPECT_EQ(cc_verseFontSize("", kW, kH), VerseFontSize::Pt8);
 }

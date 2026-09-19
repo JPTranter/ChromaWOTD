@@ -338,15 +338,17 @@ static int cc_wrappedLineCount(const char* text, int maxW, int size) {
 // drawVerseBlock() so the host suite can assert the selection directly
 // instead of pixel-probing the render (LESSONS §38).
 #ifdef CHROMAWOTD_FONT_FREESANS
+#include "fonts/Roboto7pt7b.h"
+#include "fonts/Roboto8pt7b.h"
 static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
-    static const GFXfont* const candidates[3] = {&Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b};
+    static const GFXfont* const candidates[5] = {&Roboto8pt7b, &Roboto7pt7b, &Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b};
     // The wrap measurement routes through cc_advance(), which reads the global
     // g_bodyFont — so the candidate must BE the active body font while its line
     // count is measured (measuring every candidate at one font collapses the
     // ladder; see LESSONS §38).
     const GFXfont* prev = g_bodyFont;
     const GFXfont* pick = &Roboto5pt7b; // nothing fit: smallest font
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 5; i++) {
         g_bodyFont = candidates[i];
         const int cap = cc_lineCapacity(maxH, 1, candidates[i]->yAdvance);
         if (cc_wrappedLineCount(verse, maxW, 1) <= cap) {
@@ -360,6 +362,10 @@ static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
 
 VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH) {
     const GFXfont* f = cc_pickVerseFont(verse, maxW, maxH);
+    if (f == &Roboto8pt7b)
+        return VerseFontSize::Pt8;
+    if (f == &Roboto7pt7b)
+        return VerseFontSize::Pt7;
     if (f == &Roboto6pt7b)
         return VerseFontSize::Pt6;
     if (f == &Roboto5pt7b)
@@ -571,191 +577,140 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
 #endif
 }
 
-// 66 px-wide weather column. The alert block — rule, ALERT: label and wrapped
-// text — is pinned to the BOTTOM when present (icon stays at the fixed 24px
-// size). Without an alert the icon GROWS (up to 2x) and the temperature +
-// condition push down, so the stack fills the column height instead of hugging
-// the top and leaving a band of whitespace at the bottom.
-static void drawLandscapeWeatherColumn(int cx, const WeatherData& w, const char* label) {
-    // Column geometry (was magic numbers; named here so a design change is one edit).
-    static constexpr int kColW = 66;    // wrapped-text width (fits FORECAST + 3-line alert)
-    static constexpr int kHalf = 28;    // half of the FORECAST/alert rule span
-    static constexpr int kColTop = 17;  // below the FORECAST rule
-    static constexpr int kColBot = 126; // 2 px above the panel bottom
-    static constexpr int kTempH = 19;   // size-2 temperature block (+1px gap to condition)
-    static constexpr int kGap = 4;      // gap between temp and condition
-    static constexpr int kIconMin = 24; // fixed alert-layout icon size / reflow lower clamp
-    static constexpr int kIconMax = 48; // reflow upper clamp (2x the fixed size)
-
-    // Section caption ("FORECAST" / "TOMORROW"), centred and baseline-aligned
-    // with the header title/date (y=2) so it sits level with the date and keeps
-    // clear of the rule below.
-    int fcWidth = dev_measureText(label, 1);
-    dev_drawString(cx - fcWidth / 2, 2, label, CC_BLACK, 1);
-    dev_drawFastHLine(cx - kHalf, 13, 2 * kHalf, CC_BLACK); // aligns with header bottom (headerH-1)
-
-    char tbuf[16];
-    // Only format a temperature when there IS a reading. When the fetch failed there is
-    // no number to show, and drawing a default would be a fabrication — so tbuf stays
-    // empty and the callers below skip the draw entirely.
-    if (w.valid) {
-        snprintf(tbuf, sizeof(tbuf), "%d°C", cc_roundTemp(w.temp));
-    } else {
-        tbuf[0] = '\0';
-    }
-
-    if (w.alert) {
-        // --- Alert pinned to bottom; icon + temp at the fixed top layout. -----
-        // Alert text is set in the 5pt body font (user preference); the rest of
-        // the column stays at the default body size.
-#ifdef CHROMAWOTD_FONT_FREESANS
-        const GFXfont* prev = cc_setBodyFont(&Roboto5pt7b);
-        const int alertLH = Roboto5pt7b.yAdvance;
-
-        if (w.valid) {
-            drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
-            int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1);
-            dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, 47, tbuf, CC_BLACK, 1);
-        } else {
-            // No reading: say so instead of showing a made-up number. Centred in the
-            // space the icon+temp would have occupied.
-            drawWrappedTextCentered(cx, 26, kColW, 30, "No reading", CC_RED, 1);
-        }
-#else
-        const int alertLH = 10;
-        if (w.valid) {
-            drawWeatherIcon(target(), cx, 32, kIconMin, w.icon);
-            int tWidth = dev_measureText(tbuf, 2);
-            dev_drawString(cx - tWidth / 2, 47, tbuf, CC_BLACK, 2);
-        } else {
-            drawWrappedTextCentered(cx, 26, kColW, 30, "No reading", CC_RED, 1);
-        }
-#endif
-
-        int lines = cc_wrappedLineCount(w.alert, kColW, 1);
-        if (lines > 3)
-            lines = 3;
-        int textY = 128 - 2 - 8 - (lines - 1) * alertLH; // last line ends 2 px above bottom
-        int labelY = textY - alertLH - 1;
-        int divY = labelY - 3;
-        if (w.condition) {
-            drawWrappedTextCentered(cx, 65, kColW, divY - 2 - 65, w.condition, CC_BLACK, 1, cc_lineHeight(1, 10));
-        }
-        dev_drawFastHLine(cx - kHalf, divY, 2 * kHalf, CC_RED);
-        int alWidth = dev_measureText("ALERT:", 1);
-        dev_drawString(cx - alWidth / 2, labelY, "ALERT:", CC_RED, 1);
-        drawWrappedTextCentered(cx, textY, kColW, 128 - 2 - textY, w.alert, CC_RED, 1, alertLH);
-
-#ifdef CHROMAWOTD_FONT_FREESANS
-        cc_restoreBodyFont(prev);
-#endif
+// Fit `src` into `dst`, truncating with a VISIBLE "..." when it cannot fit maxW.
+// The verse block already follows this rule (never drop words silently); the footer row
+// needs it too, because an over-long warning was previously drawn unbounded and ran off
+// the panel edge.
+static void cc_fitText(const char* src, char* dst, size_t dstsz, int maxW) {
+    if (!dst || dstsz == 0)
+        return;
+    snprintf(dst, dstsz, "%s", src ? src : "");
+    const int ellipsisW = dev_measureText("...", 1);
+    if (maxW < ellipsisW) { // no room to say anything honestly
+        dst[0] = '\0';
         return;
     }
-
-    // --- No alert: grow the icon to use the freed space, stack fills the column.
-    const int availH = kColBot - kColTop; // 109
-
-    if (!w.valid) {
-        // Wi-Fi is up but the weather fetch failed: no reading to show. Draw the same
-        // explicit notice rather than an invented value; the caller still supplies an
-        // alert explaining what failed.
-        drawWrappedTextCentered(cx, 30, kColW, 40, "No reading", CC_RED, 1);
+    if (dev_measureText(dst, 1) <= maxW)
         return;
-    }
+    size_t n = strlen(dst);
+    while (n > 0 && dev_measureText(dst, 1) > maxW - ellipsisW)
+        dst[--n] = '\0';
+    snprintf(dst + n, dstsz - n, "...");
+}
 
-    // Condition height depends on how many lines it wraps to (same estimate the
-    // renderer uses), so the icon yields space as the condition grows.
-    int condLines = w.condition ? cc_wrappedLineCount(w.condition, kColW, 1) : 0;
-    if (condLines > 5)
-        condLines = 5;
-    const int condH = condLines * 10 + 8; // wrapped condition + 8px inset
-
-    // Icon size = leftover column after temp + condition, clamped to [24, 48].
-    int iconS = availH - kTempH - condH - 2 * kGap;
-    if (iconS < kIconMin)
-        iconS = kIconMin;
-    else if (iconS > kIconMax)
-        iconS = kIconMax;
-
-    // Top-align under the header (2px pad). Any remaining whitespace collects
-    // below the condition, so the column reads "filled".
-    int topPad = 2;
-
-    int iconCY = kColTop + topPad + iconS / 2;
-    drawWeatherIcon(target(), cx, iconCY, iconS, w.icon);
-
-    int tempY = kColTop + topPad + iconS + kGap;
+// Width of the header identity line. It is drawn ONE SIZE UP (6pt) on the device font
+// path, so the date-collision guard below must measure with that same font — measuring
+// with the 5.5pt body default would under-report and let a long word overprint the date.
+static int cc_headWidth(const char* s) {
 #ifdef CHROMAWOTD_FONT_FREESANS
-    int tWidth = cc_measurePxF(&RobotoT10pt7b, tbuf, 1); // temp at native size (smooth)
-    dev_drawStringF(&RobotoT10pt7b, cx - tWidth / 2, tempY, tbuf, CC_BLACK, 1);
+    return cc_measurePxF(&Roboto7pt7b, s, 1);
 #else
-    int tWidth = dev_measureText(tbuf, 2);
-    dev_drawString(cx - tWidth / 2, tempY, tbuf, CC_BLACK, 2);
+    return dev_measureText(s, 1);
 #endif
-
-    if (w.condition) {
-        int condStart = tempY + kTempH + kGap;
-        drawWrappedTextCentered(cx, condStart, kColW, kColBot - condStart, w.condition, CC_BLACK, 1, 10);
-    }
 }
 
 void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& opts) {
-    // Layout constants — single source of truth for geometry.
-    // These replace the magic numbers scattered throughout drawLayout() and
-    // drawLandscapeWeatherColumn(). Each constant has a one-line rationale.
+    // Layout constants — single source of truth for geometry. Each has a one-line rationale.
+    // The verse owns the WHOLE panel: there is no weather column and no divider.
     static constexpr int kPanelW = 296;
     static constexpr int kPanelH = 128;
-    static constexpr int kSplitX = 226;                            // divider x: verse ~10% wider than original 205
-    static constexpr int kHeaderH = 14;                            // was 20; smaller 5pt body needs less header height
-    static constexpr int kWeatherCx = (kSplitX + 1 + kPanelW) / 2; // center of weather column
-    static constexpr int kVerseMargin = 4;                         // verse block left margin
-    static constexpr int kReferenceY = 109;                        // reference line y-position
-    static constexpr int kWeatherColW = 66;    // weather column width (66px fits FORECAST + 3-line alert)
-    static constexpr int kWeatherColHalf = 28; // half of kWeatherColW (for FORECAST rule)
+    static constexpr int kHeaderH = 18;    // tall enough for the 7pt identity line
+    static constexpr int kVerseMargin = 4; // text block left/right margin
+    static constexpr int kHeaderTextX = 6; // identity line x
+    static constexpr int kRowY = 115;      // footer row (status + weather)
 
-    // 1. Header (Yellow band)
-    dev_fillRect(0, 0, kSplitX, kHeaderH, CC_YELLOW);
-    dev_drawString(6, 2, opts.headerTitle, CC_BLACK, 1); // lifted 1px
-    if (v.date) {
-        dev_drawStringRight(kSplitX - 6, 2, v.date, CC_BLACK, 1); // lifted 1px
-    }
-    dev_drawFastHLine(0, kHeaderH - 1, kSplitX, CC_BLACK);
+    const bool haveAlert = (w.alert && w.alert[0]);
 
-    // 2. Verse body (White background) — box margins halved (8 -> 4)
-    dev_fillRect(0, kHeaderH, kSplitX, kPanelH - kHeaderH, CC_WHITE);
+    // --- 1. Header band: WHAT you are reading -------------------------------------
+    // The word with its respelling, or the verse's citation. The mode name ("Verse of the
+    // Day") was the least informative text on the panel; this is the line you glance at.
+    char head[96];
+    if (opts.leftCaption && opts.leftCaption[0] && v.reference)
+        snprintf(head, sizeof(head), "%s %s", v.reference, opts.leftCaption);
+    else if (v.reference)
+        snprintf(head, sizeof(head), "%s", v.reference);
+    else
+        snprintf(head, sizeof(head), "%s", opts.headerTitle ? opts.headerTitle : "");
+
+    // The identity line must CLEAR the date, so degrade deliberately rather than let it
+    // overprint: drop the respelling first, then truncate. BOTH margins come out of the
+    // budget, so reserving 8px of clear space needs -12, not -6.
+    const int dateW = v.date ? dev_measureText(v.date, 1) : 0;
+    const int headRoom = kPanelW - kHeaderTextX - 6 - dateW - 8;
+    if (v.reference && opts.leftCaption && opts.leftCaption[0] && cc_headWidth(head) > headRoom)
+        snprintf(head, sizeof(head), "%s", v.reference); // respelling dropped
+    for (size_t n = strlen(head); n > 1 && cc_headWidth(head) > headRoom; n--)
+        head[n - 1] = '\0';
+
+    dev_fillRect(0, 0, kPanelW, kHeaderH, CC_YELLOW);
+#ifdef CHROMAWOTD_FONT_FREESANS
+    // One size up from the 5.5pt body default: this is the line you scan first.
+    dev_drawStringF(&Roboto7pt7b, kHeaderTextX, 1, head, CC_BLACK, 1);
+#else
+    dev_drawString(kHeaderTextX, 2, head, CC_BLACK, 1);
+#endif
+    if (v.date)
+        dev_drawStringRight(kPanelW - 6, 2, v.date, CC_BLACK, 1);
+    dev_drawFastHLine(0, kHeaderH - 1, kPanelW, CC_BLACK);
+
+    // --- 2. Body: the verse at the whole panel width, auto-sized ------------------
+    dev_fillRect(0, kHeaderH, kPanelW, kPanelH - kHeaderH, CC_WHITE);
     drawVerseBlock(kVerseMargin, kHeaderH + kVerseMargin, kVerseMaxW, kVerseMaxH, v);
 
-    // 3. Caption line: red rule with an optional black caption at the left
-    //    (Word-of-the-Day pronunciation) and an optional red caption at the
-    //    right (verse reference, or the Word-of-the-Day headword). The rule and
-    //    both captions share the body text block's left/right margins
-    //    (kVerseMargin) so the whole caption line lines up with the text above.
-    if (v.reference || opts.leftCaption) {
-        dev_drawFastHLine(kVerseMargin, kReferenceY, kSplitX - 2 * kVerseMargin, CC_RED);
-        // Right caption (red) is placed first; the left caption (black) is only
-        // drawn if it still clears it, so a long word + long respelling degrades
-        // by dropping the pronunciation rather than overprinting.
-        int rightEdge = kSplitX - kVerseMargin;
-        if (v.reference) {
-            dev_drawStringRight(rightEdge, kReferenceY + 6, v.reference, CC_RED, 1);
-            rightEdge -= dev_measureText(v.reference, 1);
+    // --- 3. Footer row: status/warnings LEFT, weather RIGHT -----------------------
+    // Weather is computed first because its width bounds the warning. It is TEXT, not an
+    // icon: the condition words carry more than a 10px glyph, and the 4-colour icon only
+    // ever distinguished four states.
+    const int rowRoom = kPanelW - 2 * kVerseMargin;
+    char wtbuf[16] = "";
+    char wcbuf[48] = "";
+    const char* tag = nullptr;
+    int weatherW = 0;
+    if (w.valid) {
+        snprintf(wtbuf, sizeof(wtbuf), "%d°C", cc_roundTemp(w.temp));
+        // "TOMORROW" only when it matters: in the evening the number is TOMORROW's high and
+        // would otherwise be indistinguishable from today's.
+        tag = (opts.weatherLabel && strcmp(opts.weatherLabel, "FORECAST") != 0) ? opts.weatherLabel : nullptr;
+        snprintf(wcbuf, sizeof(wcbuf), "%s", (w.condition && w.condition[0]) ? w.condition : "");
+        const int sep = 4;
+        const int tW = dev_measureText(wtbuf, 1);
+        weatherW = tW;
+        if (wcbuf[0])
+            weatherW += sep + dev_measureText(wcbuf, 1);
+        if (tag)
+            weatherW += sep + dev_measureText(tag, 1);
+        // Degrade to fit the row on its own: drop the condition, then the label. The
+        // temperature always survives — it is the one value worth the space.
+        if (weatherW > rowRoom && wcbuf[0]) {
+            wcbuf[0] = '\0';
+            weatherW = tW + (tag ? sep + dev_measureText(tag, 1) : 0);
         }
-        if (opts.leftCaption) {
-            int leftW = dev_measureText(opts.leftCaption, 1);
-            // The caption always starts with '(' , which carries a 1 px left side
-            // bearing; nudge 1 px left so its INK lines up with the rule start and
-            // the body text's left edge rather than sitting 1 px inside them.
-            if (kVerseMargin + leftW + 8 <= rightEdge)
-                dev_drawString(kVerseMargin - 1, kReferenceY + 6, opts.leftCaption, CC_BLACK, 1);
+        if (weatherW > rowRoom && tag) {
+            tag = nullptr;
+            weatherW = tW;
         }
     }
 
-    // 4. Vertical divider
-    dev_drawFastVLine(kSplitX, 0, kPanelH, CC_BLACK);
+    if (haveAlert) {
+        // A weather warning or a fetch failure. Truncated VISIBLY if it cannot fit beside
+        // the weather — an unbounded draw here ran off the panel edge.
+        char abuf[96];
+        cc_fitText(w.alert, abuf, sizeof(abuf), rowRoom - weatherW - (weatherW ? 8 : 0));
+        if (abuf[0])
+            dev_drawString(kVerseMargin, kRowY, abuf, CC_RED, 1);
+    }
 
-    // 5. Right-hand weather column (alert pinned to bottom)
-    dev_fillRect(kSplitX + 1, 0, kPanelW - kSplitX - 1, kPanelH, CC_WHITE);
-    drawLandscapeWeatherColumn(kWeatherCx, w, opts.weatherLabel);
+    if (weatherW > 0) {
+        const int sep = 4;
+        int x = kPanelW - kVerseMargin - weatherW;
+        if (tag) {
+            dev_drawString(x, kRowY, tag, CC_RED, 1); // red: it changes what the number means
+            x += dev_measureText(tag, 1) + sep;
+        }
+        dev_drawString(x, kRowY, wtbuf, CC_BLACK, 1);
+        if (wcbuf[0])
+            dev_drawString(x + dev_measureText(wtbuf, 1) + sep, kRowY, wcbuf, CC_BLACK, 1);
+    }
 }
 
 // Draw a QR code for `text`, anchored at (x, y), within `maxH` pixels of height.

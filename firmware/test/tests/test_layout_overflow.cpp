@@ -3,6 +3,7 @@
 // highlight robustness and UTF-8 normalisation. All targets the single light,
 // landscape layout.
 #include "../harness/canvas.h"
+#include "draw/weather_icon.h"
 #include "verse_display.h"
 #include <cstdint>
 #include <gtest/gtest.h>
@@ -139,22 +140,18 @@ TEST(Temperature, PositiveTempsStillRoundUp) {
 
 // ---------------------------------------------------- overflow handling ----
 
-TEST(VerseOverflow, LandscapeMarksOverflowAndKeepsDividerIntact) {
+TEST(VerseOverflow, LandscapeMarksOverflowWithoutSpilling) {
     g_canvas.init(296, 128);
     drawLayout(verse(kLongVerse, nullptr, "Proverbs 3:5-6"),
                WeatherData{24.5f, "Partly cloudy", nullptr, WeatherIcon::PartlyCloudy});
 
-    // Verse region is x 4..218 (splitX=226, minus the 8px wall). The marker must
-    // appear inside that region.
-    EXPECT_TRUE(hasOverflowMarker(8, 16, 218, 126)) << "long verse must be visibly marked as truncated";
-    // The divider is at x=226 and the weather column starts at x=227, so the
-    // gutter immediately right of the divider must stay blank. x=230 is NOT part
-    // of that gutter: it legitimately carries weather-column content — the
-    // condition line ("Partly cloudy") sets on ONE centred line in the
-    // proportional font and reaches x=230, where 5x7 wraps it to two lines and
-    // stops short (LESSONS 39).
-    EXPECT_TRUE(rectAllColor(227, 0, 229, 127, CC_WHITE))
-        << "verse text crossed the divider into the weather-column gutter";
+    // The verse block is x 4..291 (the full panel width less the 4px margins). The marker
+    // must appear inside it.
+    EXPECT_TRUE(hasOverflowMarker(8, 18, 291, 105))
+        << "long verse must be visibly marked as truncated";
+    // Nothing may reach the panel's right margin. (There is no divider to cross any more,
+    // so the margin is the only boundary left to police.)
+    EXPECT_TRUE(rectAllColor(293, 18, 295, 110, CC_WHITE)) << "verse text reached the right margin";
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_overflow_landscape.png"));
 }
@@ -167,7 +164,7 @@ TEST(VerseOverflow, FittingVerseHasNoMarker) {
     EXPECT_FALSE(hasOverflowMarker(8, 20, 196, 127)) << "a verse that fits must not be marked as truncated";
 }
 
-TEST(WeatherAlert, TruncatedAlertStaysInsideColumn) {
+TEST(WeatherAlert, TruncatedAlertStaysOnTheFooterRow) {
     g_canvas.init(296, 128);
     WeatherData w = {22.0f, "Heavy rain",
                      "Dense fog and black ice expected overnight in low lying areas, exercise caution on untreated "
@@ -175,12 +172,16 @@ TEST(WeatherAlert, TruncatedAlertStaysInsideColumn) {
                      WeatherIcon::Rain};
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), w);
 
-    // Alert is pinned to the bottom of the weather column (centrex 261, colW 66);
-    // the marker must appear within that column (x 228..294).
-    EXPECT_TRUE(hasOverflowMarker(228, 90, 294, 126)) << "over-long alert must be marked as truncated";
-    // Nothing may spill off the panel's right edge: x 295 is the last content-free
-    // column (wrapped alert text is centred in the 66px weather column, <=x 294).
-    EXPECT_TRUE(rectAllColor(295, 0, 295, 127, CC_WHITE)) << "alert text spilled past the right edge of the panel";
+    // The warning shares the footer row with the weather. An over-long one is truncated
+    // with a VISIBLE marker (it used to be drawn unbounded and ran off the panel).
+    EXPECT_TRUE(hasOverflowMarker(8, 112, 200, 127))
+        << "an over-long warning must be marked as truncated, not silently clipped";
+    // The weather text must survive on the right of the same row.
+    EXPECT_GT(colorCount(200, 112, 295, 127, CC_BLACK), 0)
+        << "the warning overprinted the weather text";
+    // Nothing may spill past the right margin, below the header band.
+    EXPECT_TRUE(rectAllColor(295, 18, 295, 127, CC_WHITE))
+        << "warning text spilled past the right edge of the panel";
 }
 
 // ------------------------------------------------------- highlight rules ---
@@ -233,14 +234,22 @@ TEST(Unicode, TypographicGlyphsRenderAsAsciiEquivalents) {
     EXPECT_EQ(typographicHash, canvasHash()) << "typographic UTF-8 must be normalised to ASCII before drawing";
 }
 
-TEST(Unicode, NonBreakingSpaceDoesNotBreakLayout) {
+TEST(Unicode, NonBreakingSpaceRendersExactlyLikeAPlainSpace) {
+    // The invariant that matters: a NBSP normalises to a space, so the render must be
+    // byte-identical to the same text typed with plain spaces. (The old assertion checked
+    // a divider column that no longer exists.)
     g_canvas.init(296, 128);
     drawLayout(
-        verse("Lord\u00C2\u00A0of\u00C2\u00A0hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
+        // NBSP as RAW BYTES (0xC2 0xA0). A \u00C2\u00A0 escape would encode U+00C2
+        // followed by U+00A0 — "A-hat" plus a NBSP — which is not the same text at all.
+        verse("Lord\xC2\xA0of\xC2\xA0hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
         WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    const std::string withNbsp = canvasHash();
 
-    // Divider at x=226 must stay black (no verse text crosses into weather column).
-    EXPECT_TRUE(rectAllColor(226, 0, 226, 127, CC_BLACK)) << "divider column must be intact";
+    g_canvas.init(296, 128);
+    drawLayout(verse("Lord of hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
+               WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    EXPECT_EQ(withNbsp, canvasHash()) << "NBSP must render exactly as a plain space";
 }
 
 // Adversarial UTF-8 (S2): truncated / overlong sequences must not be read past
@@ -282,13 +291,14 @@ TEST(Unicode, FourByteSequenceCollapsesToSingleReplacement) {
 // drawWeatherIcon actually draws per-icon content and a refactor or new size
 // can't silently regress one icon into another (C3).
 TEST(WeatherIcon, FourIconsAreDistinct) {
-    const char* shortVerse = "Trust in the Lord.";
+    // The layout draws the weather as TEXT now, so this exercises drawWeatherIcon
+    // directly. Driving it through drawLayout would make the test vacuously pass — every
+    // icon would produce an identical render because no icon is drawn at all.
     std::string hashes[4];
 
     for (int i = 0; i < 4; i++) {
         g_canvas.init(296, 128);
-        drawLayout(verse(shortVerse, nullptr, "Prov 3:5"),
-                   WeatherData{21.0f, "Clear", nullptr, static_cast<WeatherIcon>(i)});
+        drawWeatherIcon(getCanvasTarget(), 148, 64, 40, static_cast<WeatherIcon>(i));
         hashes[i] = canvasHash();
     }
 
@@ -302,14 +312,11 @@ TEST(WeatherIcon, FourIconsAreDistinct) {
 
 // The weather icon must actually paint pixels in the column region (not be a no-op).
 TEST(WeatherIcon, SunIconPaintsYellow) {
+    // Same reasoning as above: test the primitive, not the layout.
     g_canvas.init(296, 128);
-    drawLayout(verse("Trust in the Lord.", nullptr, "Prov 3:5"),
-               WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    drawWeatherIcon(getCanvasTarget(), 148, 64, 40, WeatherIcon::Sun);
 
-    // The sun icon (and its rays) are yellow; the weather column (x > 233) must
-    // contain yellow ink beyond the FORECAST header.
-    int yellow = colorCount(233, 20, 295, 127, CC_YELLOW);
-    EXPECT_GT(yellow, 0) << "sun icon must paint yellow pixels in the weather column";
+    EXPECT_GT(colorCount(0, 0, 295, 127, CC_YELLOW), 0) << "the sun icon must paint yellow ink";
 }
 
 // ------------------------------------------------- no-reading honesty ------
@@ -317,7 +324,7 @@ TEST(WeatherIcon, SunIconPaintsYellow) {
 // A failed weather fetch must NOT draw a temperature. The struct is zero-initialised
 // on the device, so without the `valid` flag the panel confidently rendered "0°C" —
 // a fabricated measurement that looks like real data. These tests pin that down.
-TEST(NoReading, InvalidWeatherDrawsNoTemperature) {
+TEST(NoReading, InvalidWeatherDrawsNoWeatherText) {
     g_canvas.init(296, 128);
     WeatherData w{0.0f, nullptr, "OFFLINE: no wifi", WeatherIcon::PartlyCloudy};
     w.valid = false;
@@ -325,30 +332,22 @@ TEST(NoReading, InvalidWeatherDrawsNoTemperature) {
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_noreading.png"));
 
-    // No digit-like black ink anywhere in the weather column now that there is no
-    // reading. Scanning the whole column (rather than one y-range) keeps this honest
-    // regardless of which layout branch ran — a fabricated 0°C showed up as black
-    // glyph ink here, which is exactly what this guards against.
-    const int blackInColumn = colorCount(228, 20, 294, 126, CC_BLACK);
-    EXPECT_EQ(blackInColumn, 0) << "an invalid reading must not render a temperature (was the 0°C fabrication)";
+    // No weather text on the right of the footer row: the struct is zero-initialised, so
+    // without the `valid` flag the panel confidently rendered a fabricated "0°C".
+    EXPECT_EQ(colorCount(150, 112, 295, 127, CC_BLACK), 0)
+        << "an invalid reading must not render a temperature or condition";
 
-    // The explicit notice must be present, so the user is told rather than left blank.
-    const int noticeInk = colorCount(228, 20, 294, 70, CC_RED);
-    EXPECT_GT(noticeInk, 0) << "an invalid reading must state 'No reading'";
+    // The failure is still explained, in red, on the left of the same row.
+    EXPECT_GT(colorCount(4, 112, 150, 127, CC_RED), 0) << "an invalid reading must still say why";
 }
 
 TEST(NoReading, ValidZeroDegreesStillDrawsAVisibleTemperature) {
-    // The counterpart: a GENUINE 0°C reading must still render. This is why the fix is
-    // a validity flag and not "treat 0 as missing" — 0°C is a real temperature.
-    //
-    // Measured range: with no alert the icon grows and the temperature sits at
-    // y=71..84 (the alert layout puts it at y=47..60 instead, which is what the
-    // invalid-reading test above checks).
+    // The counterpart: a GENUINE 0°C reading must still render. This is why the fix is a
+    // validity flag and not "treat 0 as missing" — 0°C is a real temperature.
     g_canvas.init(296, 128);
     WeatherData w{0.0f, "Clear", nullptr, WeatherIcon::Sun};
     w.valid = true;
     drawLayout(verse("Cold morning.", nullptr, "Ref 1:1"), w);
 
-    const int inkAtTempRow = colorCount(228, 70, 294, 86, CC_BLACK);
-    EXPECT_GT(inkAtTempRow, 0) << "a real 0C reading must be displayed";
+    EXPECT_GT(colorCount(150, 112, 295, 127, CC_BLACK), 0) << "a real 0C reading must be displayed";
 }

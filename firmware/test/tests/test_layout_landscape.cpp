@@ -1,16 +1,20 @@
 // test_layout_landscape.cpp — geometry and PNG dump for the single (light,
 // landscape) layout.
+//
+// The layout gives the WHOLE panel to the verse: there is no weather column and no
+// divider. The header band carries WHAT you are reading (the citation, or the word with
+// its respelling) plus the date; a footer row carries status/warnings on the left and the
+// weather as TEXT on the right.
 #include "../harness/canvas.h"
 #include "verse_display.h"
 #include <gtest/gtest.h>
 
-// Layout constants, kept in one place so this test tracks the real geometry:
-//   splitX (divider)            = 226   (see drawLayout in verse_display.cpp)
-//   weather column centre        = (226 + 1 + 296) / 2 = 261
-//   weather column half width    = 28    (FORECAST rule spans 233..289)
-//   wrapped alert col width      = 66    (centered text may reach ~x=294)
-static const int kDividerX     = 226;
-static const int kRightMarginX = 295;     // the last column any content may touch
+// Layout constants, kept here so this test tracks the real geometry (see drawLayout):
+//   header band height = 18 px   (tall enough for the 7pt identity line)
+//   old divider x      = 226     (where the removed weather column used to start)
+static const int kHeaderH      = 18;
+static const int kRightMarginX = 295; // the last column any content may touch
+static const int kOldDividerX  = 226;
 
 static VerseData sampleVerse() {
     return {
@@ -25,24 +29,43 @@ static WeatherData sampleWeather() {
     return { 24.5f, "Partly cloudy", nullptr, WeatherIcon::PartlyCloudy };
 }
 
-TEST(LayoutLandscape, Divider_PngDump_And_RightMargin) {
+TEST(LayoutLandscape, NoDivider_FullWidthVerse_PngDump) {
     g_canvas.init(296, 128);
     drawLayout(sampleVerse(), sampleWeather());
 
-    // Header band at (2, 2) must be yellow.
+    // The header band is yellow and ends exactly at kHeaderH (its last row carries the
+    // black separator rule, so probe one row above it).
     EXPECT_EQ(g_canvas.getPixel(2, 2), CC_YELLOW);
+    EXPECT_EQ(g_canvas.getPixel(2, kHeaderH - 2), CC_YELLOW);
+    EXPECT_EQ(g_canvas.getPixel(2, kHeaderH), CC_WHITE) << "the band must end at kHeaderH";
 
-    // The vertical divider is a solid black column at x = 226, full height.
-    for (int y = 0; y < 128; y++) {
-        EXPECT_EQ(g_canvas.getPixel(kDividerX, y), CC_BLACK)
-            << "divider column x=" << kDividerX << " must be black at y=" << y;
+    // There is NO vertical divider any more: no column is black for the full body height.
+    int fullHeightBlack = 0;
+    for (int x = 0; x < 296; x++) {
+        bool all = true;
+        for (int y = kHeaderH; y < 128 && all; y++)
+            all = (g_canvas.getPixel(x, y) == CC_BLACK);
+        if (all)
+            fullHeightBlack++;
     }
+    EXPECT_EQ(fullHeightBlack, 0) << "the weather-column divider must be gone";
 
-    // Nothing may reach the panel's right edge (no content spills past x 294).
-    for (int y = 0; y < 128; y += 8) {
+    // ...and the verse now USES the space it was denied: body ink exists to the right of
+    // where the divider used to be. This is the point of the redesign, so assert it
+    // positively rather than only asserting the divider is absent.
+    int inkRightOfOldDivider = 0;
+    for (int y = kHeaderH + 2; y < 105; y++)
+        for (int x = kOldDividerX + 1; x <= 292; x++)
+            if (g_canvas.getPixel(x, y) != CC_WHITE)
+                inkRightOfOldDivider++;
+    EXPECT_GT(inkRightOfOldDivider, 0)
+        << "the verse must occupy the full panel width, not stop at the old divider";
+
+    // Nothing may reach the panel's right edge. Start BELOW the header band: the band now
+    // spans the full width, so it legitimately covers the last column.
+    for (int y = kHeaderH; y < 128; y++)
         EXPECT_EQ(g_canvas.getPixel(kRightMarginX, y), CC_WHITE)
-            << "right edge pixel at x=" << kRightMarginX << ", y=" << y << " must stay white";
-    }
+            << "right edge pixel at y=" << y << " must stay white";
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_landscape.png"));
 }

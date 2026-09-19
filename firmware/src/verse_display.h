@@ -71,11 +71,15 @@ bool verseHighlightFound(const VerseData& v);
 // block of maxW x maxH px (the layout's kVerseMaxW / kVerseMaxH). Under
 // CHROMAWOTD_FONT_FREESANS this is the real Roboto 6/5.5/5pt selection; without
 // the flag the ladder is compiled out and the fixed default (5.5pt) is reported.
-enum class VerseFontSize { Pt5, Pt55, Pt6 };
+// Ordered smallest -> largest: the monotonicity test relies on this ordering, so new
+// rungs are APPENDED. The ladder now tops out at 8pt because the verse owns the whole
+// panel width and a larger face is what the device is for (the reader is 55).
+enum class VerseFontSize { Pt5, Pt55, Pt6, Pt7, Pt8 };
 VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH);
 
 // Verse text-block geometry — single source of truth shared by drawLayout()
-// and the auto-size tests (kSplitX 226 - 2 * kVerseMargin 4 = 218 wide; 82 px
-// tall fits 5 lines at the 5.5pt default).
-constexpr int kVerseMaxW = 218;
+// and the auto-size tests. The verse owns the whole panel width now that the
+// weather column is gone: 296 - 2 * kVerseMargin 4 = 288 wide; 82 px tall holds
+// 4 lines at the largest ladder step (8pt, yAdvance 21) and 5 at 6pt.
+constexpr int kVerseMaxW = 288;
 constexpr int kVerseMaxH = 82;

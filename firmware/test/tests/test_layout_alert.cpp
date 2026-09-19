@@ -1,13 +1,20 @@
-// test_layout_alert.cpp — alert banner placement in the single landscape layout.
+// test_layout_alert.cpp — where a status / weather warning appears.
+//
+// Warnings (OFFLINE / PARTIAL, or a severe-weather warning) and the weather text share ONE
+// footer row: the warning at the left in red, the weather at the right in black. Neither
+// may spill off the panel, and an over-long warning must be VISIBLY truncated instead of
+// running off the edge — it used to be drawn unbounded.
 #include "../harness/canvas.h"
 #include "verse_display.h"
 #include <gtest/gtest.h>
 
-// A single canvas column must be uniformly one colour (spill check).
-static bool columnAllColor(int x, int y0, int y1, uint32_t color) {
+static int colorCount(int x0, int y0, int x1, int y1, uint32_t color) {
+    int n = 0;
     for (int y = y0; y <= y1; y++)
-        if (g_canvas.getPixel(x, y) != color) return false;
-    return true;
+        for (int x = x0; x <= x1; x++)
+            if (g_canvas.getPixel(x, y) == color)
+                n++;
+    return n;
 }
 
 static VerseData sampleVerse() {
@@ -19,51 +26,56 @@ static VerseData sampleVerse() {
     };
 }
 
-TEST(LayoutAlert, LandscapeWithAlert) {
+// The footer row: warnings left in red, weather right in black.
+TEST(LayoutAlert, WarningBottomLeft_WeatherBottomRight_PngDump) {
     g_canvas.init(296, 128);
     WeatherData w = { 22.0f, "Heavy rain", "Rain after 4 PM", WeatherIcon::Rain };
     drawLayout(sampleVerse(), w);
 
-    // Red right edge of the column, above the alert, stays white canvas (no spill).
-    EXPECT_EQ(g_canvas.getPixel(294, 50), CC_WHITE);
+    EXPECT_GT(colorCount(4, 112, 150, 127, CC_RED), 0) << "a warning must render bottom-LEFT in red";
+    EXPECT_GT(colorCount(180, 112, 295, 127, CC_BLACK), 0) << "the weather text must render bottom-right";
 
-    // The alert divider is DYNAMIC: drawLandscapeWeatherColumn() computes its y
-    // from the wrapped line count of the alert text (divY = labelY - 3), so the
-    // Roboto path wraps "Rain after 4 PM" into fewer lines and pins the rule
-    // higher than 5x7 does (101 vs the 94 this used to hardcode). Locate the rule
-    // by its actual signature — the red run spanning the caption width
-    // (cx +/- kHalf = 28 px, so >=40 px of contiguous red) — and assert it sits
-    // BELOW the temperature and above the alert text, instead of probing one
-    // pixel whose y depends on the font (LESSONS 39).
-    auto redRunInRow = [](int y) {
-        int best = 0, run = 0;
-        for (int x = 228; x <= 294; x++) {
-            run = (g_canvas.getPixel(x, y) == CC_RED) ? run + 1 : 0;
-            if (run > best) best = run;
-        }
-        return best;
-    };
+    // The weather is not a warning, so the right half of the row must hold no red...
+    EXPECT_EQ(colorCount(200, 112, 295, 127, CC_RED), 0)
+        << "red on the right half would mean the weather was styled as a warning";
 
-    int ruleY = -1;
-    for (int y = 60; y < 128; y++) {
-        if (redRunInRow(y) >= 40) { ruleY = y; break; }
-    }
-    EXPECT_GE(ruleY, 0) << "the red alert divider rule is missing from the weather column";
-
-    if (ruleY >= 0) {
-        // Above the rule: the temperature block ("22") sits in the column and the
-        // temperature row must be red-free (the rule is the first red band down there).
-        EXPECT_EQ(redRunInRow(50), 0) << "red ink above the alert divider where only the temp belongs";
-        // Below the rule: the red ALERT: caption and the wrapped alert text exist.
-        int redBelow = 0;
-        for (int y = ruleY + 1; y < 128; y++)
-            for (int x = 228; x <= 294; x++)
-                if (g_canvas.getPixel(x, y) == CC_RED) redBelow++;
-        EXPECT_GT(redBelow, 0) << "alert caption/text must render red below its divider";
-        // Nothing may spill off the panel's right/bottom edges.
-        EXPECT_TRUE(columnAllColor(295, 0, 127, CC_WHITE))
-            << "alert ink reached the panel's last column";
-    }
+    // ...and nothing may spill off the panel's last column, below the header band (which
+    // spans the full width by design).
+    for (int y = 18; y < 128; y++)
+        EXPECT_EQ(g_canvas.getPixel(295, y), CC_WHITE)
+            << "content reached the panel edge at y=" << y;
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_alert_landscape.png"));
+}
+
+// A long warning must be truncated with a VISIBLE marker rather than running off the panel
+// or overprinting the weather. Regression: the footer drew the alert unbounded.
+TEST(LayoutAlert, OverlongWarningIsVisiblyTruncatedAndStaysInBounds) {
+    g_canvas.init(296, 128);
+    WeatherData w = { 22.0f,
+                      "Heavy rain",
+                      "Dense fog and black ice expected overnight in low lying areas, exercise "
+                      "caution on untreated roads and bridges",
+                      WeatherIcon::Rain };
+    drawLayout(sampleVerse(), w);
+
+    // Truncation is marked with "..." — locate it by its SIGNATURE (isolated dots) rather
+    // than by a fixed coordinate, since the marker's x depends on the text width.
+    int markerX = -1;
+    for (int x = 6; x < 290 && markerX < 0; x++) {
+        bool isolated = g_canvas.getPixel(x, 119) != CC_WHITE &&
+                        g_canvas.getPixel(x - 1, 119) == CC_WHITE &&
+                        g_canvas.getPixel(x + 1, 119) == CC_WHITE;
+        if (isolated && g_canvas.getPixel(x + 3, 119) != CC_WHITE)
+            markerX = x;
+    }
+    EXPECT_GE(markerX, 0) << "an over-long warning must be marked as truncated";
+
+    // The weather text must still be readable on the right, not overprinted.
+    EXPECT_GT(colorCount(180, 112, 295, 127, CC_BLACK), 0)
+        << "the warning overprinted the weather text";
+
+    // And nothing may reach the panel's last column below the band.
+    for (int y = 18; y < 128; y++)
+        EXPECT_EQ(g_canvas.getPixel(295, y), CC_WHITE) << "warning text spilled off the panel edge";
 }

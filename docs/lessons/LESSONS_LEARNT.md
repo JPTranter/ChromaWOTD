@@ -1435,3 +1435,58 @@ Details worth keeping:
   the history; the local run costs seconds.
 
 (2026-09-19)
+
+
+## 53. The verse gets the whole panel — a design change made for readability (RESOLVED)
+
+This is a verse/word display; the weather column occupied 70 of the panel's 296 px (24%). The
+owner reads this panel at 55 and said the text needed to be larger. Measured before changing
+anything, through the device font path:
+
+| verse block width | what the ladder picked |
+|---|---|
+| 218 px (weather column present) | 6pt — already the ladder's ceiling |
+| 288 px (weather column removed) | 8pt |
+
+So the weather WAS costing type size, but not where either of us first assumed: at 218 px the
+ladder was already at its top rung, so the win came from **raising the ceiling**, and the extra
+width is what lets a bigger face still fit its line budget. Final behaviour: 8pt for short and
+medium content, 7pt for longer, 5.5pt for the longest — a floor still above the 5pt the old
+block gave the worst case.
+
+Approved design:
+- **Header band = WHAT you are reading**: the citation, or the word with its respelling, at one
+  size up (7pt), plus the date. The mode name ("Verse of the Day") is gone — it was the least
+  informative text on the panel.
+- **Body = the verse** at the full panel width, auto-sized.
+- **Footer row = status/warnings bottom-LEFT** (red) and **weather as TEXT bottom-RIGHT**. The
+  icon is gone: the condition words carry more than a 10px glyph that only distinguished four
+  states. `TOMORROW` rides with the temperature, in red, only in the evening — without it the
+  number is indistinguishable from today's.
+
+**Three defects found while implementing it:**
+1. **An unbounded draw.** The warning was drawn with a plain `drawString`, so a long one ran off
+   the panel edge. Now `cc_fitText()` truncates with a visible `...` — the same
+   never-silently-clip rule the verse block already followed.
+2. **A guard with the wrong arithmetic.** The header-vs-date collision guard reserved 8px and
+   delivered 2px, because the title's own left margin comes out of the same budget. Fixed to
+   `-12`; the *guaranteed* floor is now what it claims.
+3. **A test that never tested what it said.** `Unicode.NonBreakingSpaceDoesNotBreakLayout` used
+   `\u00C2\u00A0` — a C++ escape for U+00C2 *followed by* U+00A0, i.e. "A-hat" plus a NBSP, not
+   the raw NBSP bytes — and its assertion only checked a divider column. Rewritten to assert the
+   render is byte-identical to the same text with plain spaces, using `\xC2\xA0`.
+
+**Two measurement traps, both already documented and both re-hit here:** a standalone probe
+reported 6pt where the engine said 5.5pt, because without the app's initialisation the wrap
+measurement silently collapses (LESSONS §38); and the first attempt measured `layout_render` in
+the DEFAULT build, where `cc_verseFontSize()` is a stub that ignores its arguments and always
+returns `Pt55`. **Measure the device font path (`build-device`) through the engine's own
+reporter.**
+
+Test/tooling updates: `test_verse_autosize` (new rungs + a floor assertion), `test_layout_landscape`,
+`test_layout_alert` (footer row), seven assertions in `test_layout_overflow` (the icon tests now
+exercise `drawWeatherIcon` directly, since driving them through the layout would have become
+vacuous), and `tools/measure_layout.py` — whose invariants are now band extent, body margin,
+**footer baseline** (warning and weather must share an ink row) and the right edge.
+
+(2026-09-19)

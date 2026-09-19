@@ -118,7 +118,7 @@ The rendering code in `firmware/src/verse_display.cpp` targets both hardware and
 Two rules are enforced in *shared* code so hardware and host can never disagree:
 
 * **UTF-8 is normalised before drawing.** `TFT_eSPI`'s built-in font is ASCII/CP437, so every draw path funnels text through `cc_utf8ToAscii()`, which maps the glyphs real API text contains — `°` (drawn as a vector circle), curly quotes, en/em dashes, non-breaking spaces, ellipsis, `⚠` — onto single ASCII bytes and collapses anything unknown to one `?` per *glyph* (not per byte). Width measurement counts glyphs with the same decoder, so measured width always equals drawn width.
-* **Truncation is never silent.** Each text block computes how many lines the greedy wrapper needs versus how many fit (`cc_wrappedLineCount` / `cc_lineCapacity`). If content will be cut, the final line's width budget is reduced (`cc_lineBudget`) so an ellipsis marker fits inline, and `drawOverflowMarker()` appends `...` (degrading to `..`/`.` only in very narrow columns). Verse text can therefore never spill into the reference rule, the weather strip, or the landscape divider.
+* **Truncation is never silent.** Each text block computes how many lines the greedy wrapper needs versus how many fit (`cc_wrappedLineCount` / `cc_lineCapacity`). If content will be cut, the final line's width budget is reduced (`cc_lineBudget`) so an ellipsis marker fits inline, and `drawOverflowMarker()` appends `...` (degrading to `..`/`.` only in very narrow columns). The footer's status warning uses the same rule via `cc_fitText()`. Verse text can therefore never spill into the footer row or run past the panel margin.
 
 ### 3. Hardware Buttons, Deep-Sleep Wake & Time-Based Content
 
@@ -169,7 +169,7 @@ the **headword** in red at the right.
   handshake needs more stack than the default Arduino `loopTask` provides (see the STACK NOTE
   in `main.cpp`).
 
-| Weather | `api.open-meteo.com/v1/forecast` | `forecast_days=2`; daytime (< 18:00) shows today's expected maximum + condition captioned **FORECAST**; evening (18:00–23:59) shows tomorrow's expected maximum + condition captioned **TOMORROW** |
+| Weather | `api.open-meteo.com/v1/forecast` | `forecast_days=2`; daytime (< 18:00) shows today's expected maximum + condition in the footer row; evening (18:00–23:59) shows tomorrow's expected maximum + condition with a red **TOMORROW** marker (without it the number is indistinguishable from today's) |
 | Verse | `biblegateway.com/votd/get/?format=json&version=NIV` | `docs/research/SCRIPTURE_APIS.md` |
 | Word | `wordsmith.org/words/today.html` | A.Word.A.Day respelling pronunciation; `docs/research/WORD_APIS.md` |
 
@@ -384,7 +384,7 @@ The suites are:
 
 | Suite | Covers |
 | :--- | :--- |
-| `test_layout_landscape` | Single-layout geometry, header band, divider, weather column |
+| `test_layout_landscape` | Single-layout geometry: header band extent, no divider, the verse occupying the full width, the right margin |
 | `test_layout_alert` | Alert banner pinned to the bottom of the weather column; locates the (dynamic) red divider rule by its run-length signature and asserts its relation to the temperature block and alert text |
 | `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers (per font family), temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
 | `test_verse_autosize` | The verse body auto-size ladder (Roboto 6/5.5/5pt) — compiled **with** `-DCHROMAWOTD_FONT_FREESANS=1` so the selection the panel makes is actually covered |
