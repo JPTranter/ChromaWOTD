@@ -85,7 +85,7 @@ signature of a fresh reformat. Not yet proven that `NO_FREE_PAGES` was the speci
 trigger (the core's failure line only logs if the *re*-init fails, so a successful
 reformat is silent).
 
-**Fix implemented 2026-09-19 — awaiting bench verification (LESSONS §48).**
+**Fix implemented and VERIFIED ON HARDWARE 2026-09-19 (LESSONS §48/§50).**
 
 1. **Our config now has its own NVS partition — DONE.** `firmware/partitions.csv` adds a
    dedicated 16 KB `nvs_cfg` (`data, nvs`) entry, `platformio.ini` sets

@@ -1292,3 +1292,71 @@ deterministic structural check with a best-effort behavioural one is how you avo
 diagnostic that can only ever say "inconclusive".
 
 (2026-09-19)
+
+
+## 50. BUG-06 proven on hardware — and the two wrong theories it cost (RESOLVED)
+
+The fill probe settled it. From the device, on the fixed table:
+
+```
+probe: core would erase : label=nvs      offset=0x009000 size=20480 B
+probe: our config lives : label=nvs_cfg  offset=0x670000 size=16384 B
+probe: STRUCTURAL VERDICT = SEPARATED - the core's erase target is a different partition
+probe: fill markers still present = no
+probe: OUR CONFIG still present    = YES
+probe: BEHAVIOURAL VERDICT = shared partition REFORMATTED and our config SURVIVED
+```
+
+Two independent checks agree, and they are deliberately different in kind: the STRUCTURAL one
+compares the partition the core would erase against the one holding our config (valid whether
+or not the fill succeeds), the BEHAVIOURAL one fills the shared partition until writes fail and
+reboots so the core's own `nvs_flash_init()` path runs. A diagnostic whose only evidence is the
+fragile half can only ever report "inconclusive".
+
+**Then Wi-Fi would not connect — and I got the cause wrong twice.**
+
+*Theory 1: the ~20 reformats had destroyed the PHY calibration in the `phy` namespace, so the
+RF chain was deaf.* Plausible, and it justified erasing the shared `nvs` region to force a
+recalibration. It was **wrong**. The scan that should have come FIRST came later:
+
+```
+diag: scan found 21 AP(s); our configured SSID visible = NO
+```
+
+The radio was perfectly healthy. The device was hunting a network it could not see.
+
+**The actual cause: the stored SSID was not the network's name.** After the partition-table
+change the config partition is empty, so the setup portal rendered with a BLANK SSID box and
+the name had to be retyped by hand — and SSIDs are case-sensitive. A factory reset plus a
+careful re-provision fixed it immediately.
+
+Rules:
+- **Reach for the direct observation before the inferential repair.** A Wi-Fi scan answers
+  "can the radio see anything at all?" in five seconds and costs nothing. Erasing calibration
+  to test a theory *about* calibration destroys state to learn what a scan would have said.
+- **A change that empties a stored field turns a re-entry into a fresh chance to mistype it.**
+  Moving the config partition left the portal's SSID box with nothing to pre-fill. A network
+  picker (scan the APs, offer them) would remove that entire class of error — free-text SSIDs
+  are a trap on a device whose only local display is a slow e-paper panel.
+- **Report the actual failure reason, always.** `wifi FAILED` cannot distinguish "AP not in
+  range" from "wrong password" from "join timed out"; a whole bench session went to the wrong
+  branch before the firmware was made to print `wl_status_t`. Enumerate the enum from the
+  installed header rather than assuming its members — this core has no `WL_WRONG_PASSWORD`.
+
+**And the retry loop that lied.** A background flasher spun for 33 minutes (1800 attempts),
+printing "the port may have vanished mid-transfer" every time — while the real error was:
+
+```
+esptool write_flash: error: [Errno 2] No such file or directory: '.../.pio/build/s3/bootloader.bin'
+```
+
+`.pio/build/s3/` had been removed, so every attempt was doomed before it began and the loop's
+own hardcoded message blamed the hardware. `tools/flash_when_awake.py` now (a) verifies the
+build artifacts exist BEFORE waiting for anything, failing immediately with the missing paths
+and the build command, and (b) prints the tool's real error tail on each failure. Both paths
+are covered by a test: a missing env exits 3 instantly, a present env with a sleeping device
+waits and then exits 2.
+
+A retry loop may be patient; it must never be credulous.
+
+(2026-09-19)
