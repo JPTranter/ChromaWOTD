@@ -72,9 +72,11 @@ bool verseHighlightFound(const VerseData& v);
 // CHROMAWOTD_FONT_FREESANS this is the real Roboto 6/5.5/5pt selection; without
 // the flag the ladder is compiled out and the fixed default (5.5pt) is reported.
 // Ordered smallest -> largest: the monotonicity test relies on this ordering, so new
-// rungs are APPENDED. The ladder now tops out at 8pt because the verse owns the whole
-// panel width and a larger face is what the device is for (the reader is 55).
-enum class VerseFontSize { Pt5, Pt55, Pt6, Pt7, Pt8 };
+// rungs are APPENDED. The ladder tops out at 10pt: with the verse owning the whole panel,
+// short content (a short verse, a brief word definition) can carry a much larger face, and
+// the ladder steps down through 9/8/7/6/5.5/5pt as the text needs more room. The reader is
+// 55; bigger type is the point of the device.
+enum class VerseFontSize { Pt5, Pt55, Pt6, Pt7, Pt8, Pt9, Pt10 };
 VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH);
 
 // Verse text-block geometry — single source of truth shared by drawLayout()

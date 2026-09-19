@@ -338,17 +338,20 @@ static int cc_wrappedLineCount(const char* text, int maxW, int size) {
 // drawVerseBlock() so the host suite can assert the selection directly
 // instead of pixel-probing the render (LESSONS §38).
 #ifdef CHROMAWOTD_FONT_FREESANS
+#include "fonts/Roboto10pt7b.h"
 #include "fonts/Roboto7pt7b.h"
 #include "fonts/Roboto8pt7b.h"
+#include "fonts/Roboto9pt7b.h"
 static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
-    static const GFXfont* const candidates[5] = {&Roboto8pt7b, &Roboto7pt7b, &Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b};
+    static const GFXfont* const candidates[7] = {&Roboto10pt7b, &Roboto9pt7b,  &Roboto8pt7b, &Roboto7pt7b,
+                                                 &Roboto6pt7b,  &Roboto55pt7b, &Roboto5pt7b};
     // The wrap measurement routes through cc_advance(), which reads the global
     // g_bodyFont — so the candidate must BE the active body font while its line
     // count is measured (measuring every candidate at one font collapses the
     // ladder; see LESSONS §38).
     const GFXfont* prev = g_bodyFont;
     const GFXfont* pick = &Roboto5pt7b; // nothing fit: smallest font
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 7; i++) {
         g_bodyFont = candidates[i];
         const int cap = cc_lineCapacity(maxH, 1, candidates[i]->yAdvance);
         if (cc_wrappedLineCount(verse, maxW, 1) <= cap) {
@@ -362,6 +365,10 @@ static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
 
 VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH) {
     const GFXfont* f = cc_pickVerseFont(verse, maxW, maxH);
+    if (f == &Roboto10pt7b)
+        return VerseFontSize::Pt10;
+    if (f == &Roboto9pt7b)
+        return VerseFontSize::Pt9;
     if (f == &Roboto8pt7b)
         return VerseFontSize::Pt8;
     if (f == &Roboto7pt7b)

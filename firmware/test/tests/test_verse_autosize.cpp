@@ -11,8 +11,9 @@
 namespace {
 
 // The layout's verse text block (drawLayout -> drawVerseBlock).
-// The verse owns the whole panel now (no weather column), so the block is wider than it
-// was, and the ladder above it now tops out at 8pt rather than 6pt.
+// The verse owns the whole panel now (no weather column), so the block is wider than it was,
+// and the ladder above it tops out at 10pt — the 9/10pt rungs exist so short content (a brief
+// verse, a Word-of-the-Day definition) can use the space it was leaving empty.
 const int kW = kVerseMaxW;   // 288
 const int kH = kVerseMaxH;   // 82
 
@@ -40,9 +41,18 @@ const char* kLongVerse =
 }  // namespace
 
 TEST(VerseAutosize, ShortVerseSelectsTheLargestRung) {
-    // A short verse gets the biggest face the ladder offers — the whole point of giving
-    // the text the full panel width.
-    EXPECT_EQ(cc_verseFontSize(kTodaysVerse, kW, kH), VerseFontSize::Pt8);
+    // A short verse gets the biggest face the ladder offers — the whole point of giving the
+    // text the full panel width, and of raising the ceiling to 10pt for a reader who needs
+    // larger type.
+    EXPECT_EQ(cc_verseFontSize(kTodaysVerse, kW, kH), VerseFontSize::Pt10);
+}
+
+TEST(VerseAutosize, WordDefinitionGetsTheLargestRung) {
+    // The case that motivated the 9/10pt rungs: a Word-of-the-Day definition is typically
+    // short, and at 8pt it left the lower third of the panel empty.
+    const char* definition =
+        "Decedent: a dead person. The decedent's estate was settled by the court.";
+    EXPECT_EQ(cc_verseFontSize(definition, kW, kH), VerseFontSize::Pt10);
 }
 
 TEST(VerseAutosize, MediumVerseSelects7pt) {
@@ -63,7 +73,8 @@ TEST(VerseAutosize, LongestVerseIsStillReadableAtWorst) {
 }
 
 TEST(VerseAutosize, LadderIsMonotonicInLength) {
-    // Longer text never selects a LARGER font (enum order: Pt5 < Pt55 < Pt6 < Pt7 < Pt8).
+    // Longer text never selects a LARGER font (enum order: Pt5 < Pt55 < Pt6 < Pt7 < Pt8 <
+    // Pt9 < Pt10).
     EXPECT_GE(static_cast<int>(cc_verseFontSize(kTodaysVerse, kW, kH)),
               static_cast<int>(cc_verseFontSize(kMediumVerse, kW, kH)));
     EXPECT_GE(static_cast<int>(cc_verseFontSize(kMediumVerse, kW, kH)),
@@ -72,5 +83,5 @@ TEST(VerseAutosize, LadderIsMonotonicInLength) {
 
 TEST(VerseAutosize, EmptyVerseSelectsLargest) {
     // No text wraps to zero lines: the largest font trivially fits.
-    EXPECT_EQ(cc_verseFontSize("", kW, kH), VerseFontSize::Pt8);
+    EXPECT_EQ(cc_verseFontSize("", kW, kH), VerseFontSize::Pt10);
 }
