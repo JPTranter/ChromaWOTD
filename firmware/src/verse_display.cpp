@@ -34,10 +34,12 @@ static DisplayTarget& target() {
 // The whole layout engine measures text in pixel widths assuming a CONSTANT
 // per-glyph advance (CC_GLYPH_W per size unit). That is true of the built-in
 // 5x7 font but NOT of a proportional GFX font. Under CHROMAWOTD_FONT_FREESANS
-// the FreeSans 8pt GFX font is used: every glyph carries its own xAdvance and
-// the line height is the font's yAdvance. All measurement and line-stepping
-// below routes through cc_advance()/cc_measurePx()/cc_lineHeightPs() so the
-// decision is localised here. Default (no flag) is unchanged: 6px * size.
+// (a legacy flag name — the fonts it guards have been Roboto since the
+// 2026-09-12 font work) the proportional GFX font is used: every glyph carries
+// its own xAdvance and the line height is the font's yAdvance. All measurement
+// and line-stepping below routes through cc_advance()/cc_measurePx()/
+// cc_lineHeightPs() so the decision is localised here. Default (no flag) is
+// unchanged: 6px * size.
 // ---------------------------------------------------------------------------
 #ifdef CHROMAWOTD_FONT_FREESANS
 // GFXglyph/GFXfont/PROGMEM come from draw/font_types.h (host shim or device
@@ -329,8 +331,8 @@ static int cc_wrappedLineCount(const char* text, int maxW, int size) {
 // How many lines fit in maxH at this line height.
 // (cc_lineCapacity and cc_lineBudget moved to text/wrap.cpp — pure math.)
 
-// Auto-size the verse body font: the largest of Roboto 6 / 5.5 / 5pt whose
-// wrapped line count still fits the block height. Extracted from
+// Auto-size the verse body font: the largest of Roboto 10 / 9 / 8 / 7 / 6 / 5.5
+// / 5pt whose wrapped line count still fits the block height. Extracted from
 // drawVerseBlock() so the host suite can assert the selection directly
 // instead of pixel-probing the render (LESSONS §38).
 #ifdef CHROMAWOTD_FONT_FREESANS
