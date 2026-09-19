@@ -301,21 +301,42 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
 
 ## Module Map
 
-Implemented 2026-09-12 (REVIEW D1):
+Implemented 2026-09-12 (REVIEW D1), extended as the config/network/scheduling layers landed:
 
 ```
 firmware/src/
   verse_display.h           data structs + enums (VerseData, WeatherData, Theme, Orientation)
+                            — the public contract, and the layout's geometry constants
   verse_display.cpp         font metrics + the layout view functions (header band, verse block, footer row)
-  text/
+  main.cpp                  the cycle: wake → config → portal → sync → render → sleep,
+                            plus the wake-gesture classification
+  text/                     PURE: no backend, no flash — unit-tested directly
     glyphs.{h,cpp}          cc_utf8ToAscii / cc_utf8ToAsciiN — one decoder, length-bounded
     wrap.{h,cpp}            cc_lineCapacity, cc_lineBudget — pure line/budget math
+    date_format.{h,cpp}     cc_formatHeaderDate — "DOW DD MMM", shared by the device and the renders
+  sched/                    PURE policy: decisions, no I/O
+    wake_schedule.{h,cpp}   06:00 / 12:30 / 18:00 next-slot arithmetic
+    content_policy.{h,cpp}  verse-vs-word by hour, the portal's forced mode, the gesture invert
+    hold_gesture.{h,cpp}    tap / short hold / long hold classification + the session driver
+  config/                   DeviceConfig: one struct, one resolution rule
+    config.{h,cpp}          validation, coordinate parsing, bounded copy (host + device)
+    config_active.{h,cpp}   the ONE resolved instance (NVS → built-in defaults)
+    config_nvs.{h,cpp}      Preferences persistence (device) / in-memory stub (host)
+    config_compiletime.h    the built-in defaults — and no credential path, ever
+    tz_map.{h,cpp}          IANA name → POSIX rule
+  net/
+    net.{h,cpp}             shared parse/mapping (WMO codes, HTML entities) + host curl fetch
+    net_host_curl.cpp       the host fetch hook (device fetch is next door)
+    net_impl_esp32.{h,cpp}  the device fetch: Wi-Fi, CA-validated TLS, ArduinoJson
+    portal.{h,cpp}          first-boot captive-portal wizard
+    wifi_qr.{h,cpp}         the Wi-Fi QR payload
   draw/
-    font_types.h            GFXglyph/GFXfont/PROGMEM — host shim or device gfxfont.h
     target.h                DisplayTarget interface
     target_seeed.cpp        Seeed GFX backend (colour mapping, FreeSans glyph draw)
     target_canvas.cpp       host canvas backend (mock + PNG)
-  main.cpp                  application state machine (Phase 2+)
+    font_types.h            GFXglyph/GFXfont/PROGMEM — host shim or device gfxfont.h
+  fonts/                    generated GFX font tables (tools/font_convert.py)
+  third_party/qrcodegen/    vendored QR encoder (Nayuki, MIT)
 ```
 
 **Rationale:** `verse_display.cpp` was split along the seams identified in REVIEW D1.
