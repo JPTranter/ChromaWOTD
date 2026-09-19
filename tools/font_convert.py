@@ -118,7 +118,10 @@ def main():
     print(f"  (uint8_t  *){base}Bitmaps,")
     print(f"  (GFXglyph *){base}Glyphs,")
     print(f"  0x{first:02X}, 0x{last:02X}, {yAdvance}}};")
-    print(f"// Approx. {bitmapOffset + (last - first + 1) * 7 + 7} bytes")
+    # A trailing newline, deliberately: these headers are committed, and the
+    # end-of-file-fixer pre-commit hook rewrites (and thus aborts a commit over) any file
+    # that lacks one — which repeatedly cost a re-stage here (LESSONS §57).
+    print(f"// Approx. {bitmapOffset + (last - first + 1) * 7 + 7} bytes", end="\n")
 
 
 if __name__ == "__main__":
