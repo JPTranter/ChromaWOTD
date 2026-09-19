@@ -1659,6 +1659,33 @@ Rules:
 (2026-09-19)
 
 
+## 60. Two processes on one serial port: the flash loses the race, and it reads as a device fault
+
+Twice in one session a flash appeared to fail against a perfectly healthy bench. The cause was never
+the device: **a capture process was still running and polling the same COM port**, so it won the race
+to open it every time the device woke and the flasher was told "the port is busy or doesn't exist".
+One episode took **18 attempts** before landing; the flash finally succeeded only when the operator
+pressed a button, which had nothing to do with it.
+
+**The tell is the error, not the attempt count:**
+
+| message | meaning |
+|---|---|
+| port ABSENT / `pio device list` empty | the device is deep-asleep — expected, wait or press a button |
+| **"port is busy" / `PermissionError(13, 'Access is denied')`** | **someone else holds it** — find and kill the other process |
+
+Rules:
+- **Stop any capture before arming a flash.** The port is a single exclusive resource on this bench:
+  the flasher, `bench_watch`, `flash_when_awake`, a follow-capture and `verify_flash` all need it, and a
+  long-running observer will starve every one of them.
+- **Read the error, not the retry count.** "Absent" and "busy" have opposite remedies.
+- **`flash_when_awake.py` hides this by design.** It retries until the deadline, so the symptom is a
+  long silent wait rather than a failure — a high attempt count in its output is the signal to go
+  looking for a competing process, not to keep pressing the button.
+
+(2026-09-19)
+
+
 ## 56. Morning wake moved to 06:00 — and why the old numbers stay in the history (RESOLVED)
 
 Requested change: the three slots are now **06:00 / 12:30 / 18:00** (`sched/wake_schedule.cpp`).
