@@ -981,7 +981,7 @@ factory-fresh device. The choice of release artifact *is* the choice of behaviou
   same defaults WILL drift; the duplication survived because nothing compared them.
 - **A gesture that spans deep sleep cannot be timed with `millis()`.** A "hold for 10 s" reset
   cannot know how long the user held before the boot, because the press *is* the wake source.
-  Sample the level repeatedly instead (pure logic in `sched/factory_reset.cpp`, so it is
+  Sample the level repeatedly instead (pure classifier in `sched/hold_gesture.cpp`, so it is
   testable without hardware). Read such buttons through the RTC domain (`rtc_gpio_*`), never
   `pinMode`/`digitalRead`, which hands the pad back to the digital domain (§34).
 - **Generator functions should take their entropy as an argument.** `cc_portalMakeInfo()` is

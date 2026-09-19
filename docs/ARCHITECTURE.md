@@ -252,8 +252,10 @@ The device prioritizes maintaining a coherent ePaper image with visible diagnost
   `ChromaWOTD-<MAC>` + DNS catch-all + a form on `192.168.4.1`. The AP password is
   regenerated per boot and shown on the ePaper; it is never persisted, so a
   captured password is useless once the device leaves setup mode.
-- **Factory reset:** hold any button ≥10 s through a button wake
-  (`sched/factory_reset.cpp`), which erases the namespace and returns to the portal.
+- **Factory reset:** hold any button ≥10 s through a button wake — the gesture is classified
+  by length in `sched/hold_gesture.{h,cpp}` and the sampling lives in `main.cpp` (it must use the
+  RTC domain). It erases the namespace via `cc_configEraseNvs()` in `config/config_nvs.cpp` and
+  returns to the portal.
 - **Output:** never logged. The firmware reports only `(set)` / `(empty)`, and
   `Serial.printf` must not be given a credential field.
 - **Two different "timezone" needs, deliberately separated:** the local clock uses a

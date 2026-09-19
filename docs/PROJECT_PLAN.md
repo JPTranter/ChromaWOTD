@@ -42,7 +42,10 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
       for SSID/passphrase, timezone, coordinates, device name and content mode;
       values validated and written to NVS (`config/`, `net/portal.cpp`).
 - [x] **Factory Reset** (2026-09-13): 10 s button hold through a button wake wipes
-      the NVS namespace and returns to the setup portal (`sched/factory_reset.cpp`).
+      the NVS namespace and returns to the setup portal. The gesture is classified by
+      hold length in `sched/hold_gesture.{h,cpp}` (`CC_HOLD_RESET_MS`), sampled in
+      `main.cpp` in the RTC domain, and the erase is `cc_configEraseNvs()`
+      (`config/config_nvs.cpp`).
 - [x] **Button Hardware Interaction & Deep Sleep Wake** (Phase 5, 2026-09-12):
   - [x] `ext1` multi-button deep sleep wake mask — **BUTTON1/2/3 = GPIO2/GPIO3/GPIO8
         (D1/D2/D9)**, active-low, all RTC-capable. **D0/GPIO1 is `BAT_ADC`**, not a button.
