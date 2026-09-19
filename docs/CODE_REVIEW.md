@@ -61,7 +61,7 @@ after the fixes. Four items are re-graded or extended — see the Notes column.
 | INC-03 | P3 | **FIXED** | Host `net.cpp` now reads `cc_configActive()` like the device path does. |
 | INC-04 | P3 | **FIXED** | The SSID input echoes its value (HTML-escaped) like the other fields, so a validation failure no longer empties it. |
 | INC-05 | P3 | **FIXED** | `WiFi.softAPdisconnect(true)` on portal exit. |
-| INC-06 | P3 | **FIXED** | `bench_watch.py` auto-detects the first serial port; `--port` still overrides. |
+| INC-06 | P3 | **FIXED (reworked)** | Auto-detect the first serial port, but **fall back to a named port and wait** when none is present. The suggestion taken literally — resolve at startup, error when nothing is detected — broke BOTH modes on a sleeping device, which is their normal state (the port does not exist until the device wakes). Caught when the tool was first run for real; see §Extra. |
 | DOC-01 | P2 | **FIXED** | `docs/STATUS.md` header, the stale "Next steps" list and the false "hardcoded fixture / never sleeps" line corrected; a review-fix row added. |
 | DOC-02 | P2 | **FIXED** | `docs/ARCHITECTURE.md` header, the button-toggle and `secrets.h` claims, the weather URL/`timezone` description and the CA description. |
 | DOC-03 | P3 | **FIXED** | Both `[eClock](../eClock)` links — line 7 **and line 284**, which this review did not cite — de-linked. |
@@ -82,6 +82,14 @@ after the fixes. Four items are re-graded or extended — see the Notes column.
 - **The `> 0` checks on the other NVS string keys were also wrong** (the mirror image of
   BUG-05): a legitimately empty value — an open network's blank passphrase — makes `putBytes()`
   return 0 and would have been reported as a write failure.
+- **INC-06 was implemented as written and it broke the tool.** The finding was right about the
+  smell and wrong about the fix: `bench_watch.py`'s modes are built to WAIT for a port that does
+  not exist while the device deep-sleeps (`--presence` treats absence as the sleep signal,
+  `--capture` waits for the port to appear). Erroring out when nothing was detected therefore
+  failed in exactly the state the tool observes. Reworked to prefer a detected port and
+  otherwise fall back to a named one and keep waiting (`FALLBACK_PORT`). Re-verified in the
+  failing state: with no port present the tool waits and exits 0. See LESSONS §47 — a reminder
+  that a finding's *suggested remediation* deserves the same scrutiny as its diagnosis.
 
 ---
 

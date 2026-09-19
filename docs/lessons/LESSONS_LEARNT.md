@@ -1153,4 +1153,41 @@ The regression is now covered by a host test: `cc_resolveContentMode()` is pure 
 `test_sched.cpp` locks the forced-mode behaviour — which is how "a stored setting nothing
 reads" should have been caught in the first place.
 
-(2026-09-18)
+**A review finding can be right about the smell and wrong about the fix — check it against the
+tool's contract.** INC-06 read "`bench_watch.py` hardcodes `DEFAULT_PORT = "COM13"`; it should
+fall back to auto-detecting serial ports via `list_serials()`". Reasonable on its face, and I
+implemented it literally: resolve the port at startup, and error out if nothing is detected.
+That silently BROKE both modes, because the port genuinely does not exist while the device
+deep-sleeps — which is the state the tool exists to observe. `--presence` treats absence as the
+sleep signal and `--capture` waits for the port to *appear*, so demanding a port up front
+guarantees failure in the normal case. It was caught only when actually used, on a sleeping
+device, and had been committed as "FIXED".
+
+The correct shape keeps both intents: auto-detect when a port IS present (so the COM number can
+change with the USB port/hub), and otherwise fall back to a named port and let the mode WAIT for
+it (`FALLBACK_PORT`, with a message saying absence is expected). The distinction that matters is
+between a *default* and a *requirement*.
+
+Two general rules fall out:
+- **Verify a finding against the artefact's purpose, not just its code.** "Hardcoded value" is a
+  smell; whether it is a *defect* depends on whether the value must be present at that moment.
+- **A tool that observes a sleeping device must never require the device to be awake.** For any
+  wait-for-X mode, the absent state is the entry state, not an error.
+
+(2026-09-19)
+
+## 47. A review fix can pass every test and still break the tool (RESOLVED)
+
+See the closing note of §46: implementing INC-06 as written ("error when no port is detected")
+made `bench_watch.py` exit 2 with `no serial port detected` whenever the device was asleep. The
+host suite does not cover `tools/` scripts, so nothing failed; the breakage surfaced the first
+time the tool was run for real, against a sleeping board, during the flash of the DES-01 build.
+Fixed by falling back to a named port and waiting, and re-verified in the failing state (no port
+present → the tool waits instead of erroring, exit 0).
+
+The lesson generalises past this repo: **tooling changes are untested code unless you run the
+tool in the state it was designed for.** For a bench tool that state is "device asleep with no
+serial port", which is precisely the state a developer is least likely to have when they
+edit it.
+
+(2026-09-19)
