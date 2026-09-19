@@ -822,7 +822,7 @@ static int drawPortalQrCode(const char* text, int x, int y, int maxH) {
 // phone joins the AP with no typing), and the same credentials in text on the RIGHT
 // as the fallback, with the setup URL. The QR is square and needs a quiet zone, so
 // most of the right side is text at size 1.
-void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
+void cc_portalDrawScreen(const PortalInfo& info, PortalNotice notice, const char* statusLine) {
     static constexpr int kW = 296;
     static constexpr int kH = 128;
     static constexpr int kHeaderH = 16;
@@ -832,10 +832,14 @@ void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine) {
     dev_drawString(6, 4, "ChromaWOTD setup", CC_BLACK, 1);
     dev_drawFastHLine(0, kHeaderH - 1, kW, CC_BLACK);
 
-    if (statusLine && statusLine[0]) {
-        // A rejected save: show the reason in red rather than the steps, so it is
-        // unambiguous why the panel came back to this screen.
-        dev_drawString(6, 24, "Could not save:", CC_RED, 1);
+    if (notice != PortalNotice::None && statusLine && statusLine[0]) {
+        // Show the reason in red rather than the setup steps, so it is unambiguous why the
+        // panel came back here. The HEADING depends on what actually happened: a rejected
+        // save and a report that stored settings were lost are different situations, and
+        // labelling the second one "Could not save:" would be plainly wrong.
+        const char* heading =
+            (notice == PortalNotice::SettingsLost) ? "Settings lost:" : "Could not save:";
+        dev_drawString(6, 24, heading, CC_RED, 1);
         drawWrappedTextCentered(kW / 2, 36, kW - 12, 84, statusLine, CC_RED, 1, 10);
         return;
     }

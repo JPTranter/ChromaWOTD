@@ -152,6 +152,13 @@ static bool g_tomorrow = false;
 static bool g_haveTime = false;
 static char g_date[32] = ""; // "YYYY-MM-DD" for the header
 
+// Had this device been configured before? RTC memory survives DEEP SLEEP — the mode this
+// device spends its life in — so this catches a configuration wipe across a sleep (the
+// failure mode in LESSONS §45) but NOT across a power cycle, which legitimately looks like
+// a first boot. Its only job is to make a silent loss *explained* on the panel instead of
+// indistinguishable from a fresh setup.
+RTC_DATA_ATTR static uint32_t g_wasProvisioned = 0;
+
 #ifdef CHROMAWOTD_WIFI_DIAG
 // --- Wi-Fi reachability diagnostic (env:wifidiag) -----------------------------
 // A join failing with WL_NO_SSID_AVAIL means the SSID was never SEEN in a scan, which
@@ -671,6 +678,8 @@ void setup() {
     Serial.printf("config: source=%s ssid=%s tz=%s\n", hadNvs ? "nvs" : "compile-time",
                   g_cfg.ssid[0] ? "(set)" : "(empty)", // never log the SSID itself
                   g_cfg.timezone);
+    if (cc_configIsProvisioned(g_cfg))
+        g_wasProvisioned = 1;
 
 #ifdef CHROMAWOTD_NVS_FILL_PROBE
     runNvsFillProbe(); // env:nvsprobe / env:nvsprobe_legacy; never returns on stage 0
@@ -698,6 +707,7 @@ void setup() {
         if (reset) {
             Serial.println("reset: wiping stored configuration");
             cc_configEraseNvs();
+            g_wasProvisioned = 0; // deliberate wipe: not a loss to report
             // Rebuild from defaults so the wipe is visible immediately, then fall
             // into the setup portal below (the SSID will be empty).
             cc_configInit();
@@ -713,7 +723,13 @@ void setup() {
     if (!cc_configIsProvisioned(g_cfg)) {
         PortalInfo pinfo;
         cc_portalMakeInfo((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), esp_random(), &pinfo);
-        cc_portalDrawScreen(pinfo, nullptr);
+        // Explain a LOSS rather than presenting a first boot: if RTC memory says this device
+        // had been configured, the settings went away without a factory reset (LESSONS §45).
+        const bool lost = (g_wasProvisioned != 0);
+        if (lost)
+            Serial.println("setup: WARN no stored configuration, but this device WAS provisioned before");
+        cc_portalDrawScreen(pinfo, lost ? PortalNotice::SettingsLost : PortalNotice::None,
+                            lost ? "The saved settings are gone. Please set up again." : nullptr);
         epaper.update(); // panel is the only channel the user can read
         epaper.sleep();
 

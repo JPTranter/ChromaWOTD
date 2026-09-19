@@ -88,6 +88,26 @@ bool putStr(Preferences& p, const char* key, const char* value, size_t cap) {
     // Length WITHOUT a trailing NUL; readStr() adds it back on the way out.
     return p.putBytes(key, value, n) == n;
 }
+
+// Read the configuration back from flash and compare it against what was just written.
+//
+// This is the read-back check BUG-06's plan called for: a silently-failed NVS write was
+// indistinguishable from a successful one, because the per-key return codes could not
+// express failure (see putStr above) and nothing ever verified the result. The portal now
+// refuses to report "saved" unless the values are really in flash.
+bool verifyStored(const DeviceConfig& want) {
+    DeviceConfig got{};
+    cc_configDefaults(&got); // start from defaults, then overlay what is actually stored
+    if (!cc_configLoadFromNvs(&got))
+        return false; // nothing came back at all
+    return strncmp(want.ssid, got.ssid, sizeof(want.ssid)) == 0 &&
+           strncmp(want.passphrase, got.passphrase, sizeof(want.passphrase)) == 0 &&
+           strncmp(want.timezone, got.timezone, sizeof(want.timezone)) == 0 &&
+           strncmp(want.hostname, got.hostname, sizeof(want.hostname)) == 0 &&
+           strncmp(want.configuredBy, got.configuredBy, sizeof(want.configuredBy)) == 0 &&
+           want.latitude == got.latitude && want.longitude == got.longitude &&
+           want.contentMode == got.contentMode;
+}
 } // namespace
 
 bool cc_configLoadFromNvs(DeviceConfig* cfg) {
@@ -143,7 +163,9 @@ bool cc_configSaveToNvs(const DeviceConfig& cfg) {
     ok &= p.putUChar(kKeyMagic, 1) > 0;
 
     p.end();
-    return ok;
+    // Verify by reading it all back: return codes alone cannot express a silent NVS write
+    // failure, and the portal must not report "saved" unless the values are really there.
+    return ok && verifyStored(cfg);
 }
 
 bool cc_configEraseNvs() {
