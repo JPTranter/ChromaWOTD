@@ -1254,3 +1254,41 @@ useless, and the same fix applies — check the checker against values you can s
 believing its conclusion about values you cannot.
 
 (2026-09-19)
+
+
+## 49. RTC_DATA_ATTR does not survive ESP.restart() — use RTC_NOINIT_ATTR (RESOLVED)
+
+The NVS fill probe kept its stage flag in `RTC_DATA_ATTR`, set it to 1, called `ESP.restart()`,
+and expected to read stage 1 on the next boot. Instead every boot printed `stage=0`, so the
+device filled the shared NVS partition and rebooted again — endlessly. From the bench that just
+looks like "the device stopped working".
+
+**Why.** `RTC_DATA_ATTR` places the variable in `.rtc.data`, which the bootloader RE-INITIALISES
+from the flash image on every reset EXCEPT a deep-sleep wake. That single exception is exactly
+what makes it the right choice for state across deep sleep (e.g. the `g_ext1Streak` wake-storm
+counter, which is correct as-is). A software reset is not that exception, so the flag was
+restored to its initialiser every time.
+
+**Fix.** `RTC_NOINIT_ATTR` puts it in `.rtc_noinit`, which is not initialised across resets at
+all. Because a cold boot therefore leaves it holding arbitrary values, it must be validated —
+here a magic plus a range check (`stage > 1 -> 0`), so garbage cannot be mistaken for a valid
+stage.
+
+Rules:
+- **State that must survive `ESP.restart()`/any reset: `RTC_NOINIT_ATTR` + a validity check.
+  `RTC_DATA_ATTR` is for deep-sleep wakes only.** Both macros are defined in the core's
+  `esp_attr.h` (`.rtc.data` vs `.rtc_noinit`) — read them rather than assuming.
+- **A self-rebooting diagnostic needs a guard that itself survives the reboot**, or "run the
+  test once" silently becomes "run it forever".
+- **The blast radius of the loop was flash wear**: it erased and refilled a partition every ~3 s
+  while looping. An endless loop is damage, not just noise.
+
+**The probe also gained a second, independent proof.** Because the behavioural fill may or may
+not force a reformat, the probe now FIRST asks the partition table the question directly: which
+partition would the core erase (`esp_partition_find_first(DATA, NVS, NULL)`), and which holds
+our config (`esp_partition_find_first(DATA, NVS, "nvs_cfg")`)? If they differ, the erase cannot
+reach us — a structural answer that is valid whether or not the fill succeeds. Pairing a
+deterministic structural check with a best-effort behavioural one is how you avoid a
+diagnostic that can only ever say "inconclusive".
+
+(2026-09-19)

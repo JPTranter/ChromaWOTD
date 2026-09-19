@@ -306,40 +306,86 @@ static void runButtonProbe() {
 
 #ifdef CHROMAWOTD_NVS_FILL_PROBE
 // --- Destructive NVS-fill diagnostic (env:nvsprobe / env:nvsprobe_legacy) -------
-// Reproduces BUG-06 (LESSONS §45) deterministically and reports what survived.
+// Establishes BUG-06 two independent ways (LESSONS §45/§48):
 //
-// The fault: the Arduino core's initArduino() erases a whole partition when
-// nvs_flash_init() returns ESP_ERR_NVS_NO_FREE_PAGES, and it picks that partition with
-// a NULL label — i.e. the FIRST `data, nvs` entry in the table, which on the legacy
-// layout is the 20 KB `nvs` shared with the WiFi stack. Fill that partition and the
-// credentials stored in it are gone with it.
+//   (1) STRUCTURAL, always conclusive: ask the partition table which partition the
+//       core would erase, and which partition holds our config. The core finds its
+//       erase target with a NULL label -- esp_partition_find_first(DATA, NVS, NULL),
+//       i.e. the FIRST data/nvs entry. If our config is in a different partition,
+//       that erase cannot reach it.
+//   (2) BEHAVIOURAL: fill the SHARED `nvs` until writes fail, reboot so
+//       nvs_flash_init() runs against a full partition, then report whether the fill
+//       markers were wiped and whether our config survived.
 //
-// Run it as a PAIR, which is the whole point — this demonstrates the fix instead of
-// asserting it:
-//   env:nvsprobe_legacy -> config shares `nvs`          -> config DESTROYED
-//   env:nvsprobe        -> config in its own `nvs_cfg`  -> config SURVIVES
+// Run as a PAIR: env:nvsprobe_legacy (old table) vs env:nvsprobe (new table).
 //
-// Stage 0: fill the shared namespace until writes fail, then reboot so the core's
-//          nvs_flash_init() runs against a genuinely full partition.
-// Stage 1: report the damage and the verdict, then sleep (no portal, no ~25 s sweep) so
-//          the diagnostic stays short and re-runnable.
+// STAGE PERSISTENCE -- the bug in the first version of this probe. RTC_DATA_ATTR
+// lives in `.rtc.data`, which IS re-initialised on every boot except a deep-sleep
+// wake; it therefore did NOT survive the ESP.restart() below, the stage reset to 0,
+// and the probe filled and rebooted the device forever. `.rtc_noinit`
+// (RTC_NOINIT_ATTR) is the section left alone across a reset. It is uninitialised on
+// a cold boot, so it is validated with a magic.
 #include <Preferences.h>
+#include <esp_partition.h>
 #include <nvs.h>
 
-RTC_DATA_ATTR static uint32_t g_nvsFillStage = 0;
+RTC_NOINIT_ATTR static uint32_t g_nvsProbeMagic;
+RTC_NOINIT_ATTR static uint32_t g_nvsProbeStage;
+static const uint32_t kProbeMagic = 0xC0FFEE42u;
 
-static void cc_nvsStats(const char* when) {
+static uint32_t probeStage() {
+    if (g_nvsProbeMagic != kProbeMagic || g_nvsProbeStage > 1)
+        return 0; // cold boot: .rtc_noinit holds arbitrary values
+    return g_nvsProbeStage;
+}
+
+static void setProbeStage(uint32_t s) {
+    g_nvsProbeMagic = kProbeMagic;
+    g_nvsProbeStage = s;
+}
+
+static void cc_sharedNvsStats(const char* when) {
     nvs_stats_t st = {};
     if (nvs_get_stats(nullptr, &st) == ESP_OK) {
-        Serial.printf("probe: %s shared-nvs entries used=%u free=%u total=%u namespaces=%u\n", when,
+        Serial.printf("probe: %s shared-nvs: used=%u free=%u total=%u namespaces=%u\n", when,
                       (unsigned)st.used_entries, (unsigned)st.free_entries, (unsigned)st.total_entries,
                       (unsigned)st.namespace_count);
     } else {
-        Serial.printf("probe: %s shared-nvs stats unavailable\n", when);
+        Serial.printf("probe: %s shared-nvs: stats unavailable\n", when);
     }
 }
 
-// Are our fill markers still there? Absent => the shared partition was reformatted.
+// (1) Structural: can the core's erase reach the partition our config lives in?
+static void cc_structuralCheck() {
+    const esp_partition_t* eraseTarget =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, nullptr);
+    const esp_partition_t* cfgPart =
+        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, "nvs_cfg");
+
+    Serial.println("probe: --- structural check (the core erases the FIRST data/nvs entry) ---");
+    if (eraseTarget) {
+        Serial.printf("probe: core would erase : label=%-8s offset=0x%06x size=%u B\n",
+                      eraseTarget->label, (unsigned)eraseTarget->address, (unsigned)eraseTarget->size);
+    } else {
+        Serial.println("probe: core would erase : <none found>");
+    }
+    if (cfgPart) {
+        Serial.printf("probe: our config lives : label=%-8s offset=0x%06x size=%u B\n",
+                      cfgPart->label, (unsigned)cfgPart->address, (unsigned)cfgPart->size);
+    } else {
+        Serial.println("probe: our config lives : <NO 'nvs_cfg' partition in this table>");
+    }
+
+    if (!cfgPart || cfgPart == eraseTarget) {
+        Serial.println("probe: STRUCTURAL VERDICT = VULNERABLE - our config shares the partition the "
+                       "core erases");
+    } else {
+        Serial.println("probe: STRUCTURAL VERDICT = SEPARATED - the core's erase target is a "
+                       "different partition, so it cannot touch our config");
+    }
+}
+
+// Are our fill markers still present? Absent => the shared partition was reformatted.
 static bool cc_fillMarkersPresent() {
     Preferences p;
     if (!p.begin("nvsfill", /*readOnly=*/true))
@@ -350,18 +396,18 @@ static bool cc_fillMarkersPresent() {
 }
 
 static void runNvsFillProbe() {
+    const uint32_t stage = probeStage();
     Serial.println();
     Serial.println("=== CHROMAWOTD NVS FILL PROBE (destructive) ===");
-    Serial.printf("probe: stage=%u  (0=fill, 1=report)\n", (unsigned)g_nvsFillStage);
+    Serial.printf("probe: stage=%u (0=fill, 1=report)\n", (unsigned)stage);
     Serial.printf("probe: config provisioned=%s\n", cc_configIsProvisioned(g_cfg) ? "YES" : "no");
-    cc_nvsStats("before:");
+    cc_sharedNvsStats("at-start:");
+    cc_structuralCheck();
 
-    if (g_nvsFillStage == 0) {
+    if (stage == 0) {
         if (!cc_configIsProvisioned(g_cfg)) {
-            // Without a stored configuration there is nothing to lose, so the result
-            // would be meaningless and would look like a false "destroyed" verdict.
-            Serial.println("probe: ABORT - the device is not provisioned. Configure it via the "
-                           "setup portal first, or the test proves nothing.");
+            Serial.println("probe: ABORT - device is not provisioned, so there is no config to lose "
+                           "and the result would be meaningless. Configure it first.");
             Serial.flush();
             return;
         }
@@ -371,23 +417,41 @@ static void runNvsFillProbe() {
             Serial.flush();
             return;
         }
+        const size_t freeBefore = p.freeEntries();
+        Serial.printf("probe: Preferences::freeEntries() before fill = %u\n", (unsigned)freeBefore);
         Serial.println("probe: filling the SHARED 'nvs' partition until writes fail...");
+
         uint32_t written = 0;
-        size_t last = 0;
-        for (uint32_t i = 0; i < 20000; i++) {
+        size_t last = 1;
+        uint32_t failedAt = 0;
+        for (uint32_t i = 0; i < 4000; i++) {
             char key[16];
             snprintf(key, sizeof(key), "f%05u", (unsigned)i);
             last = p.putUChar(key, (uint8_t)i);
-            if (last != 1)
+            if (last != 1) {
+                failedAt = i;
                 break;
+            }
             written++;
         }
+        // Read a key straight back. The first version reported "332 keys accepted" while
+        // nvs_get_stats showed NO change in used entries; those cannot both be true, so
+        // the fill is now measured rather than assumed.
+        const uint8_t firstVal = p.getUChar("f00000", 0xAA); // 0xAA = "missing"
+        const bool readBack = (firstVal == 0);
+        const size_t freeAfter = p.freeEntries();
         p.end();
-        cc_nvsStats("filled:");
-        Serial.printf("probe: %u keys accepted, then putUChar returned %u\n", (unsigned)written,
-                      (unsigned)last);
-        g_nvsFillStage = 1;
-        Serial.println("probe: rebooting so the core's nvs_flash_init() sees a full partition...");
+
+        Serial.printf("probe: wrote %u keys, first failure at index %u (putUChar -> %u)\n",
+                      (unsigned)written, (unsigned)failedAt, (unsigned)last);
+        Serial.printf("probe: first key read-back = %s\n",
+                      readBack ? "OK (writes persisted)" : "MISMATCH (writes did not persist)");
+        Serial.printf("probe: freeEntries() after fill = %u (was %u)\n", (unsigned)freeAfter,
+                      (unsigned)freeBefore);
+        cc_sharedNvsStats("filled:");
+
+        setProbeStage(1);
+        Serial.println("probe: rebooting so the core's nvs_flash_init() runs on this partition");
         Serial.flush();
         delay(200);
         ESP.restart(); // does not return
@@ -396,20 +460,20 @@ static void runNvsFillProbe() {
     // --- Stage 1: nvs_flash_init() has already run during THIS boot. --------------
     const bool markers = cc_fillMarkersPresent();
     const bool provisioned = cc_configIsProvisioned(g_cfg);
-    cc_nvsStats("after:");
-    Serial.printf("probe: fill markers still present=%s\n", markers ? "YES" : "no");
-    Serial.printf("probe: OUR CONFIG still present=%s\n", provisioned ? "YES" : "no");
+    cc_sharedNvsStats("after:");
+    Serial.printf("probe: fill markers still present = %s\n", markers ? "YES" : "no");
+    Serial.printf("probe: OUR CONFIG still present    = %s\n", provisioned ? "YES" : "no");
     if (markers) {
-        Serial.println("probe: VERDICT = INCONCLUSIVE - the shared partition was not full "
-                       "enough to force a reformat");
+        Serial.println("probe: BEHAVIOURAL VERDICT = INCONCLUSIVE - the fill did not force a "
+                       "reformat (markers survived)");
     } else if (provisioned) {
-        Serial.println("probe: VERDICT = shared partition REFORMATTED and our config SURVIVED "
-                       "=> BUG-06 is FIXED");
+        Serial.println("probe: BEHAVIOURAL VERDICT = shared partition REFORMATTED and our config "
+                       "SURVIVED => BUG-06 is FIXED");
     } else {
-        Serial.println("probe: VERDICT = our config was DESTROYED along with the shared "
+        Serial.println("probe: BEHAVIOURAL VERDICT = our config was DESTROYED with the shared "
                        "partition => BUG-06 REPRODUCED (pre-fix behaviour)");
     }
-    Serial.println("=== end NVS fill probe: sleeping; reflash to run again ===");
+    Serial.println("=== end NVS fill probe: sleeping; power-cycle to run the fill again ===");
     Serial.flush();
 #ifdef CHROMAWOTD_DEEP_SLEEP
     esp_sleep_enable_timer_wakeup(60ULL * 1000000ULL);
