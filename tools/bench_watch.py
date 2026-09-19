@@ -169,7 +169,9 @@ def main():
         if detected:
             args.port = detected[0]
             if len(detected) > 1:
-                print(f"note: {len(detected)} ports found ({', '.join(detected)}); using {args.port}")
+                print(
+                    f"note: {len(detected)} ports found ({', '.join(detected)}); using {args.port}"
+                )
             else:
                 print(f"using detected port {args.port}")
         else:

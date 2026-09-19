@@ -177,9 +177,8 @@ static void runWifiDiag() {
 
     nvs_stats_t st = {};
     if (nvs_get_stats(nullptr, &st) == ESP_OK) {
-        Serial.printf("diag: shared nvs: used=%u free=%u total=%u namespaces=%u\n",
-                      (unsigned)st.used_entries, (unsigned)st.free_entries, (unsigned)st.total_entries,
-                      (unsigned)st.namespace_count);
+        Serial.printf("diag: shared nvs: used=%u free=%u total=%u namespaces=%u\n", (unsigned)st.used_entries,
+                      (unsigned)st.free_entries, (unsigned)st.total_entries, (unsigned)st.namespace_count);
     } else {
         Serial.println("diag: shared nvs: stats unavailable");
     }
@@ -207,8 +206,7 @@ static void runWifiDiag() {
         if (want[0] && WiFi.SSID(i) == want)
             foundOwn = true;
     }
-    Serial.printf("diag: scan found %d AP(s); our configured SSID visible = %s\n", n,
-                  foundOwn ? "YES" : "NO");
+    Serial.printf("diag: scan found %d AP(s); our configured SSID visible = %s\n", n, foundOwn ? "YES" : "NO");
     if (n == 0)
         Serial.println("diag: NO APs visible at all -> the RF chain is the problem, not "
                        "the credentials");
@@ -419,9 +417,8 @@ static void setProbeStage(uint32_t s) {
 static void cc_sharedNvsStats(const char* when) {
     nvs_stats_t st = {};
     if (nvs_get_stats(nullptr, &st) == ESP_OK) {
-        Serial.printf("probe: %s shared-nvs: used=%u free=%u total=%u namespaces=%u\n", when,
-                      (unsigned)st.used_entries, (unsigned)st.free_entries, (unsigned)st.total_entries,
-                      (unsigned)st.namespace_count);
+        Serial.printf("probe: %s shared-nvs: used=%u free=%u total=%u namespaces=%u\n", when, (unsigned)st.used_entries,
+                      (unsigned)st.free_entries, (unsigned)st.total_entries, (unsigned)st.namespace_count);
     } else {
         Serial.printf("probe: %s shared-nvs: stats unavailable\n", when);
     }
@@ -436,14 +433,14 @@ static void cc_structuralCheck() {
 
     Serial.println("probe: --- structural check (the core erases the FIRST data/nvs entry) ---");
     if (eraseTarget) {
-        Serial.printf("probe: core would erase : label=%-8s offset=0x%06x size=%u B\n",
-                      eraseTarget->label, (unsigned)eraseTarget->address, (unsigned)eraseTarget->size);
+        Serial.printf("probe: core would erase : label=%-8s offset=0x%06x size=%u B\n", eraseTarget->label,
+                      (unsigned)eraseTarget->address, (unsigned)eraseTarget->size);
     } else {
         Serial.println("probe: core would erase : <none found>");
     }
     if (cfgPart) {
-        Serial.printf("probe: our config lives : label=%-8s offset=0x%06x size=%u B\n",
-                      cfgPart->label, (unsigned)cfgPart->address, (unsigned)cfgPart->size);
+        Serial.printf("probe: our config lives : label=%-8s offset=0x%06x size=%u B\n", cfgPart->label,
+                      (unsigned)cfgPart->address, (unsigned)cfgPart->size);
     } else {
         Serial.println("probe: our config lives : <NO 'nvs_cfg' partition in this table>");
     }
@@ -514,12 +511,11 @@ static void runNvsFillProbe() {
         const size_t freeAfter = p.freeEntries();
         p.end();
 
-        Serial.printf("probe: wrote %u keys, first failure at index %u (putUChar -> %u)\n",
-                      (unsigned)written, (unsigned)failedAt, (unsigned)last);
+        Serial.printf("probe: wrote %u keys, first failure at index %u (putUChar -> %u)\n", (unsigned)written,
+                      (unsigned)failedAt, (unsigned)last);
         Serial.printf("probe: first key read-back = %s\n",
                       readBack ? "OK (writes persisted)" : "MISMATCH (writes did not persist)");
-        Serial.printf("probe: freeEntries() after fill = %u (was %u)\n", (unsigned)freeAfter,
-                      (unsigned)freeBefore);
+        Serial.printf("probe: freeEntries() after fill = %u (was %u)\n", (unsigned)freeAfter, (unsigned)freeBefore);
         cc_sharedNvsStats("filled:");
 
         setProbeStage(1);

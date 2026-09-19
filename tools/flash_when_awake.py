@@ -88,7 +88,18 @@ def main():
             print("no serial port appeared in the window (device still asleep)")
             return 2
 
-    cmd = [PYTHON, "-m", "platformio", "run", "-e", args.env, "-t", "upload", "--upload-port", chosen]
+    cmd = [
+        PYTHON,
+        "-m",
+        "platformio",
+        "run",
+        "-e",
+        args.env,
+        "-t",
+        "upload",
+        "--upload-port",
+        chosen,
+    ]
 
     while time.time() < deadline:
         attempts += 1

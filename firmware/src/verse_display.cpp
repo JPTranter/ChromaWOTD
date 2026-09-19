@@ -837,8 +837,7 @@ void cc_portalDrawScreen(const PortalInfo& info, PortalNotice notice, const char
         // panel came back here. The HEADING depends on what actually happened: a rejected
         // save and a report that stored settings were lost are different situations, and
         // labelling the second one "Could not save:" would be plainly wrong.
-        const char* heading =
-            (notice == PortalNotice::SettingsLost) ? "Settings lost:" : "Could not save:";
+        const char* heading = (notice == PortalNotice::SettingsLost) ? "Settings lost:" : "Could not save:";
         dev_drawString(6, 24, heading, CC_RED, 1);
         drawWrappedTextCentered(kW / 2, 36, kW - 12, 84, statusLine, CC_RED, 1, 10);
         return;
