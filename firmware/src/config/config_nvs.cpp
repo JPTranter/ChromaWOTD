@@ -33,7 +33,17 @@ constexpr const char* kNamespace = "chromawotd";
 //
 // Preferences::begin() calls nvs_flash_init_partition(label) itself, so passing this
 // label is the entire change — no separate init call is required.
+#ifdef CHROMAWOTD_LEGACY_NVS
+// PRE-FIX behaviour, for the A/B demonstration only (env:nvsprobe_legacy): keep the
+// configuration in the SHARED default "nvs" partition — the layout BUG-06 destroyed.
+// This flag is required for the "before" case to exist at all: without it the legacy
+// build would still ask for `nvs_cfg`, a partition its table does not define, so
+// Preferences::begin() would fail, the setup portal could never save, and there would be
+// no stored configuration to lose. That would demonstrate nothing.
+constexpr const char* kPartition = nullptr; // nullptr => the default ("nvs") partition
+#else
 constexpr const char* kPartition = "nvs_cfg";
+#endif
 constexpr const char* kKeySsid = "ssid";
 constexpr const char* kKeyPass = "pass";
 constexpr const char* kKeyTz = "tz";

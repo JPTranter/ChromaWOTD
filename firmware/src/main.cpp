@@ -473,12 +473,19 @@ static void runNvsFillProbe() {
         Serial.println("probe: BEHAVIOURAL VERDICT = our config was DESTROYED with the shared "
                        "partition => BUG-06 REPRODUCED (pre-fix behaviour)");
     }
-    Serial.println("=== end NVS fill probe: sleeping; power-cycle to run the fill again ===");
+    Serial.println("=== end NVS fill probe; staying awake so the result can be read ===");
+    Serial.println("probe: power-cycle (or reflash) to run the fill again; the stage survives a reset");
     Serial.flush();
-#ifdef CHROMAWOTD_DEEP_SLEEP
-    esp_sleep_enable_timer_wakeup(60ULL * 1000000ULL);
-    esp_deep_sleep_start(); // does not return
-#endif
+
+    // LINGER rather than sleep. A probe that deep-sleeps within a second of printing has an
+    // awake window too short to attach a serial capture to (the first version of this ran an
+    // endless fill loop, which is the only reason it was readable at all). This is a USB bench
+    // diagnostic, so staying awake costs nothing and the verdict can be read at any time.
+    for (;;) {
+        delay(10000);
+        Serial.printf("probe: [still] markers=%s config=%s\n", markers ? "PRESENT" : "wiped",
+                      provisioned ? "intact" : "DESTROYED");
+    }
 }
 #endif
 
