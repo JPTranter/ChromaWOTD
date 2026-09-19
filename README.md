@@ -178,7 +178,7 @@ substitution is never silent.
 
 ### 5. Wake Schedule
 `sched/wake_schedule.{h,cpp}` computes the strictly-forward next slot from a local `struct tm`
-(slots exactly **06:30 / 12:30 / 18:00**), with a 60 s floor that makes a wake loop impossible
+(slots exactly **06:00 / 12:30 / 18:00**), with a 60 s floor that makes a wake loop impossible
 and a 1 h fallback when the clock is not trustworthy. `setup()` then arms an RTC timer for
 that interval **and** the `ext1` button mask, and calls `esp_deep_sleep_start()`. Between
 refreshes the ESP32-S3 is fully asleep — its native USB powers down, so the serial port
@@ -226,7 +226,7 @@ CHROMAWOTD/
 │   │   │   ├── net_impl_esp32.{h,cpp}  Device backend: Wi-Fi, TLS, ArduinoJson
 │   │   │   └── net_host_curl.cpp       Host curl hook
 │   │   ├── sched/
-│   │   │   ├── wake_schedule.{h,cpp}   Next wake slot (06:30/12:30/18:00) — pure
+│   │   │   ├── wake_schedule.{h,cpp}   Next wake slot (06:00/12:30/18:00) — pure
 │   │   │   └── content_policy.{h,cpp}  Verse/Word by hour + tomorrow-forecast window
 │   │   └── fonts/               Mono-hinted Roboto GFX fonts (5/5.5/6/10pt)
 │   └── test/

@@ -2,7 +2,7 @@
 // Seeed EE05 (XIAO ESP32-S3 Plus) + 2.9" BWRY ePaper (JD79661 panel / JD79667 driver IC).
 //
 // Behaviour:
-//   * Sleeps between scheduled refreshes (06:30 / 12:30 / 18:00) and wakes on
+//   * Sleeps between scheduled refreshes (06:00 / 12:30 / 18:00) and wakes on
 //     the RTC timer OR any of the three user buttons (BUTTON1/2/3 = GPIO2/3/8,
 //     active-low) — a button press runs exactly the same sync+render cycle.
 //   * Content by local time: 00:00–11:59 Verse of the Day, 12:00–23:59 Word of

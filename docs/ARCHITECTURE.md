@@ -125,7 +125,7 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 
 ### 1. Refresh Frequency & Timing (How often)
 - **Scheduled RTC Timer Slots**: The device wakes at three fixed local times daily:
-  - **06:30** (Morning wake)
+  - **06:00** (Morning wake)
   - **12:30** (Midday update)
   - **18:00** (Evening forecast)
   The arithmetic (`cc_secondsUntilNextWake` in `sched/wake_schedule.cpp`) rolls over midnight and enforces a strict > 0 progression.

@@ -2,7 +2,7 @@
 #include "sched/wake_schedule.h"
 
 const WakeSlot kCcWakeSlots[] = {
-    { 6, 30},   // morning
+    { 6,  0},   // morning
     {12, 30},   // midday
     {18,  0},   // evening
 };

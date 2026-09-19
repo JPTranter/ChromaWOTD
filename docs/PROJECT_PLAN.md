@@ -159,7 +159,7 @@ reformat is silent).
 
 ### Phase 4 — Daily Wake Schedule & Power Optimization
 - [x] **Time-Based Wake Schedule**:
-  - [x] Deep sleep scheduled wakeups: Morning (06:30), Midday (12:30), Evening (18:00);
+  - [x] Deep sleep scheduled wakeups: Morning (06:00), Midday (12:30), Evening (18:00);
         the device sleeps through to the next slot (~3 sweeps/day, not continuous).
   - [x] RTC drift correction against NTP (`configTzTime` + bounded `getLocalTime` each wake;
         1 h fallback sleep if the clock is not yet valid).
