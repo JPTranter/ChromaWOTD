@@ -11,7 +11,7 @@
 | Display bring-up | ✅ 4-colour smoke pattern verified & flashed (hardware state as of this session's earlier work) |
 | Dual-target layout engine | ✅ `verse_display.cpp` runs on target (Seeed GFX) & host (CMake test harness) |
 | Layout orientations & themes | ✅ Single light landscape presentation only (portrait + inverted/dark dropped 2026-09-12) |
-| Forecast header & text wrapping | ✅ Centred "FORECAST" section header with underline divider & wrapped condition/alert text |
+| Weather text & wrapping | ✅ The weather is drawn as TEXT in the footer row (temperature + condition), replacing the old centred `FORECAST` header with its underline divider in the removed weather column. Warnings share that row, bottom-left (see the verse-first layout row below) |
 | Host layout tests & PNG exports | ✅ 26 tests across 4 suites, all passing (`test_layout_landscape/_alert/_overflow/_text`) |
 | Degree symbol fix | ✅ Decoded `0xC2 0xB0` to vector circle for crisp `27°C` render |
 | UTF-8 → ASCII normalisation | ✅ Shared `cc_utf8ToAscii()` maps curly quotes, dashes, NBSP, ellipsis, `⚠`; host and device now agree |
@@ -25,7 +25,7 @@
 | User buttons | ✅ Phase 5: BUTTON1/2/3 = **GPIO2/GPIO3/GPIO8** (D1/D2/D9), active-low. Any press wakes the device via `ext1` and runs a full sync+refresh — **verified on hardware** (`wake cause: 3 (button)` → sync → refresh → sleep). Pin map probed, not guessed: the schematic reading was wrong (see LESSONS §34) |
 | Time-based content | ✅ Phase 5: Verse of the Day 00:00–11:59, Word of the Day 12:00–23:59 (header title switches); pure policy in `sched/content_policy` + tests |
 | Word of the Day source | ✅ Phase 5: A.Word.A.Day (`wordsmith.org/words/today.html`) — definition + example body, respelling pronunciation caption, headword caption; bundled fallback word if the fetch fails |
-| Weather policy & outlook | ✅ Daytime (< 18:00) shows today's expected maximum + condition under **FORECAST**; evening (18:00–23:59) shows tomorrow's expected maximum + condition under **TOMORROW** |
+| Weather policy & outlook | ✅ Daytime (< 18:00) shows today's expected maximum + condition (unlabelled); evening (18:00–23:59) shows tomorrow's expected maximum + condition with a red **TOMORROW** marker before it — without that marker the number is indistinguishable from today's |
 | Dual buttons & WOTD toggle | ✅ superseded — content is time-based, all three buttons sync (no manual toggle) |
 | Weather icon mapping | ⚠️ **known limitation, accepted** — only WMO ≥ 80 get the Rain icon; Drizzle (51-57) and Rain (61-67) fall through to the plain Cloud icon. Text label is correct; decided 2026-09-12 to leave as-is (see LESSONS §35) |
 | Verse font auto-size | ✅ Ladder extracted to `cc_pickVerseFont()`/`cc_verseFontSize()`; block geometry lives once in `verse_display.h` (`kVerseMaxW`/`kVerseMaxH`). The ladder is now **10 / 9 / 8 / 7 / 6 / 5.5 / 5pt** (widened from 6/5.5/5 with the verse-first layout, then raised to 10pt so short content can fill the panel — LESSONS §53/§55). Measured on the device font path: short verses and Word-of-the-Day definitions get **10pt**, the 153-char fixture verse 8pt, 191 chars 7pt, 316 chars 5.5pt |
@@ -52,6 +52,9 @@
 > resolved) and [`docs/CODE_REVIEW.md`](CODE_REVIEW.md) (Phases 2–5). The Phases 2–5
 > findings were addressed on 2026-09-18 except BUG-06; see LESSONS §46 and the status
 > table above. The list below is the remaining product work.
+>
+> The presentation's own chronology — every era with the render it was decided from —
+> is in [`docs/UI_HISTORY.md`](UI_HISTORY.md).
 
 1. **NVS wipe on a full partition (BUG-06 / LESSONS §45) — DIAGNOSED, not fixed.**
    The 20 KB `nvs` partition is shared with the Wi-Fi/BLE/DHCP stack, and the Arduino core

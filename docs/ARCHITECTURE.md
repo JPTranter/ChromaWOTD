@@ -380,7 +380,12 @@ python tools/verify_all.py --fix        # resync docs/images after intentional c
 
 ## References
 
-- [REVIEW.md](docs/REVIEW.md) — Critical code & project review (security, design, hygiene)
-- [LESSONS_LEARNT.md](docs/lessons/LESSONS_LEARNT.md) — Hard-won findings, hardware quirks, and solutions
-- [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) — Phased implementation plan and milestones
-- [STATUS.md](docs/STATUS.md) — Current project phase, completed tasks, and next steps
+These are relative to THIS file (in `docs/`) — the paths were previously written as
+`docs/X`, which resolves to `docs/docs/X` and 404s on GitHub.
+
+- [REVIEW.md](REVIEW.md) — Critical code & project review (security, design, hygiene)
+- [CODE_REVIEW.md](CODE_REVIEW.md) — Phases 2–5 review, with its fix-status table
+- [UI_HISTORY.md](UI_HISTORY.md) — how the display has changed, era by era, with the renders
+- [LESSONS_LEARNT.md](lessons/LESSONS_LEARNT.md) — Hard-won findings, hardware quirks, and solutions
+- [PROJECT_PLAN.md](PROJECT_PLAN.md) — Phased implementation plan and milestones
+- [STATUS.md](STATUS.md) — Current project phase, completed tasks, and next steps

@@ -2,8 +2,10 @@
 
 ## Concept
 
-A 2.9" 4-colour ePaper display showing the **Verse of the Day** (or, on toggle, a
-**Word of the Day**) plus colour-coded local weather on an infrequent full refresh
+A 2.9" 4-colour ePaper display showing the **Verse of the Day** in the morning and a
+**Word of the Day**) in the afternoon, chosen by LOCAL TIME rather than by a button (the
+toggle this sentence used to describe was superseded — see Phase 5), plus colour-coded
+local weather on an infrequent full refresh
 schedule. Colour is the point: red/yellow carry meaning (alerts, citations,
 highlights, warmth), not decoration. There is no clock — the panel cannot refresh
 often enough for one, so content is designed for 2–4 full sweeps per day.

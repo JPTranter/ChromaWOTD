@@ -109,9 +109,17 @@ no longer relied upon — normalisation happens before either backend sees the t
 ## 11. Archiving Layout Screenshots for Lessons Learned
 To preserve visual design iterations and prevent regressions, host-rendered layout
 PNGs generated during testing are archived in
-[`docs/images/`](file:///C:/Users/jptra/Projects/ChromaWOTD/docs/images/).
+[`docs/images/history/`](../images/history/) — a RELATIVE link, deliberately: this used to
+be an absolute `file:///C:/Users/...` URL, which resolves only on the machine that wrote it.
 This tracks light, inverted, dark, alert and overflow-marker variants across portrait
 and landscape orientations for future reference.
+
+Note the two folders have different jobs, and confusing them misleads: `docs/images/history/`
+is the **design record** (renders the decisions were made from, archived by hand), while the
+PNGs one level up in `docs/images/` are the **regression ledger** (byte-compared on every
+`verify_all.py` run, and rendered from the default host build where the proportional font is
+compiled out — so they show the 5×7 fallback, not the shipped look). The chronology of the
+presentation itself is [`docs/UI_HISTORY.md`](../UI_HISTORY.md).
 
 
 

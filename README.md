@@ -27,18 +27,29 @@ the architectural and hardware lessons of the sibling eClock project.
 
 ## Visual Concept & Rendered Outputs
 
-The device has a **single presentation: landscape (296×128) in the light theme**. The
-renders below are produced directly by the native host test harness (`firmware/test/`):
+The device has a **single presentation: landscape (296×128) in the light theme**. The verse owns
+the panel: a yellow band identifies *what* you are reading (the citation, or the word with its
+respelling) with the date at the right, the text auto-sizes through a 10pt-down-to-5.5pt ladder,
+and a footer row carries status/warnings on the left and the weather as text on the right.
 
-| Landscape (Normal) | Landscape (Weather Alert) | Landscape (Over-long verse → marked) |
+| Verse of the Day | Word of the Day | With a severe-weather warning |
 | :---: | :---: | :---: |
-| <img src="docs/images/layout_landscape.png" alt="Landscape Layout" width="360"> | <img src="docs/images/layout_alert_landscape.png" alt="Landscape Layout with Alert" width="360"> | <img src="docs/images/layout_overflow_landscape.png" alt="Landscape overflow marker" width="360"> |
+| <img src="docs/images/history/layout_landscape_fullwidth_verse.png" alt="Verse of the Day" width="360"> | <img src="docs/images/history/layout_landscape_fullwidth_word.png" alt="Word of the Day" width="360"> | <img src="docs/images/history/layout_landscape_fullwidth_warning.png" alt="Weather warning" width="360"> |
 
-The third column is a regression artifact: content that does not fit is truncated
-**visibly** with an inline ellipsis marker instead of being dropped silently.
+> [!IMPORTANT]
+> These are rendered on the **device font path** — what the panel actually draws. Do not confuse
+> them with the PNGs at the top level of `docs/images/`: those are the **regression ledger**,
+> byte-compared on every `verify_all.py` run, and are rendered from the default host build where
+> the proportional font is compiled out, so they show the 5×7 fallback font. The ledger proves the
+> layout did not move; it is not a picture of the product.
 
-The earlier portrait and dark/inverted design variants are kept for historical reference
-under [`docs/images/history/`](docs/images/history/). They are no longer produced.
+Content that does not fit is truncated **visibly** with an inline ellipsis instead of being
+dropped silently — and an over-long status warning is truncated the same way.
+
+How the display arrived here — every era, with the render it was decided from, and what it cost —
+is in [`docs/UI_HISTORY.md`](docs/UI_HISTORY.md). The portrait and dark/inverted variants that
+predate the single presentation are kept under [`docs/images/history/`](docs/images/history/);
+they are no longer produced.
 
 
 
@@ -193,11 +204,14 @@ disappears (expected, not a crash; see `LESSONS_LEARNT.md` §32).
 CHROMAWOTD/
 ├── .codegraph/                  CodeGraph symbol database (index files gitignored)
 ├── docs/
+│   ├── ARCHITECTURE.md          Data flow, refresh/power sequence, security, presentation
+│   ├── CODE_REVIEW.md           Phases 2–5 review, with the fix-status table
 │   ├── PROJECT_PLAN.md          Phased implementation plan and milestones
 │   ├── STATUS.md                Current project phase, completed tasks, and next steps
 │   ├── REVIEW.md                Critical code & project review (security, design, hygiene)
+│   ├── UI_HISTORY.md            How the display has changed, era by era, with the renders
 │   ├── hardware/datasheets/     Vendor PDFs (gitignored) + README with download links
-│   ├── images/                  Archived PNG renders produced by the host test harness
+│   ├── images/                  Regression ledger PNGs (byte-compared) + history/ archive
 │   ├── lessons/
 │   │   └── LESSONS_LEARNT.md    Hard-won findings, hardware quirks, and solutions
 │   └── research/
@@ -385,7 +399,7 @@ The suites are:
 | Suite | Covers |
 | :--- | :--- |
 | `test_layout_landscape` | Single-layout geometry: header band extent, no divider, the verse occupying the full width, the right margin |
-| `test_layout_alert` | Alert banner pinned to the bottom of the weather column; locates the (dynamic) red divider rule by its run-length signature and asserts its relation to the temperature block and alert text |
+| `test_layout_alert` | The footer row: a warning renders bottom-LEFT in red, the weather text bottom-RIGHT, neither spills, and an over-long warning is truncated with a visible marker |
 | `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers (per font family), temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
 | `test_verse_autosize` | The verse body auto-size ladder (Roboto 10/9/8/7/6/5.5/5pt) — compiled **with** `-DCHROMAWOTD_FONT_FREESANS=1` so the selection the panel makes is actually covered |
 | `test_net` | WMO code → condition/icon/alert mapping, JSON extraction, A.Word.A.Day HTML parsing (incl. printable-ASCII and newline-collapse guards), plus live-fetch smoke tests that skip when there is no network |
