@@ -1560,3 +1560,55 @@ ledger is unaffected: it is built from the default host build, where the ladder 
 (LESSONS §38), so those renders cannot move with a font decision.
 
 (2026-09-19)
+
+
+## 56. Morning wake moved to 06:00 — and why the old numbers stay in the history (RESOLVED)
+
+Requested change: the three slots are now **06:00 / 12:30 / 18:00** (`sched/wake_schedule.cpp`).
+The schedule is a pure function whose boundaries are pinned by tests, so they moved with it: the
+slot table, midnight→morning (6 h, was 6.5), "just before the slot" (05:59 → 60 s), "exactly on
+the slot" (6.5 h to midday, was 6), and the evening rollover (18:00 → 06:00 = exactly 12 h).
+17/17 pass. The product change is **one line**; everything else is tests and documentation, which
+is the payoff of having kept the schedule pure.
+
+**The deliberate omission.** Several lessons entries and code comments cite *"the 06:30 wake was
+scheduled for 05:30"* as the **symptom** of the old timezone bug. Those were left untouched. They
+record what actually happened, at the slot that existed at the time; rewriting the number to 06:00
+would falsify a real defect's evidence in order to match a later preference. The rule: **update
+statements about the CURRENT configuration; leave statements about PAST events alone**, or the
+history stops being usable to whoever debugs a similar bug next.
+
+- Left as historical: `LESSONS` §27/§44, `config/config.cpp`, `config/tz_map.h`, `main.cpp`'s TZ
+  comment, `net/portal.cpp`, `test_config.cpp`.
+- Updated as current state: ARCHITECTURE, STATUS, PROJECT_PLAN, README, `platformio.ini`,
+  `main.cpp`'s behaviour header, `test_sched.cpp`'s header.
+
+(2026-09-19)
+
+
+## 57. Two ways a step silently doesn't happen (RESOLVED)
+
+Both cost real time here, and neither announced itself.
+
+**1. A capture that misses the boot lines.** A value the device prints only at BOOT — here
+`sync: time OK <date> <time>`, the only on-device evidence of the header date format — stays
+unverified if the capture attaches after that line has gone by. A throwaway "reset with RTS/DTR,
+then read" script attached mid-cycle on several attempts (its first line was already mid-sync), so
+the date format was never observed directly and rested on a byte-verified image plus unit tests
+instead. The tool that works is `tools/bench_watch.py --capture`, which WAITS for the port to
+appear on a natural wake and attaches with DTR/RTS deasserted — that is how the complete
+button-wake boot log was captured earlier in this project. **If a value is printed only at boot,
+capture the boot: wait for the port to APPEAR — and if you reset instead, verify that the reset
+actually happened**, because a silent reset failure looks exactly like a device that is merely
+mid-cycle.
+
+**2. A commit the end-of-file hook quietly revoked.** Twice, `git commit` was aborted because the
+`end-of-file-fixer` hook rewrote files lacking a trailing newline — and because the hook then
+conflicted with pre-commit's own stash/restore, it *rolled its fix back*, leaving the tree clean
+and the commit unmade. The log does say the hook failed; the trap is that the "nothing to commit"
+which follows reads like an ordinary no-op. **End generated files with a newline** (the font
+tables, anything produced by a tool), **and read the commit hash back** afterwards instead of
+assuming it landed. This project's font headers come from `tools/font_convert.py` and are exactly
+the files that trip it.
+
+(2026-09-19)
