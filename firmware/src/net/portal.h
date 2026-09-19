@@ -40,6 +40,38 @@ struct PortalInfo {
     char apPassword[CC_PORTAL_APASS_MAX];
 };
 
+// --- Wi-Fi network picker ---------------------------------------------------
+// The form offers the networks the device can actually SEE, so the SSID is chosen
+// rather than typed. A hand-typed, case-sensitive SSID is how a device ends up
+// hunting a network that does not exist (LESSONS §50): after a partition change
+// empties the stored config, the setup form has nothing to pre-fill and the user
+// must retype the name from memory, on a phone, with the panel as the only display.
+// Hidden networks are invisible to a scan, so a manual field stays alongside the list.
+static constexpr size_t CC_PORTAL_SCAN_MAX = 12;      // options offered
+static constexpr size_t CC_PORTAL_SCAN_SSID_MAX = 33; // 32-char SSID + NUL
+
+struct PortalScanEntry {
+    char ssid[CC_PORTAL_SCAN_SSID_MAX];
+    int32_t rssi;
+};
+
+// What a repaint's status line MEANS, so the panel heading is accurate. Previously
+// any status line was drawn under "Could not save:", which mislabels anything that is
+// not a rejected save (e.g. reporting that previously-stored settings were lost).
+enum class PortalNotice { None, SaveRejected, SettingsLost };
+
+// Pure: render the <option> elements for a scan result into `out`. `current` is marked
+// selected when it matches an entry. Escapes exactly like every other echoed value —
+// an SSID may legally contain quotes or angle brackets, which would otherwise break
+// out of `value='...'`. Host-tested; the device supplies the entries from a real scan.
+// Returns the number of characters written.
+size_t cc_portalRenderSsidOptions(const PortalScanEntry* entries, size_t count, const char* current,
+                                  char* out, size_t outsz);
+
+// Scan for visible networks and fill `out` (strongest signal first, duplicates
+// removed). Returns the number stored. Device-only: needs the radio.
+size_t cc_portalScanNetworks(PortalScanEntry* out, size_t maxOut);
+
 // Derive the per-boot AP name and random WPA2 password. `seed` must be an
 // unpredictable value (the device passes its hardware RNG); this function is pure
 // so the *generation rule* is unit-testable — it never reads the RNG itself.
@@ -56,6 +88,7 @@ bool cc_portalRun(const PortalInfo& info, uint32_t timeoutMs);
 
 // Render the setup screen (AP name, password, URL, step list) on the panel.
 // Implemented in verse_display.cpp, where the shared dev_drawString* helpers live,
-// so the portal does not carry a second copy of the text/degree handling. Passing a
-// non-null `statusLine` repaints with a "could not save: <reason>" banner.
-void cc_portalDrawScreen(const PortalInfo& info, const char* statusLine);
+// so the portal does not carry a second copy of the text/degree handling. A
+// non-None `notice` repaints with `statusLine` under the matching heading instead of
+// the setup steps.
+void cc_portalDrawScreen(const PortalInfo& info, PortalNotice notice, const char* statusLine);

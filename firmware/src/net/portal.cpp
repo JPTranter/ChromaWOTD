@@ -37,35 +37,13 @@ void cc_portalMakeInfo(uint32_t macLow, uint32_t seed, PortalInfo* out) {
 }
 
 // ---------------------------------------------------------------------------
-// Device-only: SoftAP + DNS catch-all + web form
+// Shared: HTML escaping + the Wi-Fi picker renderer (host-testable)
 // ---------------------------------------------------------------------------
-#ifndef CHROMAWOTD_HOST
-
-#include <Arduino.h>
-#include <DNSServer.h>
-#include <WebServer.h>
-#include <WiFi.h>
-#include <esp_system.h>
-
-#include "chroma_version.h" // CHROMAWOTD_VERSION, recorded as configuredBy
-#include "config/config.h"
-#include "config/config_active.h"
-#include "config/tz_map.h"
-#include "draw/target.h"
-#include "net/net.h" // NET_TEXT_MAX, shared text helpers
-#include "text/glyphs.h"
-#include "verse_display.h" // CC_WHITE/CC_BLACK/CC_RED/CC_YELLOW + target()
-
 namespace {
 
-WebServer g_server(80);
-DNSServer g_dns;
-bool g_saved = false;
-DeviceConfig g_candidate; // parsed from the last submit, for repaint on error
-PortalInfo g_info;        // live AP identity, kept so a repaint can show it
-
 // Minimal HTML escaping for values echoed back into the form. Remote input is
-// untrusted (S4): never emit it raw.
+// untrusted (S4): never emit it raw — and an SSID is remote input too, which is easy
+// to overlook because it usually looks like an ordinary name.
 void htmlEscape(const char* src, char* dst, size_t dstsz) {
     size_t o = 0;
     for (const char* p = src; p && *p && o + 6 < dstsz; p++) {
@@ -93,15 +71,71 @@ void htmlEscape(const char* src, char* dst, size_t dstsz) {
     dst[o] = '\0';
 }
 
+} // namespace
+
+// Pure: the <option> list for the SSID picker (see portal.h for why the SSID is
+// CHOSEN from a scan instead of typed).
+size_t cc_portalRenderSsidOptions(const PortalScanEntry* entries, size_t count, const char* current,
+                                  char* out, size_t outsz) {
+    if (!out || outsz == 0)
+        return 0;
+    size_t o = 0;
+
+    // An explicit empty first option: submitting without choosing is possible and
+    // visible, and cc_configValidate() then rejects the empty SSID with a clear reason.
+    o += (size_t)snprintf(out + o, outsz - o, "<option value=''>-- choose a network --</option>");
+
+    for (size_t i = 0; i < count && o < outsz; i++) {
+        if (!entries)
+            break;
+        // Worst case for htmlEscape is 6 output chars per input char ("&#39;").
+        char esc[CC_PORTAL_SCAN_SSID_MAX * 6 + 1];
+        htmlEscape(entries[i].ssid, esc, sizeof(esc));
+        const bool sel = current && current[0] && strcmp(entries[i].ssid, current) == 0;
+        o += (size_t)snprintf(out + o, outsz - o, "<option value='%s'%s>%s</option>", esc,
+                              sel ? " selected" : "", esc);
+    }
+    out[outsz - 1] = '\0';
+    return o;
+}
+
+// ---------------------------------------------------------------------------
+// Device-only: SoftAP + DNS catch-all + web form
+// ---------------------------------------------------------------------------
+#ifndef CHROMAWOTD_HOST
+
+#include <Arduino.h>
+#include <DNSServer.h>
+#include <WebServer.h>
+#include <WiFi.h>
+#include <esp_system.h>
+
+#include "chroma_version.h" // CHROMAWOTD_VERSION, recorded as configuredBy
+#include "config/config.h"
+#include "config/config_active.h"
+#include "config/tz_map.h"
+#include "draw/target.h"
+#include "net/net.h" // NET_TEXT_MAX, shared text helpers
+#include "text/glyphs.h"
+#include "verse_display.h" // CC_WHITE/CC_BLACK/CC_RED/CC_YELLOW + target()
+
+namespace {
+
+WebServer g_server(80);
+DNSServer g_dns;
+bool g_saved = false;
+DeviceConfig g_candidate; // parsed from the last submit, for repaint on error
+PortalInfo g_info;        // live AP identity, kept so a repaint can show it
+
+// Networks found by the scan taken just before the AP came up. Cached because the form
+// is rebuilt on every request and a scan takes seconds. htmlEscape() lives in the
+// shared section above, since the host-tested picker renderer uses it too.
+PortalScanEntry g_scan[CC_PORTAL_SCAN_MAX];
+size_t g_scanCount = 0;
+
 String page(const char* statusLine) {
     char hostEsc[128];
     htmlEscape(g_candidate.hostname, hostEsc, sizeof(hostEsc));
-
-    // Echo the SSID back as well. The other fields already round-trip their values,
-    // so without this a validation failure on ANY field emptied the SSID box and the
-    // user had to retype the (long, case-sensitive) network name.
-    char ssidEsc[128];
-    htmlEscape(g_candidate.ssid, ssidEsc, sizeof(ssidEsc));
 
     char latBuf[24], lonBuf[24];
     snprintf(latBuf, sizeof(latBuf), "%.4f", (double)g_candidate.latitude);
@@ -124,10 +158,28 @@ String page(const char* statusLine) {
         h += F("</p>");
     }
     h += F("<form method='POST' action='/save'>");
-    h += F("<label>Wi-Fi network name (SSID)</label>");
-    h += F("<input name='ssid' required maxlength='32' autocapitalize='none' autocomplete='off' value='");
-    h += ssidEsc;
-    h += F("'>");
+    h += F("<label>Wi-Fi network</label>");
+    // A PICKER, not free text. A hand-typed, case-sensitive SSID is how a device ends up
+    // hunting a network that does not exist (LESSONS §50), and the list comes from the
+    // device's OWN scan — so everything offered is genuinely in range. The manual field
+    // below remains because a HIDDEN network never appears in a scan.
+    h += F("<select name='ssid'>");
+    {
+        // Static, not stack: worst case is 12 options of fully-escaped 32-char names
+        // (~6 KB), and the portal's handler runs on the Arduino loop task.
+        static char opts[CC_PORTAL_SCAN_MAX * (CC_PORTAL_SCAN_SSID_MAX * 6 + 48) + 96];
+        cc_portalRenderSsidOptions(g_scan, g_scanCount, g_candidate.ssid, opts, sizeof(opts));
+        h += opts;
+    }
+    h += F("</select>");
+    if (g_scanCount == 0) {
+        h += F("<p class='hint'>The device found no networks in range. Check that your router is "
+               "on, then type its name below.</p>");
+    } else {
+        h += F("<p class='hint'>Pick your network above, or type its name below if it is hidden.</p>");
+    }
+    h += F("<label>Or type the network name <span class='hint'>(hidden networks)</span></label>");
+    h += F("<input name='ssid_manual' maxlength='32' autocapitalize='none' autocomplete='off' value=''>");
     h += F("<label>Wi-Fi password <span class='hint'>(leave blank for open networks)</span></label>");
     h += F("<input name='pass' type='password' maxlength='63' autocomplete='off'>");
     h += F("<label>Timezone</label>");
@@ -207,8 +259,14 @@ void handleSave() {
     char err[160] = "";
     DeviceConfig cfg = g_candidate; // keep prior values for fields left blank
 
-    if (g_server.hasArg("ssid"))
+    // The picker is the normal path; the manual field exists for hidden networks and WINS
+    // when filled, so a name typed by hand is never silently overridden by a stale
+    // <select> value still selected from an earlier render.
+    if (g_server.hasArg("ssid_manual") && g_server.arg("ssid_manual").length() > 0) {
+        cc_configCopy(cfg.ssid, sizeof(cfg.ssid), g_server.arg("ssid_manual").c_str());
+    } else if (g_server.hasArg("ssid") && g_server.arg("ssid").length() > 0) {
         cc_configCopy(cfg.ssid, sizeof(cfg.ssid), g_server.arg("ssid").c_str());
+    }
     if (g_server.hasArg("pass"))
         cc_configCopy(cfg.passphrase, sizeof(cfg.passphrase), g_server.arg("pass").c_str());
     if (g_server.hasArg("tz"))
@@ -238,7 +296,7 @@ void handleSave() {
         // Repaint the panel with the reason so a user at the device (not the phone)
         // also sees why nothing was saved. The AP name/password must be preserved,
         // so keep the live PortalInfo rather than passing null.
-        cc_portalDrawScreen(g_info, err);
+        cc_portalDrawScreen(g_info, PortalNotice::SaveRejected, err);
         g_server.send(400, "text/html", page(err));
         return;
     }
@@ -258,6 +316,47 @@ void handleSave() {
 
 } // namespace
 
+// Scan for the networks the device can actually see. Cached by the caller so the form
+// (rebuilt per request) does not rescan.
+size_t cc_portalScanNetworks(PortalScanEntry* out, size_t maxOut) {
+    if (!out || maxOut == 0)
+        return 0;
+
+    WiFi.mode(WIFI_STA);
+    // show_hidden=false: a hidden AP reports no SSID, so it cannot be offered as a named
+    // option anyway — the form's manual field is the path for those.
+    const int found = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/false);
+
+    size_t count = 0;
+    for (int i = 0; i < found && count < maxOut; i++) {
+        const String s = WiFi.SSID(i);
+        if (s.length() == 0 || s.length() >= CC_PORTAL_SCAN_SSID_MAX)
+            continue; // unnamed, or too long for the field
+        bool dup = false;
+        for (size_t k = 0; k < count && !dup; k++)
+            dup = (strcmp(out[k].ssid, s.c_str()) == 0); // one SSID can span several BSSIDs
+        if (dup)
+            continue;
+        cc_configCopy(out[count].ssid, sizeof(out[count].ssid), s.c_str());
+        out[count].rssi = WiFi.RSSI(i);
+        count++;
+    }
+    WiFi.scanDelete();
+
+    // Strongest first: the network the user wants is usually the one with the best signal
+    // where the device actually sits. Insertion sort — the list is at most 12 entries.
+    for (size_t i = 1; i < count; i++) {
+        const PortalScanEntry key = out[i];
+        size_t j = i;
+        while (j > 0 && out[j - 1].rssi < key.rssi) {
+            out[j] = out[j - 1];
+            j--;
+        }
+        out[j] = key;
+    }
+    return count;
+}
+
 bool cc_portalRun(const PortalInfo& info, uint32_t timeoutMs) {
     g_info = info;
     // Seed the form from the current resolved configuration (the built-in defaults,
@@ -266,6 +365,13 @@ bool cc_portalRun(const PortalInfo& info, uint32_t timeoutMs) {
     // a user who edited only the Wi-Fi fields could never save. It also pre-selects
     // the current timezone/content mode instead of leaving them blank.
     g_candidate = cc_configActive();
+
+    // Scan BEFORE raising the AP. A scan needs the station interface, and doing it first
+    // avoids AP+STA coexistence entirely (otherwise the AP has to follow the scanner onto
+    // a channel). The form is then built from this cached list.
+    g_scanCount = cc_portalScanNetworks(g_scan, CC_PORTAL_SCAN_MAX);
+    Serial.printf("portal: scan found %u network(s) in range\n", (unsigned)g_scanCount);
+
     WiFi.mode(WIFI_AP);
     // Password required: an open AP would let anyone nearby reconfigure the device.
     if (!WiFi.softAP(info.apName, info.apPassword)) {

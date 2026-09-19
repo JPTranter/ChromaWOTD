@@ -298,3 +298,76 @@ TEST(Timezone, ResolvedTzIsNeverTheRawStoredName) {
     EXPECT_STRNE(resolved, c.timezone) << "the IANA name was passed through unresolved";
     EXPECT_NE(strchr(resolved, '/'), nullptr) << "a POSIX rule should contain no path separator";
 }
+
+// ------------------------------------------------- Wi-Fi picker (portal) ------
+// The setup form offers the SCANNED networks as a <select>, so the SSID is chosen rather
+// than typed. A hand-typed, case-sensitive SSID is how a device ends up hunting a network
+// that does not exist (LESSONS §50) — the whole reason this picker exists. These lock the
+// rendering rules.
+
+namespace {
+size_t countOccurrences(const char* hay, const char* needle) {
+    size_t n = 0;
+    const size_t len = strlen(needle);
+    for (const char* p = hay; (p = strstr(p, needle)) != nullptr; p += len)
+        n++;
+    return n;
+}
+} // namespace
+
+TEST(PortalSsidPicker, EscapesSsidsThatWouldBreakOutOfTheOption) {
+    PortalScanEntry e[1];
+    cc_configCopy(e[0].ssid, sizeof(e[0].ssid), "Bob's <Cafe> & \"Bar\"");
+    e[0].rssi = -55;
+    char out[1024];
+    cc_portalRenderSsidOptions(e, 1, "", out, sizeof(out));
+
+    // An SSID is remote-ish input sitting inside value='...', so a bare apostrophe would
+    // break the attribute and angle brackets would inject markup.
+    EXPECT_EQ(strstr(out, "<Cafe>"), nullptr) << "raw angle brackets reached the HTML";
+    EXPECT_NE(strstr(out, "&lt;Cafe&gt;"), nullptr);
+    EXPECT_EQ(strstr(out, "Bob's"), nullptr) << "a raw apostrophe breaks value='...'";
+    EXPECT_NE(strstr(out, "Bob&#39;s"), nullptr);
+    EXPECT_NE(strstr(out, "&quot;Bar&quot;"), nullptr);
+    EXPECT_NE(strstr(out, "&amp;"), nullptr);
+}
+
+TEST(PortalSsidPicker, MarksExactlyTheCurrentSsidSelected) {
+    PortalScanEntry e[3];
+    cc_configCopy(e[0].ssid, sizeof(e[0].ssid), "OtherNet");
+    cc_configCopy(e[1].ssid, sizeof(e[1].ssid), "HomeNet");
+    cc_configCopy(e[2].ssid, sizeof(e[2].ssid), "Neighbour");
+    char out[1024];
+    cc_portalRenderSsidOptions(e, 3, "HomeNet", out, sizeof(out));
+
+    EXPECT_EQ(countOccurrences(out, " selected"), 1u) << "exactly one option may be selected";
+
+    // ...and it is attached to the MATCHING option, not to one that merely shares a prefix
+    // ("OtherNet" must not shadow "HomeNet", and vice versa).
+    const char* sel = strstr(out, " selected");
+    ASSERT_NE(sel, nullptr);
+    const char* opt = sel;
+    while (opt > out && *opt != '>')
+        opt--;
+    const char* val = strstr(opt, "value='HomeNet'");
+    ASSERT_NE(val, nullptr);
+    EXPECT_LT((size_t)(val - out), (size_t)(sel - out));
+}
+
+TEST(PortalSsidPicker, AlwaysOffersAnExplicitEmptyChoiceFirst) {
+    char out[1024];
+    cc_portalRenderSsidOptions(nullptr, 0, "HomeNet", out, sizeof(out));
+    EXPECT_NE(strstr(out, "<option value=''>"), nullptr)
+        << "not choosing must be possible; cc_configValidate() then rejects the empty SSID";
+}
+
+TEST(PortalSsidPicker, StaysNulTerminatedInATinyBuffer) {
+    PortalScanEntry e[3];
+    cc_configCopy(e[0].ssid, sizeof(e[0].ssid), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    e[1] = e[0];
+    e[2] = e[0];
+    char out[32];
+    memset(out, 'X', sizeof(out));
+    cc_portalRenderSsidOptions(e, 3, "", out, sizeof(out));
+    EXPECT_EQ(out[sizeof(out) - 1], '\0') << "a small buffer must truncate safely, never overrun";
+}
