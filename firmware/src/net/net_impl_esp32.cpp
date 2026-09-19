@@ -306,8 +306,38 @@ int cc_wifiConnect() {
     while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
         delay(200);
     }
-    if (WiFi.status() != WL_CONNECTED)
+    if (WiFi.status() != WL_CONNECTED) {
+        // Report WHY. "wifi FAILED" alone cannot distinguish a wrong passphrase from no
+        // AP in range from a join that simply timed out, and those have completely
+        // different causes. Never prints the credential itself.
+        const wl_status_t st = WiFi.status();
+        Serial.printf("sync: wifi FAILED, status=%d (", (int)st);
+        switch (st) {
+        case WL_NO_SSID_AVAIL:
+            Serial.print("SSID not found in range");
+            break;
+        case WL_CONNECT_FAILED:
+            Serial.print("connect failed - auth/association refused (wrong password shows here)");
+            break;
+        case WL_CONNECTION_LOST:
+            Serial.print("connection lost");
+            break;
+        case WL_DISCONNECTED:
+            Serial.print("disconnected / join timed out");
+            break;
+        case WL_IDLE_STATUS:
+            Serial.print("idle - never left the station-idle state");
+            break;
+        case WL_NO_SHIELD:
+            Serial.print("no wifi hardware");
+            break;
+        default:
+            Serial.print("other");
+            break;
+        }
+        Serial.println(")");
         return 1;
+    }
 
 #ifdef CHROMAWOTD_MDNS
     // Optional mDNS responder: registers the A record so "<name>.local" resolves
