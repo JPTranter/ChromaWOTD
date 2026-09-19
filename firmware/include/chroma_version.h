@@ -30,4 +30,4 @@
 //
 // OTA/signing posture (REVIEW S5): images are currently unsigned. If this ever
 // becomes a shared/shipped device, add signed updates before shipping OTA.
-#define CHROMAWOTD_VERSION "0.1.0"
+#define CHROMAWOTD_VERSION "0.1.1"
