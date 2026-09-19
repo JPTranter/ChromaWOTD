@@ -109,12 +109,15 @@ reformat is silent).
    old partition, so re-flashing the old table restores them if a rollback is ever needed.
    `Preferences::begin()` calls `nvs_flash_init_partition(label)` itself, so no separate
    init call is required.
-2. **Read-back verification after save.** `cc_configSaveToNvs()` should load the values
-   back and compare before the portal reports success; a silent write failure is
-   currently indistinguishable from success. *(Still open.)*
-3. **Warn on unexpected loss.** If the device has ever been provisioned (a flag in a
-   separate namespace, or an RTC/marker value) and now finds nothing, say so on the panel
-   instead of quietly showing the setup portal. *(Still open.)*
+2. **Read-back verification after save — DONE.** `cc_configSaveToNvs()` now reloads the whole
+   configuration from flash and compares every field before reporting success, so a silent
+   write failure can no longer masquerade as a successful one.
+3. **Warn on unexpected loss — DONE, with a stated limit.** An `RTC_DATA_ATTR`
+   "was provisioned" flag makes a wipe across a *sleep* repaint the setup screen under
+   "Settings lost:" instead of being indistinguishable from a first boot. It does NOT survive
+   a power cycle, which legitimately looks like a first boot — stated here and in the code.
+   The deliberate 10 s factory reset clears the flag, so a by-design wipe is not reported as
+   a loss.
 4. **Re-test — tooling in place, bench run outstanding.** Two envs reproduce the failure
    deterministically instead of relying on filling WiFi NVS by hand over many
    connect/disconnect cycles: `env:nvsprobe_legacy` (old table — config shares `nvs`) and

@@ -11,5 +11,8 @@ Proprietary vendor documentation files are not committed to git (all `*.pdf` fil
 
 ## Sources:
 
+- https://files.seeedstudio.com/Bazaar/product_pdf/104990855.pdf
+- https://files.seeedstudio.com/wiki/Other_Display/29-quadruple/GDEY029F51.pdf
+- https://www.seeedstudio.com/2-9-Quadruple-Color-ePaper-Display-with-128x296-Pixels-p-5783.html
 - https://www.seeedstudio.com/XIAO-ePaper-Display-Board-EE05-p-6755.html
 - https://wiki.seeedstudio.com/epaper_ee05/#resources

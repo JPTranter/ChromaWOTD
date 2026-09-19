@@ -1360,3 +1360,42 @@ waits and then exits 2.
 A retry loop may be patient; it must never be credulous.
 
 (2026-09-19)
+
+
+## 51. Removing the mistyped-SSID class outright, and verifying a save (RESOLVED)
+
+§50's failure had a fixable root: a setup form that asks for a **case-sensitive name typed by
+hand**, on a phone, with a slow e-paper panel as the only display — after a config change has
+emptied the field so there is nothing to pre-fill. Doing the same thing more carefully is not a
+fix; removing the typing is.
+
+**The portal now scans and offers the networks it can see** (`cc_portalScanNetworks`), strongest
+signal first, duplicates removed (one SSID spans several BSSIDs), the stored name pre-selected
+when present, plus a manual field for hidden networks that WINS when filled so a typed name is
+never overridden by a stale selection. The scan happens BEFORE the SoftAP comes up: scanning
+needs the station interface, and doing it first avoids AP+STA coexistence (the AP would
+otherwise have to follow the scanner onto a channel).
+
+Two rules this leaned on:
+- **Put the risky part where a test can reach it.** The option rendering is a pure function
+  (`cc_portalRenderSsidOptions`) compiled on the host, not device-only code. That matters because
+  an SSID may legally contain quotes and angle brackets and is emitted inside `value='...'` —
+  so escaping is load-bearing, and it is now asserted rather than hoped for.
+- **Run the negative control on the test itself.** With escaping disabled the escaping test
+  FAILS (verified), so it is a real test rather than one that passes for free. A test never seen
+  to fail proves nothing (cf. §46, in both directions).
+
+**And the save is verified by reading it back.** `cc_configSaveToNvs()` reloads the whole
+configuration and compares every field before reporting success. Return codes could not express
+this: the per-key checks had already been found meaningless (`>= 0` on an unsigned return), so
+the only honest verification is to ask flash what it actually holds — the same conclusion §45
+reached about not trusting a write.
+
+**The loss report has a stated limit, not a hidden one.** An `RTC_DATA_ATTR` "was provisioned"
+flag survives deep sleep, so a wipe across a *sleep* now repaints the setup screen under
+"Settings lost:" instead of masquerading as a first boot. It does not survive a power cycle,
+which legitimately looks like a first boot. The deliberate 10 s factory reset clears the flag,
+so a by-design wipe is not misreported as a loss. An RTC-marked "was provisioned" is a good
+signal for state that survives sleep and an honest non-signal for anything else — say which.
+
+(2026-09-19)
