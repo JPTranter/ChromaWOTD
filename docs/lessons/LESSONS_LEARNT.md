@@ -1621,6 +1621,44 @@ threshold to 0 fails three of them.
 (2026-09-19)
 
 
+## 59. A green test for a pure function does not test the code that CONSUMES it (RESOLVED)
+
+The short-hold gesture shipped and **did not work**: a real capture showed `gesture: tap` for a
+tap but *nothing at all* for a 1 s hold. The classifier was correct — 7 tests, all green — and the
+defect was in the fifteen-line loop in `main.cpp` that drove it:
+
+```cpp
+if (g == HoldGesture::ShortHold)
+    continue;                    // keep watching for a Reset... and DISCARD the ShortHold
+...
+if (st.decided)
+    return HoldGesture::None;    // <-- the pending ShortHold was thrown away here
+```
+
+`cc_holdFeed()` deliberately reports ShortHold **while the pad is still down**, so that a hold
+which keeps going can still escalate to a Reset. The loop kept watching (correct) and then
+discarded the latched result (wrong). The API required every caller to remember a pending value,
+and its only caller was device-only code with no test.
+
+Rules:
+- **A unit test proves the function, not the integration.** When a pure function hands back a value
+  that the caller must hold and act on later, that "remember it" step is logic, and it needs its own
+  test. Ask of any new API: *what must the CALLER do correctly for this to work — and is that
+  covered anywhere?*
+- **Move the caller's logic into the tested module.** The fix was not to patch the loop but to
+  relocate it: `HoldSession` (begin/feed) now lives in `hold_gesture.cpp` with 4 tests, and
+  `main.cpp` merely ticks it. Device-only loops are untestable by construction, so decisions do not
+  belong in them.
+- **This failure was invisible to every host test and to the build.** The suite was green
+  throughout; the only evidence was a bench capture where one gesture printed a line and the other
+  printed none — the same shape as §44's "the boot log is a first-class test artifact". A gesture
+  is hardware behaviour; it has to be run on hardware.
+- Verified the new test catches it: re-introducing the exact `return HoldGesture::None` makes
+  `HoldSession.AShortHoldIsReportedWhenThePadIsReleased` fail, and reverting restores 4/4.
+
+(2026-09-19)
+
+
 ## 56. Morning wake moved to 06:00 — and why the old numbers stay in the history (RESOLVED)
 
 Requested change: the three slots are now **06:00 / 12:30 / 18:00** (`sched/wake_schedule.cpp`).
