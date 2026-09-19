@@ -90,8 +90,6 @@ def fixture_args(path):
         str(weather.get("temp", 21)),
         "--condition",
         weather.get("condition", ""),
-        "--icon",
-        weather.get("icon", "partly"),
     ]
     if data.get("highlight"):
         args += ["--highlight", data["highlight"]]
@@ -112,7 +110,6 @@ def main():
     parser.add_argument("--condition", help="condition label")
     parser.add_argument("--alert", help="alert banner text (red)")
     parser.add_argument(
-        "--icon",
         choices=["sun", "cloud", "rain", "partly", "0", "1", "2", "3"],
         help="weather icon",
     )
@@ -147,7 +144,6 @@ def main():
         ("--date-ymd", args.date_ymd),
         ("--condition", args.condition),
         ("--alert", args.alert),
-        ("--icon", args.icon),
         ("--temp", args.temp),
     ):
         if value is not None:

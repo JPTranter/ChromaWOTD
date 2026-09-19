@@ -23,7 +23,7 @@
 //     reusable state), so two consecutive fetches cannot clobber each other.
 
 #pragma once
-#include "verse_display.h" // VerseData, WeatherData, WeatherIcon
+#include "verse_display.h" // VerseData, WeatherData
 #include <cstddef>
 
 #if defined(CHROMAWOTD_HOST)

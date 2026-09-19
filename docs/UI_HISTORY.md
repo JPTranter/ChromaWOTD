@@ -104,6 +104,9 @@ reads this panel at 55 and said the text needed to be larger.
 
 - **Removed:** the 70 px weather column (24% of the width), the `FORECAST`/`TOMORROW` caption, the
   vertical divider, the weather icon, and the mode title ("Verse of the Day" / "Word of the Day").
+  The icon went further than the layout: the `WeatherIcon` enum, the WMO→icon mapping,
+  `draw/weather_icon.*` and the sprite-sheet generator were deleted too, once it was clear
+  nothing in the product drew them (LESSONS §61).
 - **Header band = *what* you are reading:** the citation (`Proverbs 3:5-6`), or the word with its
   respelling, at 7pt — the line you actually glance at. The date sits right at the same size.
 - **Body = the verse**, full panel width, auto-sized through a ladder now topping out at **10pt**.

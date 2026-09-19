@@ -182,7 +182,7 @@ def main():
 
     if args.all:
         # Only layout renders share these invariants; docs/images also holds
-        # non-layout artifacts (e.g. weather_icon_sheet.png, 506x216).
+        # non-layout artifacts (e.g. the archived icon sheets in history/).
         targets = sorted(glob.glob(os.path.join(ROOT, "docs", "images", "layout_*.png")))
     else:
         targets = [args.image]

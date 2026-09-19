@@ -523,17 +523,6 @@ static bool parseArrayNumber(const char* buf, const char* key, int index, double
     return false;
 }
 
-static WeatherIcon iconFromWmo(int code) {
-    if (code == 0)
-        return WeatherIcon::Sun;
-    if (code >= 1 && code <= 3)
-        return WeatherIcon::PartlyCloudy;
-    if (code >= 80 && code <= 99)
-        return WeatherIcon::Rain;
-    if (code >= 45)
-        return WeatherIcon::Cloud;
-    return WeatherIcon::PartlyCloudy;
-}
 
 bool cc_fetchWeather(WeatherData* out, bool tomorrow) {
     if (!out)
@@ -574,7 +563,6 @@ bool cc_fetchWeather(WeatherData* out, bool tomorrow) {
     }
     out->temp = (float)temp;
     out->condition = cond;
-    out->icon = iconFromWmo(wmu);
     return true;
 }
 

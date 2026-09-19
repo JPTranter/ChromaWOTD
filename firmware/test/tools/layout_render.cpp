@@ -3,7 +3,6 @@
 //
 //   ./layout_render --verse-file verse.txt --highlight "he will make straight your paths" \
 //                   --reference "Proverbs 3:5-6" --temp -2.5 --condition "Partly cloudy" \
-//                   --icon partly --alert "Rain likely after 4 PM" --out preview.png
 //
 // Pass "-" as --verse-file to read the verse from stdin. Every draw path is the
 // same code the device runs (only the backend differs), so what you see here is
@@ -51,7 +50,6 @@ const char* kUsage = "usage: layout_render [options]\n"
                      "  --temp <celsius>                   temperature, floats and negatives allowed\n"
                      "  --condition \"Partly cloudy\"        condition label (optional)\n"
                      "  --alert \"Rain after 4 PM\"          alert banner text, drawn in red (optional)\n"
-                     "  --icon sun|cloud|rain|partly|0..3  weather icon (default partly)\n"
                      "  --date \"Fri 12 Sep\"              header date, explicit string (optional)\n"
                      "  --date-ymd 2026-09-12            header date from a real date, via the SHARED formatter\n"
                      "  --label \"TOMORROW\"                footer marker before the temperature (default FORECAST = none)\n"
@@ -77,7 +75,6 @@ struct Args {
     std::string leftcap;                     // black caption at the left of the bottom rule
     std::string out = "preview.png";
     float temp = 21.0f;
-    int icon = 3;
     bool haveHighlight = false, haveReference = false, haveAlert = false, haveCondition = false, haveDate = false;
     bool live = false;
     bool wordLive = false;
@@ -85,19 +82,6 @@ struct Args {
     bool noWeather = false;
 };
 
-int iconFromName(const std::string& name) {
-    if (name == "sun")
-        return 0;
-    if (name == "cloud")
-        return 1;
-    if (name == "rain")
-        return 2;
-    if (name == "partly")
-        return 3;
-    if (name.size() == 1 && name[0] >= '0' && name[0] <= '3')
-        return name[0] - '0';
-    return -1;
-}
 
 std::string readAll(std::istream& in) {
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -186,13 +170,6 @@ int main(int argc, char** argv) {
             a.noWeather = true;
         } else if (flag == "--out") {
             a.out = next("--out");
-        } else if (flag == "--icon") {
-            int icon = iconFromName(next("--icon"));
-            if (icon < 0) {
-                std::cerr << "layout_render: --icon expects sun|cloud|rain|partly|0..3\n";
-                return 2;
-            }
-            a.icon = icon;
         } else {
             std::cerr << "layout_render: unknown option '" << flag << "'\n\n" << kUsage;
             return 2;
@@ -218,8 +195,7 @@ int main(int argc, char** argv) {
 
     VerseData v{a.haveDate ? a.date.c_str() : nullptr, a.verse.c_str(), a.haveHighlight ? a.highlight.c_str() : nullptr,
                 a.haveReference ? a.reference.c_str() : nullptr};
-    WeatherData w{a.temp, a.haveCondition ? a.condition.c_str() : nullptr, a.haveAlert ? a.alert.c_str() : nullptr,
-                  static_cast<WeatherIcon>(a.icon)};
+    WeatherData w{a.temp, a.haveCondition ? a.condition.c_str() : nullptr, a.haveAlert ? a.alert.c_str() : nullptr};
     if (a.noWeather) {
         w.valid = false;
         w.condition = nullptr;
@@ -281,7 +257,7 @@ int main(int argc, char** argv) {
     // selector — this is what tools/font_size_probe.py reads, so "which font did
     // today's text get?" is answered by the engine rather than by re-deriving it.
     printf("verse_font=%s\n", verseFontName(cc_verseFontSize(v.verse, kVerseMaxW, kVerseMaxH)));
-    printf("temp %.1f C | icon %d | highlight %s\n", a.temp, a.icon,
+    printf("temp %.1f C | highlight %s\n", a.temp,
            !a.haveHighlight ? "n/a" : (verseHighlightFound(v) ? "matched" : "NOT FOUND - no red accent"));
     return 0;
 }

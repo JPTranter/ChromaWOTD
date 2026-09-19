@@ -7,7 +7,6 @@
     "temp": 27,
     "unit": "\u00b0C",
     "condition": "Partly cloudy",
-    "alert": "Rain likely after 4 PM",
-    "icon": "partly"
+    "alert": "Rain likely after 4 PM"
   }
 }

@@ -273,7 +273,6 @@ static void syncTask(void* /*arg*/) {
         // not render a defaulted 0°C as if it were a measurement.
         g_weather.valid = false;
         g_weather.condition = nullptr;
-        g_weather.icon = WeatherIcon::PartlyCloudy;
         Serial.println("sync: wifi FAILED (check Wi-Fi details / signal)");
     } else {
         Serial.printf("sync: wifi OK, host=%s ip=%s\n", WiFi.getHostname(), WiFi.localIP().toString().c_str());
@@ -343,7 +342,6 @@ static void syncTask(void* /*arg*/) {
             // wrong "0°C" is worse than admitting there is no reading.
             g_weather.valid = false;
             g_weather.condition = nullptr;
-            g_weather.icon = WeatherIcon::PartlyCloudy;
             g_partialReason = g_partialReason ? g_partialReason : "weather API";
             Serial.println("sync: weather FAILED (no reading)");
         } else {
@@ -896,7 +894,6 @@ void setup() {
 
     // --- Sync (Phase 3): fetch content on a big-stack task, wait for it. ----
     g_weather.temp = 0.0f;
-    g_weather.icon = WeatherIcon::PartlyCloudy;
 
     g_syncDone = xSemaphoreCreateBinary();
     xTaskCreatePinnedToCore(syncTask, "cc_sync", 16384, nullptr, 1, nullptr, 1);

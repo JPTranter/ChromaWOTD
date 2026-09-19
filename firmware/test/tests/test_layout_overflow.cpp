@@ -3,7 +3,6 @@
 // highlight robustness and UTF-8 normalisation. All targets the single light,
 // landscape layout.
 #include "../harness/canvas.h"
-#include "draw/weather_icon.h"
 #include "text/date_format.h"
 #include "verse_display.h"
 #include <cstdint>
@@ -108,10 +107,10 @@ static const char* kLongVerse = "Trust in the Lord with all your heart, and do n
 // ------------------------------------------------------- temp rounding -----
 
 TEST(Temperature, NegativeTempsRoundAwayFromZero) {
-    WeatherData a = {-0.6f, "Cold", nullptr, WeatherIcon::Cloud};
-    WeatherData b = {-1.0f, "Cold", nullptr, WeatherIcon::Cloud};
-    WeatherData c = {-0.4f, "Cold", nullptr, WeatherIcon::Cloud};
-    WeatherData d = {0.0f, "Cold", nullptr, WeatherIcon::Cloud};
+    WeatherData a = {-0.6f, "Cold", nullptr};
+    WeatherData b = {-1.0f, "Cold", nullptr};
+    WeatherData c = {-0.4f, "Cold", nullptr};
+    WeatherData d = {0.0f, "Cold", nullptr};
 
     g_canvas.init(296, 128);
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), a);
@@ -135,12 +134,12 @@ TEST(Temperature, NegativeTempsRoundAwayFromZero) {
 TEST(Temperature, PositiveTempsStillRoundUp) {
     g_canvas.init(296, 128);
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"),
-               WeatherData{24.5f, "Mild", nullptr, WeatherIcon::PartlyCloudy});
+               WeatherData{24.5f, "Mild", nullptr});
     std::string r245 = canvasHash();
 
     g_canvas.init(296, 128);
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"),
-               WeatherData{25.0f, "Mild", nullptr, WeatherIcon::PartlyCloudy});
+               WeatherData{25.0f, "Mild", nullptr});
     EXPECT_EQ(r245, canvasHash());
 }
 
@@ -149,7 +148,7 @@ TEST(Temperature, PositiveTempsStillRoundUp) {
 TEST(VerseOverflow, LandscapeMarksOverflowWithoutSpilling) {
     g_canvas.init(296, 128);
     drawLayout(verse(kLongVerse, nullptr, "Proverbs 3:5-6"),
-               WeatherData{24.5f, "Partly cloudy", nullptr, WeatherIcon::PartlyCloudy});
+               WeatherData{24.5f, "Partly cloudy", nullptr});
 
     // The verse block is x 4..291 (the full panel width less the 4px margins). The marker
     // must appear inside it.
@@ -165,7 +164,7 @@ TEST(VerseOverflow, LandscapeMarksOverflowWithoutSpilling) {
 TEST(VerseOverflow, FittingVerseHasNoMarker) {
     g_canvas.init(296, 128);
     drawLayout(verse("Trust in the Lord with all your heart.", nullptr, "Proverbs 3:5"),
-               WeatherData{27.0f, "Sunny", nullptr, WeatherIcon::Sun});
+               WeatherData{27.0f, "Sunny", nullptr});
 
     EXPECT_FALSE(hasOverflowMarker(8, 20, 196, 127)) << "a verse that fits must not be marked as truncated";
 }
@@ -174,8 +173,7 @@ TEST(WeatherAlert, TruncatedAlertStaysOnTheFooterRow) {
     g_canvas.init(296, 128);
     WeatherData w = {22.0f, "Heavy rain",
                      "Dense fog and black ice expected overnight in low lying areas, exercise caution on untreated "
-                     "roads and bridges",
-                     WeatherIcon::Rain};
+                     "roads and bridges"};
     drawLayout(verse("Short verse.", nullptr, "Ref 1:1"), w);
 
     // The warning shares the footer row with the weather. An over-long one is truncated
@@ -203,12 +201,12 @@ TEST(Highlight, FoundFlagReportsMatchHonestly) {
 TEST(Highlight, CaseInsensitiveFallbackStillAccentsRed) {
     g_canvas.init(296, 128);
     drawLayout(verse("Trust in the Lord with all your heart.", "THE LORD", "Prov 3:5"),
-               WeatherData{20.0f, "Clear", nullptr, WeatherIcon::Sun});
+               WeatherData{20.0f, "Clear", nullptr});
     int redWithHighlight = colorCount(4, 18, 218, 100, CC_RED);
 
     g_canvas.init(296, 128);
     drawLayout(verse("Trust in the Lord with all your heart.", nullptr, "Prov 3:5"),
-               WeatherData{20.0f, "Clear", nullptr, WeatherIcon::Sun});
+               WeatherData{20.0f, "Clear", nullptr});
     int redWithout = colorCount(4, 18, 218, 100, CC_RED);
 
     EXPECT_GT(redWithHighlight, redWithout) << "case-mismatched highlight must still be painted in red";
@@ -217,7 +215,7 @@ TEST(Highlight, CaseInsensitiveFallbackStillAccentsRed) {
 TEST(Highlight, MissingHighlightLeavesBodyUnaccented) {
     g_canvas.init(296, 128);
     drawLayout(verse("Trust in the Lord with all your heart.", "a phrase not present", "Prov 3:5"),
-               WeatherData{20.0f, "Clear", nullptr, WeatherIcon::Sun});
+               WeatherData{20.0f, "Clear", nullptr});
 
     EXPECT_EQ(colorCount(8, 26, 196, 102, CC_RED), 0) << "body text must not be accented when the phrase is absent";
 }
@@ -232,11 +230,11 @@ TEST(Unicode, TypographicGlyphsRenderAsAsciiEquivalents) {
                                   "God's spirit moved. ! it was good.";
 
     g_canvas.init(296, 128);
-    drawLayout(verse(typographic, nullptr, "Gen 1:3"), WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    drawLayout(verse(typographic, nullptr, "Gen 1:3"), WeatherData{21.0f, "Clear", nullptr});
     std::string typographicHash = canvasHash();
 
     g_canvas.init(296, 128);
-    drawLayout(verse(asciiEquivalent, nullptr, "Gen 1:3"), WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    drawLayout(verse(asciiEquivalent, nullptr, "Gen 1:3"), WeatherData{21.0f, "Clear", nullptr});
     EXPECT_EQ(typographicHash, canvasHash()) << "typographic UTF-8 must be normalised to ASCII before drawing";
 }
 
@@ -249,12 +247,12 @@ TEST(Unicode, NonBreakingSpaceRendersExactlyLikeAPlainSpace) {
         // NBSP as RAW BYTES (0xC2 0xA0). A \u00C2\u00A0 escape would encode U+00C2
         // followed by U+00A0 — "A-hat" plus a NBSP — which is not the same text at all.
         verse("Lord\xC2\xA0of\xC2\xA0hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
-        WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+        WeatherData{21.0f, "Clear", nullptr});
     const std::string withNbsp = canvasHash();
 
     g_canvas.init(296, 128);
     drawLayout(verse("Lord of hosts, blessed is the one who trusts in you.", "blessed", "Ps 84:12"),
-               WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+               WeatherData{21.0f, "Clear", nullptr});
     EXPECT_EQ(withNbsp, canvasHash()) << "NBSP must render exactly as a plain space";
 }
 
@@ -268,11 +266,11 @@ TEST(Unicode, TruncatedSequencesCollapseToOneQuestionMarkPerByte) {
     const char* asciiEquivalent = "a ?? b ? c ? d";
 
     g_canvas.init(296, 128);
-    drawLayout(verse(truncated, nullptr, "Gen 1:1"), WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    drawLayout(verse(truncated, nullptr, "Gen 1:1"), WeatherData{21.0f, "Clear", nullptr});
     std::string truncatedHash = canvasHash();
 
     g_canvas.init(296, 128);
-    drawLayout(verse(asciiEquivalent, nullptr, "Gen 1:1"), WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    drawLayout(verse(asciiEquivalent, nullptr, "Gen 1:1"), WeatherData{21.0f, "Clear", nullptr});
     EXPECT_EQ(truncatedHash, canvasHash())
         << "truncated UTF-8 must collapse each orphaned byte to a '?' (bounded, no OOB read)";
 }
@@ -283,46 +281,12 @@ TEST(Unicode, FourByteSequenceCollapsesToSingleReplacement) {
     const char* asciiEquivalent = "joy ? today";
 
     g_canvas.init(296, 128);
-    drawLayout(verse(emoji, nullptr, "Ps 1:1"), WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    drawLayout(verse(emoji, nullptr, "Ps 1:1"), WeatherData{21.0f, "Clear", nullptr});
     std::string emojiHash = canvasHash();
 
     g_canvas.init(296, 128);
-    drawLayout(verse(asciiEquivalent, nullptr, "Ps 1:1"), WeatherData{21.0f, "Clear", nullptr, WeatherIcon::Sun});
+    drawLayout(verse(asciiEquivalent, nullptr, "Ps 1:1"), WeatherData{21.0f, "Clear", nullptr});
     EXPECT_EQ(emojiHash, canvasHash()) << "a 4-byte sequence must collapse to a single '?'";
-}
-
-// ------------------------------------------------------ weather icon cases --
-
-// Each of the four weather icons must render distinct pixels — proof that
-// drawWeatherIcon actually draws per-icon content and a refactor or new size
-// can't silently regress one icon into another (C3).
-TEST(WeatherIcon, FourIconsAreDistinct) {
-    // The layout draws the weather as TEXT now, so this exercises drawWeatherIcon
-    // directly. Driving it through drawLayout would make the test vacuously pass — every
-    // icon would produce an identical render because no icon is drawn at all.
-    std::string hashes[4];
-
-    for (int i = 0; i < 4; i++) {
-        g_canvas.init(296, 128);
-        drawWeatherIcon(getCanvasTarget(), 148, 64, 40, static_cast<WeatherIcon>(i));
-        hashes[i] = canvasHash();
-    }
-
-    // All four hashes must be pairwise distinct.
-    for (int a = 0; a < 4; a++) {
-        for (int b = a + 1; b < 4; b++) {
-            EXPECT_NE(hashes[a], hashes[b]) << "icon " << a << " and icon " << b << " rendered identically";
-        }
-    }
-}
-
-// The weather icon must actually paint pixels in the column region (not be a no-op).
-TEST(WeatherIcon, SunIconPaintsYellow) {
-    // Same reasoning as above: test the primitive, not the layout.
-    g_canvas.init(296, 128);
-    drawWeatherIcon(getCanvasTarget(), 148, 64, 40, WeatherIcon::Sun);
-
-    EXPECT_GT(colorCount(0, 0, 295, 127, CC_YELLOW), 0) << "the sun icon must paint yellow ink";
 }
 
 // ------------------------------------------------- no-reading honesty ------
@@ -332,7 +296,7 @@ TEST(WeatherIcon, SunIconPaintsYellow) {
 // a fabricated measurement that looks like real data. These tests pin that down.
 TEST(NoReading, InvalidWeatherDrawsNoWeatherText) {
     g_canvas.init(296, 128);
-    WeatherData w{0.0f, nullptr, "OFFLINE: no wifi", WeatherIcon::PartlyCloudy};
+    WeatherData w{0.0f, nullptr, "OFFLINE: no wifi"};
     w.valid = false;
     drawLayout(verse("No network connection.", nullptr, nullptr), w);
 
@@ -351,7 +315,7 @@ TEST(NoReading, ValidZeroDegreesStillDrawsAVisibleTemperature) {
     // The counterpart: a GENUINE 0°C reading must still render. This is why the fix is a
     // validity flag and not "treat 0 as missing" — 0°C is a real temperature.
     g_canvas.init(296, 128);
-    WeatherData w{0.0f, "Clear", nullptr, WeatherIcon::Sun};
+    WeatherData w{0.0f, "Clear", nullptr};
     w.valid = true;
     drawLayout(verse("Cold morning.", nullptr, "Ref 1:1"), w);
 

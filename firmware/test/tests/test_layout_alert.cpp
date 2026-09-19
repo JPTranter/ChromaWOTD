@@ -35,7 +35,7 @@ static VerseData sampleVerse() {
 // The footer row: warnings left in red, weather right in black.
 TEST(LayoutAlert, WarningBottomLeft_WeatherBottomRight_PngDump) {
     g_canvas.init(296, 128);
-    WeatherData w = { 22.0f, "Heavy rain", "Rain after 4 PM", WeatherIcon::Rain };
+    WeatherData w = { 22.0f, "Heavy rain", "Rain after 4 PM" };
     drawLayout(sampleVerse(), w);
 
     EXPECT_GT(colorCount(4, 112, 150, 127, CC_RED), 0) << "a warning must render bottom-LEFT in red";
@@ -61,8 +61,7 @@ TEST(LayoutAlert, OverlongWarningIsVisiblyTruncatedAndStaysInBounds) {
     WeatherData w = { 22.0f,
                       "Heavy rain",
                       "Dense fog and black ice expected overnight in low lying areas, exercise "
-                      "caution on untreated roads and bridges",
-                      WeatherIcon::Rain };
+                      "caution on untreated roads and bridges" };
     drawLayout(sampleVerse(), w);
 
     // Truncation is marked with "..." — locate it by its SIGNATURE (isolated dots) rather

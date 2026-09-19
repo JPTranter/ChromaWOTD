@@ -7,16 +7,6 @@
 #define CC_RED 2u
 #define CC_YELLOW 3u
 
-// Weather icon codes (shared by header, layout, render preview, and HTML mockup).
-// The mapping 0=sun, 1=cloud, 2=rain, 3=partly is the single source of truth; string
-// tables in layout_render.cpp and verse_template.html derive from these values.
-enum class WeatherIcon : int {
-    Sun = 0,
-    Cloud = 1,
-    Rain = 2,
-    PartlyCloudy = 3,
-};
-
 // Orientation and theme are NOT parameters: the display has exactly one presentation —
 // landscape, light theme. These enums exist so the dispatcher (drawLayout) can be
 // extended to other presentations without magic numbers, and so the README table
@@ -35,8 +25,7 @@ struct WeatherData {
     float temp;
     const char* condition;
     const char* alert; // shown in red, or nullptr
-    WeatherIcon icon;  // 0=sun, 1=cloud, 2=rain, 3=partly
-    // false == there is NO reading (the fetch failed). temp/condition/icon are then
+    // false == there is NO reading (the fetch failed). temp/condition are then
     // meaningless and must NOT be drawn: the old code defaulted to 0.0 and rendered a
     // confident "0°C", which is a fabricated measurement rather than a missing one.
     // Defaults to true so existing 4-element aggregate initialisers (tests, fixtures)

@@ -56,7 +56,7 @@ The device refreshes **2–4 times per day** (full ~25 s pigment sweep per refre
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │  Data Layer (Phase 3+)                                  │   │
 │  │  VerseData { date, verse, highlight, reference }        │   │
-│  │  WeatherData { temp, condition, alert, icon }           │   │
+│  │  WeatherData { temp, condition, alert }                │   │
 │  │  Cached last successful fetch + timestamp               │   │
 │  └──────────────────────────┬──────────────────────────────┘   │
 │                             │                                   │
@@ -66,7 +66,7 @@ The device refreshes **2–4 times per day** (full ~25 s pigment sweep per refre
 │  │  verse_display.cpp + text/ + draw/ modules              │   │
 │  │  - UTF-8 → ASCII normalisation (text/glyphs)            │   │
 │  │  - Text wrapping + visible overflow markers             │   │
-│  │  - Weather icon vector drawing (draw/weather_icon)      │   │
+│  │  - Weather as TEXT in the footer row                     │   │
 │  │  - Single light/landscape presentation (296×128)        │   │
 │  │  - Host harness (CanvasTarget) + device (SeeedTarget)   │   │
 │  └──────────────────────────┬──────────────────────────────┘   │
@@ -155,7 +155,7 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 - **Stack Allocation**: Executed on a dedicated FreeRTOS task (`cc_sync`) with an explicit **16 KB stack** pinned to core 1, bypassing the fixed 8 KB Arduino loopTask limitation.
 
 ### 3. Data Selection & Mapping (What data)
-The weather subsystem populates `WeatherData` (`temp`, `condition`, `alert`, `icon`) and
+The weather subsystem populates `WeatherData` (`temp`, `condition`, `alert`) and
 `LayoutOptions::weatherLabel`. Note the layout draws only `temp` and `condition`: the ICON is no
 longer rendered anywhere (the condition words carry more), though the field and the drawing
 primitive remain — see LESSONS §53:
@@ -176,7 +176,7 @@ primitive remain — see LESSONS §53:
   - `71, 73, 75, 77, 85, 86` → "Snow"
   - `95, 96, 99` → "Thunderstorm" (triggers alert)
   - All other codes → "Cloudy"
-- **Vector Icons (`WeatherIcon`)**: Coarse 4-icon vector engine (`Sun` = 0, `Cloud` = 1, `Rain` = 2, `PartlyCloudy` = 3). WMO 0 maps to Sun; 1–3 to PartlyCloudy; ≥80 to Rain; remainder to Cloud. **Not drawn by the layout any more** (the condition text replaced it); the module and its tests remain.
+- **No icons**: the display is text-only. A 4-icon vector engine was removed on 2026-09-19 — the condition words carry more than a 10px glyph that only distinguished four states (LESSONS §61). `WeatherData` is `temp` + `condition` + `alert`.
 - **Alert Text**: WMO codes 95, 96, 99 produce `"Severe weather warning"`.
 
 ### 4. Failure Modes & Degradation Hierarchy (Failure behaviour)
@@ -311,7 +311,6 @@ firmware/src/
     glyphs.{h,cpp}          cc_utf8ToAscii / cc_utf8ToAsciiN — one decoder, length-bounded
     wrap.{h,cpp}            cc_lineCapacity, cc_lineBudget — pure line/budget math
   draw/
-    weather_icon.{h,cpp}    drawWeatherIcon (vector icons, draws through DisplayTarget)
     font_types.h            GFXglyph/GFXfont/PROGMEM — host shim or device gfxfont.h
     target.h                DisplayTarget interface
     target_seeed.cpp        Seeed GFX backend (colour mapping, FreeSans glyph draw)

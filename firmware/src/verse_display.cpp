@@ -6,7 +6,6 @@
 
 // Shared UTF-8 -> single-byte decoder and wrapping math live in text/ (D1) so
 // they are pure, unit-testable units rather than hidden in this monolith.
-#include "draw/weather_icon.h"
 #include "net/portal.h"  // PortalInfo, for the setup screen at the end of this file
 #include "net/wifi_qr.h" // cc_qrBuildWifiPayload, for the setup screen's QR code
 #include "text/glyphs.h"
@@ -300,9 +299,6 @@ static void dev_drawString(int x, int y, const char* str, uint32_t c, int size) 
 static void dev_drawStringRight(int rx, int y, const char* str, uint32_t c, int size) {
     dev_drawString(rx - dev_measureText(str, size), y, str, c, size);
 }
-
-// drawWeatherIcon is extracted to draw/weather_icon.{h,cpp} (D1); call it as
-// drawWeatherIcon(target(), cx, cy, size, icon).
 
 // Lines the greedy wrapper below needs for a given width budget (mirrors the
 // draw loops exactly, so the truncation decision is made before drawing).

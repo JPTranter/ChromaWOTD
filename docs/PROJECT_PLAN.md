@@ -156,7 +156,7 @@ reformat is silent).
         prominent red banner (`OFFLINE: [Reason]`).
   - Exponential / 15-minute retry backoff on network failure before re-entering sleep.
 - [x] **NTP Synchronization**: SNTP sync on wake, POSIX timezone adjustment with automatic DST handling.
-- [x] **Weather Pipeline**: Open-Meteo REST daily forecast fetch, ArduinoJson parsing, weather code to BWRY icon mapping, alert detection. Daytime (< 18:00) pulls today's expected maximum + condition; evening (≥ 18:00) pulls tomorrow's expected maximum + condition.
+- [x] **Weather Pipeline**: Open-Meteo REST daily forecast fetch, ArduinoJson parsing, weather code to condition text, alert detection. Daytime (< 18:00) pulls today's expected maximum + condition; evening (≥ 18:00) pulls tomorrow's expected maximum + condition.
 - **Content Pipelines**:
   - [x] Verse of the Day pipeline (BibleGateway VOTD).
   - [x] Word of the Day pipeline — **A.Word.A.Day** (`wordsmith.org/words/today.html`):

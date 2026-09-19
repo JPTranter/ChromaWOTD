@@ -27,7 +27,7 @@
 | Word of the Day source | ✅ Phase 5: A.Word.A.Day (`wordsmith.org/words/today.html`) — definition + example body, respelling pronunciation caption, headword caption; bundled fallback word if the fetch fails |
 | Weather policy & outlook | ✅ Daytime (< 18:00) shows today's expected maximum + condition (unlabelled); evening (18:00–23:59) shows tomorrow's expected maximum + condition with a red **TOMORROW** marker before it — without that marker the number is indistinguishable from today's |
 | Buttons & content toggle | ✅ A **tap** = sync + refresh; a **hold ~0.5-10 s** = show the other content for that refresh (an `RTC_DATA_ATTR` invert flag, cleared at the next scheduled wake, so the clock is always back in charge at the next slot); a **hold 10 s+** = factory reset. Classified by hold length in `sched/hold_gesture` (7 tests). A **double click was measured and ruled out**: every button wake — tap or double click — shows the pad still low at the first sample, so the two are indistinguishable (LESSONS §58) |
-| Weather icon mapping | ⚠️ **known limitation, accepted** — only WMO ≥ 80 get the Rain icon; Drizzle (51-57) and Rain (61-67) fall through to the plain Cloud icon. Text label is correct; decided 2026-09-12 to leave as-is (see LESSONS §35) |
+| Weather icons | ✅ **N/A — the icon was removed (2026-09-19).** The weather is TEXT (`25°C Partly cloudy`), so the old "only WMO ≥ 80 gets a Rain icon" limitation no longer exists: the condition words are always correct. The `WeatherIcon` enum, the WMO→icon mapping, `draw/weather_icon.*`, the `--icon` preview flag and the sprite-sheet generator were all deleted (LESSONS §61) |
 | Verse font auto-size | ✅ Ladder extracted to `cc_pickVerseFont()`/`cc_verseFontSize()`; block geometry lives once in `verse_display.h` (`kVerseMaxW`/`kVerseMaxH`). The ladder is now **10 / 9 / 8 / 7 / 6 / 5.5 / 5pt** (widened from 6/5.5/5 with the verse-first layout, then raised to 10pt so short content can fill the panel — LESSONS §53/§55). Measured on the device font path: short verses and Word-of-the-Day definitions get **10pt**, the 153-char fixture verse 8pt, 191 chars 7pt, 316 chars 5.5pt |
 | Auto-size local coverage | ✅ `test_verse_autosize` — CMake compiles this target **with** `-DCHROMAWOTD_FONT_FREESANS=1`, closing a blind spot where every other host target exercised only the non-FreeSans path. 7/7 suites pass; `verify_all.py` ALL GREEN |
 | Device-font host suite | ✅ `-DCHROMAWOTD_DEVICE_FONTS=ON` runs the layout invariants on the shipped proportional font path; two font-calibrated tests were corrected (overflow-marker detector, alert-rule probe) after a render proved the product was fine and only the tests were. Wired in as `verify_all.py` stage 3/5 (see LESSONS §39) |
@@ -74,8 +74,8 @@
    both HTTPS fetches validating against the new roots over real TLS.
 3. **Cached last-good content** — show the previous verse/word with an "as of" note instead
    of the "unavailable" screen. Real data rather than invented data; still on PROJECT_PLAN.
-4. **Weather icon mapping for Drizzle / Rain 61–67** — accepted known limitation
-   (LESSONS §35); revisit only if the text-only distinction proves insufficient.
+4. ~~Weather icon mapping for Drizzle / Rain 61–67~~ — **resolved 2026-09-19** by removing
+   the icon: the condition is text, so it is always spelled correctly (LESSONS §35, §61).
 
 ## Layout follow-ups (from the 2026-09-12 review, not yet done)
 

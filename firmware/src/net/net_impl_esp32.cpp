@@ -213,10 +213,6 @@ bool cc_fetchWeather(WeatherData* w, bool tomorrow) {
     w->temp = (float)temp;
     w->condition = cond;
     w->alert = needAlert ? (cc_alertFromWmo(wmo, alert, sizeof(alert)), alert) : nullptr;
-    w->icon = (wmo == 0)             ? WeatherIcon::Sun
-            : (wmo >= 1 && wmo <= 3) ? WeatherIcon::PartlyCloudy
-            : (wmo >= 80)            ? WeatherIcon::Rain
-                                     : WeatherIcon::Cloud;
     return true;
 }
 

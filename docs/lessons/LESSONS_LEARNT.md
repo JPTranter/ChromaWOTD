@@ -655,7 +655,12 @@ or a pyserial reader that sets `dtr=False`/`rts=False` before `open()`.
 
 (2026-09-12)
 
-## 35. Drizzle (and Rain 61-67) draw the plain Cloud icon — KNOWN LIMITATION, accepted
+## 35. Drizzle (and Rain 61-67) draw the plain Cloud icon — RESOLVED 2026-09-19
+
+> **Resolved 2026-09-19 (LESSONS §61):** the weather ICON was removed from the display —
+> the condition is TEXT now — so this limitation no longer exists; "Drizzle" and "Rain" are
+> spelled out. The diagnosis below is kept because the mapping rule it describes
+> (`cc_wmoCondition`) is unchanged and remains the single source of truth for the words.
 
 **Symptom.** A "Drizzle" forecast shows the generic outline cloud, not the rain icon.
 
@@ -1739,5 +1744,41 @@ agent's own file-writing tool, which is the giveaway: the rule is not "generated
 (that tool now emits a trailing newline), but a hand-authored document trips the same hook, and
 the failure mode is identical — the hook rewrites the file, pre-commit's stash/restore conflicts
 with that rewrite, the fix rolls back, and the commit is simply not made.
+
+(2026-09-19)
+
+## 61. Removing a feature from the DISPLAY is not removing it from the codebase (RESOLVED)
+
+The owner asked, of a doc that still described weather icons: *"those don't exist anymore"*. They
+were right about the display and wrong about the code — which is the interesting part. When the
+verse-first redesign removed the icon from the panel, it left behind:
+
+- `WeatherIcon` and `WeatherData::icon`
+- the WMO→icon mapping in **both** net paths (`net.cpp` for host, `net_impl_esp32.cpp` for device)
+- `draw/weather_icon.{h,cpp}` — a whole drawing module
+- the `--icon` flag in `layout_render` and `render_preview`, and the fixture's `icon` field
+- `tools/weather_icon_sheet.py`, which rendered a sprite sheet for it
+- two host tests that called `drawWeatherIcon` directly (rewritten in §53 precisely so they would
+  not go vacuous — they became the only remaining caller)
+- and a stale `verse_template.html` browser mockup of the pre-redesign layout
+
+**Nothing in the product drew an icon.** The module survived on test-and-tooling references alone,
+which is exactly the "dead code" the project's own review methodology tells you to grep for — and
+the tests were keeping it alive rather than covering it.
+
+Rules:
+- **A UI change is not done when the pixels change.** Grep the feature's *symbol* and delete what
+  remains: the enum, the field, the mapping, the drawing module, the tooling flags, the generator,
+  and the tests that only exist for it. "The layout no longer calls it" leaves dead weight with a
+  passing test suite attached.
+- **A test can keep dead code alive.** Those two tests were legitimate coverage when the icon was
+  drawn; after the redesign they were the only caller, so "it is tested" and "it is used" became
+  the same false comfort. When a feature is withdrawn, its tests go with it.
+- **Docs describe the product, so they drift with it.** Every reference — README struct listings,
+  the repo tree, architecture diagrams, example commit messages in CONTRIBUTING, the module map —
+  had to be swept. A doc that describes a feature the product no longer has is worse than silent:
+  it sends the next reader looking for code that was deleted.
+- **It resolved a known limitation for free.** §35 accepted that Drizzle/rain drew the wrong icon.
+  With the icon gone and the condition as text, that limitation simply ceased to exist.
 
 (2026-09-19)

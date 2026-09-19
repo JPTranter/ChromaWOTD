@@ -97,7 +97,7 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 
 **Examples:**
 ```
-feat(layout): add weather icon reflow for no-alert case
+feat(layout): shrink the footer when an alert is present
 fix(font): correct degree symbol positioning in FreeSans path
 docs(review): add check-off table to REVIEW.md
 chore(build): remove dead board_pins.h and driver.h
@@ -131,7 +131,7 @@ chore(build): remove dead board_pins.h and driver.h
 4. **Commit your changes:**
    ```bash
    git add -p  # stage selectively
-   git commit -m "feat(layout): add weather icon reflow for no-alert case"
+   git commit -m "feat(layout): shrink the footer when an alert is present"
    ```
 
 5. **Push and open a PR:**

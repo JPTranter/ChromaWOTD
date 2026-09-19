@@ -123,7 +123,6 @@ struct WeatherData {
     float temp;
     const char* condition;
     const char* alert;       // Alert banner rendered in red (or nullptr)
-    int icon;                // 0=Sun, 1=Cloud, 2=Rain, 3=Partly Cloudy
 };
 ```
 
@@ -175,7 +174,7 @@ the **headword** in red at the right.
 ### 4. Network Layer & Data Sources
 `firmware/src/net/` splits the network path so parsing and mapping are testable on the host:
 
-* **`net.cpp`** — shared logic (WMO code → condition text/icon/alert, JSON and A.Word.A.Day
+* **`net.cpp`** — shared logic (WMO code → condition text/alert, JSON and A.Word.A.Day
   HTML parsing), plus a host fetch backend that shells out to `curl`.
 * **`net_impl_esp32.{h,cpp}`** — the device backend: Wi-Fi, `HTTPClient`, `ArduinoJson`, and
   the pinned root CAs.
@@ -241,7 +240,6 @@ CHROMAWOTD/
 │   │   │   ├── target_canvas.cpp  Host backend (mock canvas + PNG)
 │   │   │   ├── target_seeed.cpp   Device backend (Seeed GFX)
 │   │   │   ├── font_types.h     GFXglyph/GFXfont types (host shim / device gfxfont.h)
-│   │   │   └── weather_icon.{h,cpp}  Vector weather icons
 │   │   ├── net/
 │   │   │   ├── net.{h,cpp}      Shared parse/mapping + host (curl) fetch backend
 │   │   │   ├── net_impl_esp32.{h,cpp}  Device backend: Wi-Fi, TLS, ArduinoJson
@@ -409,10 +407,10 @@ The suites are:
 | `test_layout_alert` | The footer row: a warning renders bottom-LEFT in red, the weather text bottom-RIGHT, neither spills, and an over-long warning is truncated with a visible marker |
 | `test_layout_overflow` | Region invariants (nothing spills out of a block), overflow markers (per font family), temperature rounding, highlight matching, UTF-8 → ASCII normalisation |
 | `test_verse_autosize` | The verse body auto-size ladder (Roboto 10/9/8/7/6/5.5/5pt) — compiled **with** `-DCHROMAWOTD_FONT_FREESANS=1` so the selection the panel makes is actually covered |
-| `test_net` | WMO code → condition/icon/alert mapping, JSON extraction, A.Word.A.Day HTML parsing (incl. printable-ASCII and newline-collapse guards), plus live-fetch smoke tests that skip when there is no network |
+| `test_net` | WMO code → condition/alert mapping, JSON extraction, A.Word.A.Day HTML parsing (incl. printable-ASCII and newline-collapse guards), plus live-fetch smoke tests that skip when there is no network |
 | `test_sched` | Next-wake slot math (midnight roll-over, slot boundaries, never 0) and the time-based content/forecast policy |
 
-Fixtures used by the suites are mirrored in `tools/preview/sample_data.json` / `verse_template.html`.
+Fixtures used by the suites are mirrored in `tools/preview/sample_data.json`.
 
 #### Testing the font path the device actually ships
 
