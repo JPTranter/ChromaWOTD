@@ -152,19 +152,18 @@ static HoldGesture sampleWakeGesture() {
         return HoldGesture::None; // timer or power-on: there is no gesture to classify
 
     ensureButtonPadsReady();
-    HoldState st;
-    cc_holdBegin(&st);
+    // The session logic lives in hold_gesture.cpp so it is unit-tested: an earlier version of
+    // this loop discarded the ShortHold the classifier reported while the pad was still down,
+    // and short holds were silently ignored on hardware (LESSONS §59).
+    HoldSession s;
+    cc_holdSessionBegin(&s);
     uint32_t prev = millis();
     for (;;) {
         const uint32_t now = millis();
-        const HoldGesture g = cc_holdFeed(&st, cc_anyButtonDown(), now - prev);
+        const HoldGesture g = cc_holdSessionFeed(&s, cc_anyButtonDown(), now - prev);
         prev = now;
-        if (g == HoldGesture::ShortHold)
-            continue; // reported while still held: keep watching, it may escalate to a Reset
         if (g != HoldGesture::None)
-            return g; // Tap or Reset
-        if (st.decided)
-            return HoldGesture::None; // released after a ShortHold
+            return g;
         delay(CC_HOLD_SAMPLE_MS);
     }
 }

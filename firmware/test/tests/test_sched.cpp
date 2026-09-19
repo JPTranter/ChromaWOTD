@@ -180,6 +180,50 @@ TEST(HoldGesture, ASingleContactSampleIsStillATap) {
     EXPECT_EQ(feed(st, false, 20), HoldGesture::Tap);
 }
 
+// ------------------------------------------------------------ hold sessions ------
+// The SESSION driver is what main.cpp ticks. The first version of that loop lived in
+// main.cpp, was never unit-tested, and silently discarded the ShortHold — so a 1 s hold did
+// nothing on hardware while the classifier's own 7 tests stayed green. These cover the
+// consumer, not just the classifier (LESSONS §59).
+
+TEST(HoldSession, AShortHoldIsReportedWhenThePadIsReleased) {
+    HoldSession s;
+    cc_holdSessionBegin(&s);
+    // 600 ms held: the classifier reports ShortHold internally, but the session is not final
+    // yet (a continuing hold may still escalate to a Reset).
+    for (int i = 0; i < 12; i++)
+        EXPECT_EQ(cc_holdSessionFeed(&s, true, CC_HOLD_SAMPLE_MS), HoldGesture::None);
+    // The release is when the user has finished, and the gesture must survive to it.
+    EXPECT_EQ(cc_holdSessionFeed(&s, false, CC_HOLD_SAMPLE_MS), HoldGesture::ShortHold)
+        << "discarding the ShortHold here is exactly the bug that made a 1 s hold do nothing";
+}
+
+TEST(HoldSession, ATapIsReportedOnRelease) {
+    HoldSession s;
+    cc_holdSessionBegin(&s);
+    EXPECT_EQ(cc_holdSessionFeed(&s, true, CC_HOLD_SAMPLE_MS), HoldGesture::None);
+    EXPECT_EQ(cc_holdSessionFeed(&s, false, CC_HOLD_SAMPLE_MS), HoldGesture::Tap);
+}
+
+TEST(HoldSession, AContinuingHoldEscalatesToResetRatherThanAShortHold) {
+    HoldSession s;
+    cc_holdSessionBegin(&s);
+    HoldGesture got = HoldGesture::None;
+    for (int i = 0; i < 220 && got == HoldGesture::None; i++)
+        got = cc_holdSessionFeed(&s, true, CC_HOLD_SAMPLE_MS);
+    EXPECT_EQ(got, HoldGesture::Reset) << "a 10 s hold wipes the config; it is not a toggle";
+}
+
+TEST(HoldSession, PadAlreadyLowAtTheFirstSampleIsStillJustATap) {
+    // The documented normal case: the press that WOKE the device is still held when sampling
+    // begins, and releases ~120 ms later (LESSONS §58).
+    HoldSession s;
+    cc_holdSessionBegin(&s);
+    EXPECT_EQ(cc_holdSessionFeed(&s, true, 50), HoldGesture::None);
+    EXPECT_EQ(cc_holdSessionFeed(&s, true, 50), HoldGesture::None);
+    EXPECT_EQ(cc_holdSessionFeed(&s, false, 50), HoldGesture::Tap);
+}
+
 TEST(HoldGesture, ProgressTracksTheResetThreshold) {
     HoldState st;
     cc_holdBegin(&st);
