@@ -6,6 +6,12 @@ alerts on a 2.9" quadruple-colour (black, white, red, yellow) ePaper panel. It r
 times a day at scheduled slots (or on a button press) and deep-sleeps in between. Built upon
 the architectural and hardware lessons of the sibling eClock project.
 
+> [!TIP]
+> **Just want to build and run one?** Start with the
+> [**User Guide**](docs/USER_GUIDE.md) — hardware list, flashing a release image, the
+> first-time setup wizard, the buttons and troubleshooting. This README is the
+> developer-facing overview.
+
 ---
 
 ## Technical Reality: Why Not a Minute-by-Minute Clock?
@@ -210,6 +216,7 @@ CHROMAWOTD/
 │   ├── STATUS.md                Current project phase, completed tasks, and next steps
 │   ├── REVIEW.md                Critical code & project review (security, design, hygiene)
 │   ├── UI_HISTORY.md            How the display has changed, era by era, with the renders
+│   ├── USER_GUIDE.md            End-user guide: flash a release, set up, use it
 │   ├── hardware/datasheets/     Vendor PDFs (gitignored) + README with download links
 │   ├── images/                  Regression ledger PNGs (byte-compared) + history/ archive
 │   ├── lessons/
@@ -527,7 +534,9 @@ The Release workflow builds from a clean checkout and attaches:
 | `ChromaWOTD-<tag>.elf` | Unstripped, for debugging. |
 
 Release notes are generated from the feat/fix commits since the previous `v*` tag and
-**include the flash procedure**, so the Releases page is self-contained.
+**include the flash procedure**, so the Releases page is self-contained. For the
+end-user walkthrough (hardware, flashing, the setup wizard, the button gestures), see
+[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 
 A released image contains no credentials, and cannot: there is no way to compile them
 in. Flash it and the device comes up in its setup portal, where you enter your Wi-Fi

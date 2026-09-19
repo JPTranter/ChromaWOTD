@@ -175,7 +175,12 @@ reformat is silent).
   - Low battery warning icon in header (at < 15% / ~3.55V).
   - Critical cutoff screen (< 3.3V): Display persistent "LOW BATTERY — PLEASE RECHARGE" screen and enter infinite deep sleep with display power gated off.
 - [ ] **Enclosure sketch**: Reuse 79 × 36.7 mm panel cutout dimensions from eClock (500mAh LiPo flat pouch fit).
-- [ ] **Release Tagging & CI**: Tag-triggered binary builds.
+- [x] **Release Tagging & CI**: tag-triggered binary builds
+      (`.github/workflows/release.yml`, with notes from `.github/workflows/gen_release_notes.py`).
+      Pushing a `v*` tag injects the tag as the firmware version, builds, verifies and merges the
+      image, generates the notes from the feat/fix commits since the previous tag, and attaches
+      the merged image (`0x0`), the app-only image (`0x10000`) and the `.elf`. First exercised by
+      `v0.1.0`.
 
 
 ## Known unknowns (Resolved)

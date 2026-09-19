@@ -103,12 +103,19 @@ their expected signature at the expected offset, and a credential scan refuses t
 publish an image containing Wi-Fi credentials (there is no compile-time path, so this
 is a tripwire against one being reintroduced).
 
-**Full changelog**: https://github.com/{repo}/compare/{prev}...{tag}
+**Full changelog**: {compare}
 """
 
 
 def git(*args):
-    return subprocess.run(["git", *args], capture_output=True, text=True).stdout
+    # Surface a failed git call in the workflow log. Swallowing stderr (the original
+    # behaviour) meant an invalid ref produced an EMPTY changelog that read as "no changes",
+    # which is exactly what a first release must not publish (LESSONS §42: a never-run gate
+    # is a test of the gate).
+    result = subprocess.run(["git", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"::warning::git {' '.join(args)} failed: {result.stderr.strip()}")
+    return result.stdout
 
 
 def prev_tag(current):
@@ -123,11 +130,16 @@ def prev_tag(current):
 
 
 def changes_between(prev, tag):
-    """(type, subject) for feat/fix commits in prev..tag."""
-    if not prev:
-        return []
+    """(type, subject) for feat/fix commits in prev..tag.
+
+    With no previous tag — the FIRST release — the range is the whole history up to
+    `tag`. Returning [] there (the original behaviour) made the very first release
+    announce "No feat/fix changes in this range", which is both wrong and the least
+    useful possible thing to publish.
+    """
+    rng = f"{prev}..{tag}" if prev else tag
     out = []
-    for line in git("log", "--pretty=%s", f"{prev}..{tag}").splitlines():
+    for line in git("log", "--pretty=%s", rng).splitlines():
         m = re.match(r"^(feat|fix)(\([^)]*\))?: (.*)$", line.strip(), re.I)
         if m:
             out.append((m.group(1).lower(), m.group(3).strip()))
@@ -159,12 +171,19 @@ def main():
     else:
         bullets = "- No feat/fix changes in this range (docs/tooling only)."
 
+    # compare/initial...v0.1.0 is a 404; a first release gets the commit list instead.
+    compare = (
+        f"https://github.com/{REPO}/compare/{prev}...{args.tag}"
+        if prev
+        else f"https://github.com/{REPO}/commits/{args.tag}"
+    )
+
     body = _TEMPLATE.format(
         tag=args.tag,
         since=since,
         changes=bullets,
         repo=REPO,
-        prev=prev if prev else "initial",
+        compare=compare,
     )
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(body)
