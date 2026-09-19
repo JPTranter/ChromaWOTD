@@ -34,6 +34,13 @@ import datetime
 import sys
 import time
 
+# Last-resort port name, used ONLY when auto-detection finds nothing. That is the
+# normal case here: the device deep-sleeps, so its USB port does not exist until it
+# wakes. Both modes are built to WAIT for the port (`--capture` waits for it to
+# appear, `--presence` treats its absence as the sleep signal), so resolution must
+# never fail just because nothing is present yet. Override with --port COMx.
+FALLBACK_PORT = "COM13"
+
 
 def now():
     return datetime.datetime.now().strftime("%H:%M:%S")
@@ -153,19 +160,24 @@ def main():
         print("ERROR: pyserial not installed (pip install pyserial)")
         return 2
 
-    # Auto-detect the port rather than hardcoding a bench-specific COM number: the
-    # assignment changes with the USB port/hub, and a stale default silently watches
-    # nothing.
+    # Resolve the port. Auto-detection is preferred but must NOT be required: while
+    # the device deep-sleeps its port does not exist, and this tool exists to observe
+    # precisely that state. Requiring a present port at startup makes both modes fail
+    # whenever the device is asleep — i.e. almost always, and always for `--capture`.
     if not args.port:
         detected = list_serials()
-        if not detected:
-            print("ERROR: no serial port detected; pass --port COMx")
-            return 2
-        args.port = detected[0]
-        if len(detected) > 1:
-            print(f"note: {len(detected)} ports found ({', '.join(detected)}); using {args.port}")
+        if detected:
+            args.port = detected[0]
+            if len(detected) > 1:
+                print(f"note: {len(detected)} ports found ({', '.join(detected)}); using {args.port}")
+            else:
+                print(f"using detected port {args.port}")
         else:
-            print(f"using detected port {args.port}")
+            args.port = FALLBACK_PORT
+            print(
+                f"no port present yet (the device is asleep - that is expected); "
+                f"waiting for {args.port}. Pass --port COMx to name a different one."
+            )
 
     if args.presence:
         return mode_presence(args.port, args.seconds)
