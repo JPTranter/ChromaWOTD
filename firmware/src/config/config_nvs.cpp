@@ -20,6 +20,20 @@
 
 namespace {
 constexpr const char* kNamespace = "chromawotd";
+
+// Our configuration lives in its OWN NVS partition ("nvs_cfg", declared in
+// firmware/partitions.csv) rather than in the default "nvs".
+//
+// The Arduino core's initArduino() erases the whole of the FIRST data/nvs partition
+// whenever nvs_flash_init() reports ESP_ERR_NVS_NO_FREE_PAGES
+// (cores/esp32/esp32-hal-misc.c). The default partition is only 20 KB and is shared
+// with the WiFi/BLE/DHCP stack, so when WiFi state filled it, our stored credentials
+// were destroyed along with it and the device silently re-offered its setup portal
+// (BUG-06 / LESSONS §45). A dedicated partition is out of that erase's reach.
+//
+// Preferences::begin() calls nvs_flash_init_partition(label) itself, so passing this
+// label is the entire change — no separate init call is required.
+constexpr const char* kPartition = "nvs_cfg";
 constexpr const char* kKeySsid = "ssid";
 constexpr const char* kKeyPass = "pass";
 constexpr const char* kKeyTz = "tz";
@@ -70,7 +84,7 @@ bool cc_configLoadFromNvs(DeviceConfig* cfg) {
     if (!cfg)
         return false;
     Preferences p;
-    if (!p.begin(kNamespace, /*readOnly=*/true))
+    if (!p.begin(kNamespace, /*readOnly=*/true, kPartition))
         return false;
 
     bool any = false;
@@ -101,7 +115,7 @@ bool cc_configLoadFromNvs(DeviceConfig* cfg) {
 
 bool cc_configSaveToNvs(const DeviceConfig& cfg) {
     Preferences p;
-    if (!p.begin(kNamespace, /*readOnly=*/false))
+    if (!p.begin(kNamespace, /*readOnly=*/false, kPartition))
         return false;
 
     // putBytes with an explicit length writes the string WITHOUT a trailing NUL;
@@ -124,7 +138,7 @@ bool cc_configSaveToNvs(const DeviceConfig& cfg) {
 
 bool cc_configEraseNvs() {
     Preferences p;
-    if (!p.begin(kNamespace, /*readOnly=*/false))
+    if (!p.begin(kNamespace, /*readOnly=*/false, kPartition))
         return false;
     const bool ok = p.clear();
     p.end();

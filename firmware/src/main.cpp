@@ -304,6 +304,120 @@ static void runButtonProbe() {
 }
 #endif
 
+#ifdef CHROMAWOTD_NVS_FILL_PROBE
+// --- Destructive NVS-fill diagnostic (env:nvsprobe / env:nvsprobe_legacy) -------
+// Reproduces BUG-06 (LESSONS §45) deterministically and reports what survived.
+//
+// The fault: the Arduino core's initArduino() erases a whole partition when
+// nvs_flash_init() returns ESP_ERR_NVS_NO_FREE_PAGES, and it picks that partition with
+// a NULL label — i.e. the FIRST `data, nvs` entry in the table, which on the legacy
+// layout is the 20 KB `nvs` shared with the WiFi stack. Fill that partition and the
+// credentials stored in it are gone with it.
+//
+// Run it as a PAIR, which is the whole point — this demonstrates the fix instead of
+// asserting it:
+//   env:nvsprobe_legacy -> config shares `nvs`          -> config DESTROYED
+//   env:nvsprobe        -> config in its own `nvs_cfg`  -> config SURVIVES
+//
+// Stage 0: fill the shared namespace until writes fail, then reboot so the core's
+//          nvs_flash_init() runs against a genuinely full partition.
+// Stage 1: report the damage and the verdict, then sleep (no portal, no ~25 s sweep) so
+//          the diagnostic stays short and re-runnable.
+#include <Preferences.h>
+#include <nvs.h>
+
+RTC_DATA_ATTR static uint32_t g_nvsFillStage = 0;
+
+static void cc_nvsStats(const char* when) {
+    nvs_stats_t st = {};
+    if (nvs_get_stats(nullptr, &st) == ESP_OK) {
+        Serial.printf("probe: %s shared-nvs entries used=%u free=%u total=%u namespaces=%u\n", when,
+                      (unsigned)st.used_entries, (unsigned)st.free_entries, (unsigned)st.total_entries,
+                      (unsigned)st.namespace_count);
+    } else {
+        Serial.printf("probe: %s shared-nvs stats unavailable\n", when);
+    }
+}
+
+// Are our fill markers still there? Absent => the shared partition was reformatted.
+static bool cc_fillMarkersPresent() {
+    Preferences p;
+    if (!p.begin("nvsfill", /*readOnly=*/true))
+        return false;
+    const bool any = p.isKey("f0000") || p.isKey("f0001") || p.isKey("f0010");
+    p.end();
+    return any;
+}
+
+static void runNvsFillProbe() {
+    Serial.println();
+    Serial.println("=== CHROMAWOTD NVS FILL PROBE (destructive) ===");
+    Serial.printf("probe: stage=%u  (0=fill, 1=report)\n", (unsigned)g_nvsFillStage);
+    Serial.printf("probe: config provisioned=%s\n", cc_configIsProvisioned(g_cfg) ? "YES" : "no");
+    cc_nvsStats("before:");
+
+    if (g_nvsFillStage == 0) {
+        if (!cc_configIsProvisioned(g_cfg)) {
+            // Without a stored configuration there is nothing to lose, so the result
+            // would be meaningless and would look like a false "destroyed" verdict.
+            Serial.println("probe: ABORT - the device is not provisioned. Configure it via the "
+                           "setup portal first, or the test proves nothing.");
+            Serial.flush();
+            return;
+        }
+        Preferences p;
+        if (!p.begin("nvsfill", /*readOnly=*/false)) {
+            Serial.println("probe: ABORT - could not open the fill namespace");
+            Serial.flush();
+            return;
+        }
+        Serial.println("probe: filling the SHARED 'nvs' partition until writes fail...");
+        uint32_t written = 0;
+        size_t last = 0;
+        for (uint32_t i = 0; i < 20000; i++) {
+            char key[16];
+            snprintf(key, sizeof(key), "f%05u", (unsigned)i);
+            last = p.putUChar(key, (uint8_t)i);
+            if (last != 1)
+                break;
+            written++;
+        }
+        p.end();
+        cc_nvsStats("filled:");
+        Serial.printf("probe: %u keys accepted, then putUChar returned %u\n", (unsigned)written,
+                      (unsigned)last);
+        g_nvsFillStage = 1;
+        Serial.println("probe: rebooting so the core's nvs_flash_init() sees a full partition...");
+        Serial.flush();
+        delay(200);
+        ESP.restart(); // does not return
+    }
+
+    // --- Stage 1: nvs_flash_init() has already run during THIS boot. --------------
+    const bool markers = cc_fillMarkersPresent();
+    const bool provisioned = cc_configIsProvisioned(g_cfg);
+    cc_nvsStats("after:");
+    Serial.printf("probe: fill markers still present=%s\n", markers ? "YES" : "no");
+    Serial.printf("probe: OUR CONFIG still present=%s\n", provisioned ? "YES" : "no");
+    if (markers) {
+        Serial.println("probe: VERDICT = INCONCLUSIVE - the shared partition was not full "
+                       "enough to force a reformat");
+    } else if (provisioned) {
+        Serial.println("probe: VERDICT = shared partition REFORMATTED and our config SURVIVED "
+                       "=> BUG-06 is FIXED");
+    } else {
+        Serial.println("probe: VERDICT = our config was DESTROYED along with the shared "
+                       "partition => BUG-06 REPRODUCED (pre-fix behaviour)");
+    }
+    Serial.println("=== end NVS fill probe: sleeping; reflash to run again ===");
+    Serial.flush();
+#ifdef CHROMAWOTD_DEEP_SLEEP
+    esp_sleep_enable_timer_wakeup(60ULL * 1000000ULL);
+    esp_deep_sleep_start(); // does not return
+#endif
+}
+#endif
+
 // --- Deep-sleep arming, shared by the normal cycle and the setup-portal path ---
 // Never returns in a deep-sleep build. In a debug build (CHROMAWOTD_DEEP_SLEEP
 // unset) it logs and returns, leaving loop() to idle without redrawing.
@@ -421,6 +535,10 @@ void setup() {
     Serial.printf("config: source=%s ssid=%s tz=%s\n", hadNvs ? "nvs" : "compile-time",
                   g_cfg.ssid[0] ? "(set)" : "(empty)", // never log the SSID itself
                   g_cfg.timezone);
+
+#ifdef CHROMAWOTD_NVS_FILL_PROBE
+    runNvsFillProbe(); // env:nvsprobe / env:nvsprobe_legacy; never returns on stage 0
+#endif
 
     // --- Factory reset: a button that stays held through the wake --------------
     // Only meaningful on a BUTTON wake; a timer wake has nobody holding anything.
