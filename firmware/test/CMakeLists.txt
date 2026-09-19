@@ -71,7 +71,7 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/config/tz_map.cpp
     ${CC_SRC_DIR}/sched/wake_schedule.cpp
     ${CC_SRC_DIR}/sched/content_policy.cpp
-    ${CC_SRC_DIR}/sched/factory_reset.cpp
+    ${CC_SRC_DIR}/sched/hold_gesture.cpp
 )
 target_include_directories(chroma_canvas PUBLIC
     ${CC_HARN_DIR}

@@ -45,7 +45,7 @@ EPaper epaper;
 
 #include "net/net.h"
 #include "sched/content_policy.h"
-#include "sched/factory_reset.h"
+#include "sched/hold_gesture.h"
 #include "sched/wake_schedule.h"
 #include "text/date_format.h"
 #include "verse_display.h"
@@ -133,6 +133,46 @@ static bool cc_anyButtonDown() {
 static bool cc_latchedButtonHeld() {
     return cc_anyButtonDown();
 }
+
+// --- Wake-gesture classification ------------------------------------------------
+// A button press is what WAKES the device, so the gesture must be classified by HOLD
+// LENGTH at the start of setup(), before the serial delay: measured on hardware, the pads
+// become observable 84 ms after the app starts and a TAP has released ~120 ms later, so any
+// sampling that begins after the 2 s delay observes nothing at all (LESSONS §58).
+//
+// A double click was tried and ruled out by that measurement: every button wake — tap or
+// double click — shows the pad still LOW at the first sample, because the first click is
+// over before the firmware can look. Tap and double-click are indistinguishable here.
+//
+//   tap              -> normal sync + refresh
+//   hold ~0.5-10 s   -> toggle the content mode (this wake only)
+//   hold >= 10 s     -> factory reset
+static HoldGesture sampleWakeGesture() {
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1)
+        return HoldGesture::None; // timer or power-on: there is no gesture to classify
+
+    ensureButtonPadsReady();
+    HoldState st;
+    cc_holdBegin(&st);
+    uint32_t prev = millis();
+    for (;;) {
+        const uint32_t now = millis();
+        const HoldGesture g = cc_holdFeed(&st, cc_anyButtonDown(), now - prev);
+        prev = now;
+        if (g == HoldGesture::ShortHold)
+            continue; // reported while still held: keep watching, it may escalate to a Reset
+        if (g != HoldGesture::None)
+            return g; // Tap or Reset
+        if (st.decided)
+            return HoldGesture::None; // released after a ShortHold
+        delay(CC_HOLD_SAMPLE_MS);
+    }
+}
+
+// Did a short-hold gesture ask to see the OTHER content? RTC memory, so the choice survives
+// deep sleep; the next SCHEDULED wake clears it (see setup()).
+RTC_DATA_ATTR static uint8_t g_contentInvert = 0;
+RTC_DATA_ATTR static uint8_t g_contentInvertValid = 0;
 
 // Safety net: consecutive button-wake cycles observed, kept in RTC memory so it
 // survives deep sleep. If a button line misbehaves (floats, or is stuck low) the
@@ -264,6 +304,10 @@ static void syncTask(void* /*arg*/) {
         // Without a clock the time-based rule cannot run, so it falls back to the
         // verse rather than showing the wrong half of the day's content.
         g_mode = cc_resolveContentMode(g_cfg.contentMode, g_haveTime, g_haveTime ? tmv.tm_hour : 0);
+        // A short-hold gesture inverts that decision for this refresh, so the user can see
+        // the other content without changing any setting.
+        if (g_contentInvertValid && g_contentInvert)
+            g_mode = cc_invertContentMode(g_mode);
         g_tomorrow = g_haveTime ? cc_useTomorrowForecast(tmv.tm_hour) : false;
         Serial.printf("sync: mode=%s weather=%s\n", g_mode == ContentMode::Word ? "word" : "verse",
                       g_tomorrow ? "tomorrow" : "today");
@@ -561,6 +605,95 @@ static void runNvsFillProbe() {
 }
 #endif
 
+#ifdef CHROMAWOTD_GESTURE_PROBE
+// --- Gesture-timing probe (env:gestureprobe) -----------------------------------
+// Answers ONE question with hardware rather than arithmetic: after an ext1 wake, how
+// soon can the firmware observe the pads at all — and is a natural double click still
+// in progress by then?
+//
+// Why it exists: the press IS the wake source, so nothing watches the pad until this
+// code runs. The ROM bootloader (unavoidable) plus the 2 s serial delay in setup() (which
+// exists so the boot log survives a cold plug-in) may consume the whole gesture. This
+// samples the RTC pads as the FIRST executable statement, before any delay and before
+// the panel is initialised, then logs every edge with a microsecond timestamp.
+//
+// Repeatable: after the watch window it deep-sleeps with a short timer AND ext1 armed, so
+// each new double-click is another wake event. Run it, click a dozen times, read the log.
+static void runGestureProbe() {
+    // Sample FIRST — before Serial, before the panel. micros() is already running (the
+    // Arduino core initialises the timer before setup()), so this timestamp is our only
+    // origin: it says how long from the app's start, not from the physical press.
+    const uint32_t tFirst = micros();
+    int initial[3];
+    for (int i = 0; i < kButtonCount; i++) {
+        gpio_num_t pin = kButtonPins[i];
+        rtc_gpio_init(pin);
+        rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
+        rtc_gpio_pulldown_dis(pin);
+        rtc_gpio_pullup_en(pin);
+        initial[i] = rtc_gpio_get_level(pin);
+    }
+
+    Serial.begin(115200);
+    Serial.println();
+    Serial.println("=== GESTURE PROBE ===");
+    Serial.printf("wake cause %d (%s)\n", (int)esp_sleep_get_wakeup_cause(),
+                  esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1 ? "button" : "not a button");
+    Serial.printf("first pad sample at t=%u us\n", (unsigned)tFirst);
+    Serial.printf("pads at first sample: GPIO2=%d GPIO3=%d GPIO8=%d  (0 = STILL HELD)\n", initial[0], initial[1],
+                  initial[2]);
+    Serial.println("watching for edges for 10 s - double-click now if you have not already");
+    Serial.println();
+
+    // Count a "second press" as any transition to LOW that happens AFTER the first sample,
+    // which is what a double click would look like from here.
+    int pressesAfterFirstSample = 0;
+    uint32_t lastEdgeUs = 0;
+    int last[3];
+    for (int i = 0; i < kButtonCount; i++)
+        last[i] = rtc_gpio_get_level(kButtonPins[i]);
+
+    const uint32_t start = micros();
+    while (micros() - start < 10ULL * 1000000ULL) {
+        for (int i = 0; i < kButtonCount; i++) {
+            const int v = rtc_gpio_get_level(kButtonPins[i]);
+            if (v != last[i]) {
+                const uint32_t t = micros() - start;
+                Serial.printf("[t=%7u us] GPIO%d %d -> %d  %s", (unsigned)t, (int)kButtonPins[i], last[i], v,
+                              v == 0 ? "PRESS\n" : "release\n");
+                if (v == 0) {
+                    pressesAfterFirstSample++;
+                    lastEdgeUs = t;
+                }
+                last[i] = v;
+            }
+        }
+        delay(1); // 1 ms polling: fine resolution, no busy-wait
+    }
+
+    Serial.println();
+    Serial.printf("VERDICT: %d press(es) observed AFTER the first sample", pressesAfterFirstSample);
+    if (initial[0] == 0 || initial[1] == 0 || initial[2] == 0)
+        Serial.println("  (a pad was ALREADY low at the first sample - the click was still held)");
+    else if (pressesAfterFirstSample > 0)
+        Serial.printf("  (last at t=%u us - the gesture was still in progress)\n", (unsigned)lastEdgeUs);
+    else
+        Serial.println("  (no edges at all - the whole gesture finished BEFORE the firmware looked;"
+                       " a double click is NOT observable at this boot latency)");
+    Serial.println("=== END GESTURE PROBE: sleeping ~20 s, then double-click again ===");
+    Serial.flush();
+
+    uint64_t mask = 0;
+    for (int i = 0; i < kButtonCount; i++)
+        if (rtc_gpio_get_level(kButtonPins[i]) == 1)
+            mask |= (1ULL << (int)kButtonPins[i]);
+    if (mask)
+        esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW);
+    esp_sleep_enable_timer_wakeup(20ULL * 1000000ULL);
+    esp_deep_sleep_start(); // does not return
+}
+#endif
+
 // --- Deep-sleep arming, shared by the normal cycle and the setup-portal path ---
 // Never returns in a deep-sleep build. In a debug build (CHROMAWOTD_DEEP_SLEEP
 // unset) it logs and returns, leaving loop() to idle without redrawing.
@@ -651,6 +784,15 @@ static void armSleepAndSleep(esp_sleep_wakeup_cause_t wakeCause) {
 }
 
 void setup() {
+#ifdef CHROMAWOTD_GESTURE_PROBE
+    runGestureProbe(); // never returns; measures the pad-observation window at a wake
+#endif
+
+    // Classify the wake gesture BEFORE the serial delay — a tap is over in ~120 ms
+    // (see sampleWakeGesture). The delay itself stays: it exists so the boot log survives a
+    // cold plug-in, and the log is a first-class test artifact for this project.
+    const HoldGesture gesture = sampleWakeGesture();
+
     Serial.begin(115200);
     delay(2000);
     Serial.printf("CHROMAWOTD %s boot\n", CHROMAWOTD_VERSION);
@@ -685,33 +827,28 @@ void setup() {
     runNvsFillProbe(); // env:nvsprobe / env:nvsprobe_legacy; never returns on stage 0
 #endif
 
-    // --- Factory reset: a button that stays held through the wake --------------
-    // Only meaningful on a BUTTON wake; a timer wake has nobody holding anything.
+    // --- Wake gesture: long hold = factory reset, short hold = toggle content ----
+    // The gesture itself was classified before the serial delay; this applies its effects.
+    // A SCHEDULED wake always returns to time-based content, so a toggle can never leave the
+    // device stuck showing the wrong half of the day.
 #ifdef CHROMAWOTD_BUTTON_WAKE
-    if (wakeCause == ESP_SLEEP_WAKEUP_EXT1 && cc_latchedButtonHeld()) {
-        ResetHoldState hold;
-        cc_resetHoldBegin(&hold);
-        bool reset = false;
-        Serial.printf("reset: button held, checking for %u ms...\n", (unsigned)CC_RESET_HOLD_MS);
-        while (!reset) {
-            if (cc_resetHoldSample(&hold, cc_anyButtonDown())) {
-                reset = true;
-                break;
-            }
-            if (!cc_anyButtonDown()) {
-                Serial.println("reset: released early - normal refresh");
-                break;
-            }
-            delay(CC_RESET_SAMPLE_MS);
-        }
-        if (reset) {
-            Serial.println("reset: wiping stored configuration");
-            cc_configEraseNvs();
-            g_wasProvisioned = 0; // deliberate wipe: not a loss to report
-            // Rebuild from defaults so the wipe is visible immediately, then fall
-            // into the setup portal below (the SSID will be empty).
-            cc_configInit();
-        }
+    if (wakeCause == ESP_SLEEP_WAKEUP_TIMER)
+        g_contentInvertValid = 0;
+
+    if (gesture == HoldGesture::Reset) {
+        Serial.println("gesture: long hold -> wiping stored configuration");
+        cc_configEraseNvs();
+        g_wasProvisioned = 0; // deliberate wipe: not a loss to report
+        g_contentInvertValid = 0;
+        // Rebuild from defaults so the wipe is visible immediately, then fall into the
+        // setup portal below (the SSID will be empty).
+        cc_configInit();
+    } else if (gesture == HoldGesture::ShortHold) {
+        g_contentInvert = g_contentInvert ? 0 : 1;
+        g_contentInvertValid = 1;
+        Serial.printf("gesture: short hold -> showing the other content (invert=%u)\n", (unsigned)g_contentInvert);
+    } else if (gesture == HoldGesture::Tap) {
+        Serial.println("gesture: tap -> normal refresh");
     }
 #endif
 

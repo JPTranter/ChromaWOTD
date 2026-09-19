@@ -148,7 +148,7 @@ The pin map was **probed on the physical board** (`pio run -e probe`), not deriv
 schematic: the schematic reading put BUTTON3 on D4, which is actually `I2C_SDA`. Arming that
 non-button pad for wake caused a deep-sleep wake storm — see `LESSONS_LEARNT.md` §34.
 
-**Content is selected by local time, not by a button toggle:**
+**Content is selected by local time; a button HOLD overrides it for one refresh:**
 
 | Window | Content | Source |
 | :--- | :--- | :--- |

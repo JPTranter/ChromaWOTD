@@ -11,7 +11,10 @@
 CHROMAWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow) showing:
 - **Verse of the Day** (scripture) or **Word of the Day** (vocabulary) — chosen by TIME OF DAY
   (00:00–11:59 verse, 12:00–23:59 word), or pinned to one of the two from the setup portal.
-  There is no button toggle: every button just runs a refresh.
+  A tap runs a refresh; a **hold of ~0.5-10 s inverts the content mode for that refresh**
+  (and the next scheduled wake returns to time-based); a hold of 10 s+ is the factory reset.
+  The gesture is classified by HOLD LENGTH, because a double click turned out to be
+  indistinguishable from a single tap at this boot latency — measured, see LESSONS §58.
 - **Local weather** (temperature + condition as TEXT, in the footer row; warnings in red)
 - **Date** in the header band
 

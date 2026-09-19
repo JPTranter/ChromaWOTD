@@ -5,6 +5,7 @@
 // return 0 (which would spin the device in a wake loop).
 #include "sched/wake_schedule.h"
 #include "sched/content_policy.h"
+#include "sched/hold_gesture.h"
 #include <gtest/gtest.h>
 
 static struct tm at(int h, int m, int s = 0) {
@@ -107,4 +108,82 @@ TEST(ContentPolicy, TimeBasedModeFollowsTheHour) {
 TEST(ContentPolicy, WithoutAClockTimeBasedModeFallsBackToVerse) {
     for (int h = 0; h < 24; h++)
         EXPECT_EQ(cc_resolveContentMode(0, false, h), ContentMode::Verse) << "hour " << h;
+}
+
+TEST(ContentPolicy, TheGestureOverrideInvertsTheDecision) {
+    // A short-hold gesture shows the OTHER content without changing any setting.
+    EXPECT_EQ(cc_invertContentMode(ContentMode::Verse), ContentMode::Word);
+    EXPECT_EQ(cc_invertContentMode(ContentMode::Word), ContentMode::Verse);
+}
+
+// ------------------------------------------------------------ hold gestures ------
+// Tap vs hold is decided by DURATION, because tap and double-click turned out to be
+// indistinguishable at this boot latency (LESSONS §58: every button wake shows the pad still
+// low at the first sample). These pin the boundaries of that decision.
+
+namespace {
+// Feed `n` samples at the standard cadence; return the FIRST gesture reported.
+HoldGesture feed(HoldState& st, bool pressed, int n) {
+    HoldGesture got = HoldGesture::None;
+    for (int i = 0; i < n; i++) {
+        const HoldGesture g = cc_holdFeed(&st, pressed, CC_HOLD_SAMPLE_MS);
+        if (g != HoldGesture::None && got == HoldGesture::None)
+            got = g;
+    }
+    return got;
+}
+} // namespace
+
+TEST(HoldGesture, AQuickReleaseIsATap) {
+    HoldState st;
+    cc_holdBegin(&st);
+    EXPECT_EQ(feed(st, true, 2), HoldGesture::None) << "100 ms held is under the threshold";
+    EXPECT_EQ(feed(st, false, 1), HoldGesture::Tap);
+    EXPECT_TRUE(st.decided);
+}
+
+TEST(HoldGesture, HoldingToTheThresholdFiresWhileStillHeld) {
+    HoldState st;
+    cc_holdBegin(&st);
+    EXPECT_EQ(feed(st, true, 10), HoldGesture::ShortHold) << "500 ms held";
+    EXPECT_FALSE(st.decided) << "keep watching: the hold may still escalate to a Reset";
+}
+
+TEST(HoldGesture, TheReleaseAfterAShortHoldDoesNotAlsoReportATap) {
+    HoldState st;
+    cc_holdBegin(&st);
+    EXPECT_EQ(feed(st, true, 10), HoldGesture::ShortHold);
+    EXPECT_EQ(feed(st, false, 1), HoldGesture::None) << "releasing must not re-fire as a Tap";
+    EXPECT_TRUE(st.decided);
+}
+
+TEST(HoldGesture, AHoldThatKeepsGoingEscalatesToReset) {
+    HoldState st;
+    cc_holdBegin(&st);
+    EXPECT_EQ(feed(st, true, 10), HoldGesture::ShortHold);
+    EXPECT_EQ(feed(st, true, 190), HoldGesture::Reset) << "10 s total";
+    EXPECT_TRUE(st.decided);
+}
+
+TEST(HoldGesture, NeverReportsASecondGesture) {
+    HoldState st;
+    cc_holdBegin(&st);
+    feed(st, true, 2);
+    EXPECT_EQ(feed(st, false, 1), HoldGesture::Tap);
+    EXPECT_EQ(feed(st, true, 100), HoldGesture::None) << "a decided gesture must not fire again";
+}
+
+TEST(HoldGesture, ASingleContactSampleIsStillATap) {
+    HoldState st;
+    cc_holdBegin(&st);
+    EXPECT_EQ(feed(st, true, 1), HoldGesture::None) << "50 ms: bounce, not a deliberate hold";
+    EXPECT_EQ(feed(st, false, 20), HoldGesture::Tap);
+}
+
+TEST(HoldGesture, ProgressTracksTheResetThreshold) {
+    HoldState st;
+    cc_holdBegin(&st);
+    feed(st, true, 10); // 500 ms of the 10 s reset hold
+    EXPECT_GE(cc_holdProgress(st), 4);
+    EXPECT_LE(cc_holdProgress(st), 6);
 }

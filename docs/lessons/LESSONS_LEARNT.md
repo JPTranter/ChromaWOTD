@@ -1570,6 +1570,57 @@ ledger is unaffected: it is built from the default host build, where the ladder 
 (2026-09-19)
 
 
+## 58. A double click is NOT detectable on this board — measured, then a short hold instead (RESOLVED)
+
+The owner asked for a **double-click** gesture to switch between Word and Verse. Rather than reason
+about it, a probe (`env:gestureprobe`) measured the real observation window on hardware.
+
+**What it measured.** Sampling the RTC pads as the FIRST statement in `setup()` — before the 2 s
+serial delay — the firmware can observe them **84,493 / 84,494 us after the app starts**
+(repeatable to 1 us across four wakes). A TAP then releases **106 / 116 / 120 ms** after that first
+sample. Press durations were 97-163 ms; double-click gaps 104-126 ms.
+
+**Why the double click fails.** Across two batches, EVERY button wake showed the pad **still LOW
+at the first sample** — four of four single taps and three of three double clicks. The mechanism:
+the press IS the wake source, the ROM bootloader runs before any of our code, and by the time the
+firmware can look, the first click of a double click is already over. What we observe is the tail
+of whichever press is in flight, and a single tap looks identical. So "pad low at first look" —
+the obvious discriminator — is not one, and it is also how the factory-reset hold begins. The rule
+I had proposed would have fired a toggle on ordinary single taps.
+
+**What was built instead: classification by HOLD LENGTH** (`sched/hold_gesture.*`, superseding
+`factory_reset.*`). A tap releases ~120 ms after our first sample while a hold keeps going, so
+duration separates them with a wide margin:
+
+    tap                 -> sync + refresh (unchanged)
+    hold 0.5 s - 10 s   -> invert the content mode for this refresh
+    hold >= 10 s        -> factory reset (unchanged)
+
+Details worth keeping:
+- **The sampling must run BEFORE the serial delay.** The shipping build sampled after it, so even a
+  1 s hold was over before it was seen. Moving only the SAMPLING preserves the delay's purpose
+  (USB enumeration before the first log lines) — and the boot log is a first-class test artifact
+  for this project, so it is not a cost worth paying twice.
+- **The override is transient by design.** An `RTC_DATA_ATTR` invert flag survives deep sleep, and a
+  SCHEDULED (timer) wake clears it, so a hold can never leave the device stuck on the wrong half of
+  the day: the clock is in charge again at the next slot.
+- **The threshold carries a measured margin, not a guessed one.** 500 ms is ~4x the observed tap
+  release; the reset threshold stays at PROJECT_PLAN's 10 s.
+- **A gesture that is indistinguishable must be reported as such.** The probe's own verdict line
+  read "a double click is NOT observable at this boot latency", and that is what closed the
+  question. It is cheaper to build a probe than to ship a gesture that misfires.
+- **Superseding is better than duplicating.** The new classifier REPLACED the reset-only module
+  rather than becoming a second sampler, so there is one place that decides what a button press
+  means (and the reset's 10 s accounting is still counted from the wake, as before).
+
+Tests: seven for the classifier (tap; short hold while still held; a release after a hold NOT
+re-reporting as a tap; escalation to reset; never firing twice; a single contact sample still a
+tap; progress) plus `cc_invertContentMode`. Verified they can fail — collapsing the short-hold
+threshold to 0 fails three of them.
+
+(2026-09-19)
+
+
 ## 56. Morning wake moved to 06:00 — and why the old numbers stay in the history (RESOLVED)
 
 Requested change: the three slots are now **06:00 / 12:30 / 18:00** (`sched/wake_schedule.cpp`).

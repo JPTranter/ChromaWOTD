@@ -51,7 +51,11 @@ often enough for one, so content is designed for 2–4 full sweeps per day.
         see LESSONS §34.
   - [x] All three buttons run a full immediate re-sync + refresh (same path as a timer
         wake). Verified on hardware: `wake cause: 3 (button)` → sync → refresh → sleep.
-  - [x] Content mode is time-based, not toggled: Verse 00:00–11:59, Word 12:00–23:59.
+  - [x] Content mode is time-based: Verse 00:00–11:59, Word 12:00–23:59.
+  - [x] **Wake-gesture toggle (2026-09-19):** a hold of ~0.5-10 s shows the other content for
+        that refresh; a 10 s+ hold is still the factory reset; a tap is still just a refresh.
+        Measured on hardware and classified by hold length — a double click is not usable on
+        this board (LESSONS §58).
   - [ ] Lockout during active ~25s screen sweep to ignore switch bounce/spam.
 - [ ] **Non-Volatile State Persistence (`Preferences` / NVS)**:
   - [x] Wi-Fi credentials, timezone IANA name, latitude/longitude (2026-09-13).

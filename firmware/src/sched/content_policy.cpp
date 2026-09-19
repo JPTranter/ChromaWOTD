@@ -14,6 +14,10 @@ ContentMode cc_resolveContentMode(uint8_t configuredMode, bool haveTime, int hou
     return haveTime ? cc_contentModeForHour(hour24) : ContentMode::Verse;
 }
 
+ContentMode cc_invertContentMode(ContentMode m) {
+    return (m == ContentMode::Verse) ? ContentMode::Word : ContentMode::Verse;
+}
+
 bool cc_useTomorrowForecast(int hour24) {
     return hour24 >= 18;
 }
