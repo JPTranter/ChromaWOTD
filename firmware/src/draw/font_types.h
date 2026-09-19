@@ -4,7 +4,7 @@
 // On device these come from Seeed GFX's gfxfont.h (via TFT_eSPI.h). On host there
 // is no gfxfont.h, so we provide a layout-compatible shim. Keeping this in one
 // header (instead of a per-TU #ifdef block) is what lets the DisplayTarget
-// interface reference GFXfont without entangling every target in the FreeSans
+// interface reference GFXfont without entangling every target in the GFX-font
 // glyph path.
 
 #pragma once

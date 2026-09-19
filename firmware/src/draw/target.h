@@ -41,9 +41,9 @@ public:
     // string loop.
     virtual void drawChar(int x, int y, unsigned char ch, uint32_t color, uint8_t size) = 0;
 
-    // Draw one glyph from a GFXfont (FreeSans/Roboto) at baseline (x, y),
-    // magnification `size`, honouring xOffset/yOffset so descenders hang below
-    // the baseline. The host rasterizes the packed bitmap; the device uses
-    // setFreeFont + drawChar.
+    // Draw one glyph from a proportional GFXfont (the shipped Roboto set) at
+    // baseline (x, y), magnification `size`, honouring xOffset/yOffset so
+    // descenders hang below the baseline. The host rasterizes the packed
+    // bitmap; the device uses setFreeFont + drawChar.
     virtual void drawGlyphF(const GFXfont* f, unsigned char ch, int x, int y, uint32_t color, int size) = 0;
 };

@@ -24,7 +24,7 @@ public:
         g_canvas.drawChar(x, y, ch, color, size);
     }
 
-    // FreeSans glyph rasterizer: decode the packed MSB-first bitstream and paint
+    // GFX-font glyph rasterizer: decode the packed MSB-first bitstream and paint
     // each set bit as a size×size block at (x + xOffset, y + yOffset), matching
     // TFT_eSPI's free-font drawChar exactly.
     void drawGlyphF(const GFXfont* f, unsigned char ch, int x, int y, uint32_t c, int size) override {

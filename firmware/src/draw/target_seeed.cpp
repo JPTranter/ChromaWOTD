@@ -1,6 +1,6 @@
 // target_seeed.cpp — Device backend (Seeed GFX / ESP32-S3).
 //
-// Maps semantic colours (CC_*) to Seeed GFX values and draws FreeSans glyphs
+// Maps semantic colours (CC_*) to Seeed GFX values and draws proportional GFX glyphs
 // through epaper.drawChar with setFreeFont, so the device path matches the host
 // rasterizer pixel-for-pixel.
 

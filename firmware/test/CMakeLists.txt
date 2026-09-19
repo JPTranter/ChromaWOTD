@@ -79,7 +79,7 @@ target_include_directories(chroma_canvas PUBLIC
 )
 target_compile_definitions(chroma_canvas PUBLIC CHROMAWOTD_HOST=1)
 
-# Device font path. The firmware ships the proportional Roboto/FreeSans set
+# Device font path. The firmware ships the proportional Roboto set
 # (-DCHROMAWOTD_FONT_FREESANS=1 in platformio.ini), but the host targets all
 # defined CHROMAWOTD_HOST only, so the auto-size ladder and the proportional
 # glyph/degree/measurement path had NO local coverage — ctest, layout_render,
@@ -89,7 +89,7 @@ target_compile_definitions(chroma_canvas PUBLIC CHROMAWOTD_HOST=1)
 # the layout invariants that encode 5x7 glyph geometry only hold in that mode
 # (see LESSONS 38).
 option(CHROMAWOTD_DEVICE_FONTS
-       "Compile host layout targets on the device (FreeSans/Roboto) font path" OFF)
+       "Compile host layout targets on the device (proportional/Roboto) font path" OFF)
 set(CC_FONT_DEFS "")
 if(CHROMAWOTD_DEVICE_FONTS)
     set(CC_FONT_DEFS CHROMAWOTD_FONT_FREESANS=1)

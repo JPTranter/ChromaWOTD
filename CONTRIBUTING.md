@@ -98,7 +98,7 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 **Examples:**
 ```
 feat(layout): shrink the footer when an alert is present
-fix(font): correct degree symbol positioning in FreeSans path
+fix(font): correct degree symbol positioning in the proportional font path
 docs(review): add check-off table to REVIEW.md
 chore(build): remove dead board_pins.h and driver.h
 ```
