@@ -1782,3 +1782,26 @@ Rules:
   With the icon gone and the condition as text, that limitation simply ceased to exist.
 
 (2026-09-19)
+
+## 62. The first release published with NO notes — an unknown action input is a warning, not a failure (RESOLVED)
+
+The Release workflow's first run (`v0.1.0`) reported **success** and attached all three binaries. It
+also published a release with an **empty body**: the step passed `body_file:`, and
+`softprops/action-gh-release@v2` has no such input — its list is `body`, `body_path`, `files`, ...
+GitHub Actions treats an unrecognised input as a *warning*, so the step went green, the release was
+created, and the notes (the changelog **and** the flash procedure the generator exists to produce)
+never reached the page.
+
+The only traces were an annotation on the run — `! Unexpected input(s) 'body_file', valid inputs are
+[...]` — and a release whose body length was 0.
+
+Rules:
+- **A green step is not evidence that the effect happened. Read the artifact back.** The workflow now
+  ends by fetching the *published release* and failing if the body is short or any asset is missing.
+  The release page is the only thing a consumer sees, so that is what gets checked.
+- **Read the run's ANNOTATIONS, not just its conclusion.** Warnings are where "it worked, but not
+  really" lives; the job summary said success throughout.
+- **When an action takes a file, read its input list rather than guessing a plausible name** —
+  `body_path` here, not `body_file`.
+
+(2026-09-19)

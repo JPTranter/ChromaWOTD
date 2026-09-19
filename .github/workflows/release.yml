@@ -81,4 +81,28 @@ jobs:
           files: |
             release/ChromaWOTD-*.bin
             release/ChromaWOTD-*.elf
-          body_file: release/NOTES.md
+          body_path: release/NOTES.md
+
+      # READ THE RELEASE BACK. The first v0.1.0 run "succeeded" while attaching NO notes at
+      # all: softprops/action-gh-release@v2 has no `body_file` input, and an unknown input is
+      # a warning, not a failure — so the release page came out empty and nothing failed. A
+      # green step is not evidence that the effect happened; this step checks the published
+      # release itself, which is the only thing a consumer sees.
+      - name: Verify the release carries the notes and all three assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          BODY_LEN=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q '.body | length')
+          echo "release body length: $BODY_LEN"
+          if [ "$BODY_LEN" -lt 200 ]; then
+            echo "::error::release $TAG has no notes (body length $BODY_LEN) - the notes never reached it"
+            exit 1
+          fi
+          NAMES=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name')
+          echo "$NAMES"
+          for want in "ChromaWOTD-${TAG}.bin" "ChromaWOTD-${TAG}-app.bin" "ChromaWOTD-${TAG}.elf"; do
+            echo "$NAMES" | grep -qx "$want" || { echo "::error::release $TAG is missing asset $want"; exit 1; }
+          done
+          echo "verified: notes present, all three assets attached"
