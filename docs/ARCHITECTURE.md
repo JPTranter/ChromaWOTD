@@ -19,7 +19,7 @@ CHROMAWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow
 
 | zone | contents |
 |---|---|
-| header band (18 px, yellow) | **what** you are reading: the citation (`Proverbs 3:5-6`), or the word with its respelling (`breviloquent (bre-VIL-uh-kwuhnt)`), drawn one size up at 7pt; the date sits at the right |
+| header band (18 px, yellow) | **what** you are reading: the citation (`Proverbs 3:5-6`), or the word with its respelling (`breviloquent (bre-VIL-uh-kwuhnt)`), drawn one size up at 7pt; the date sits at the right at the **same size**, formatted `DOW DD MMM` (`Sat 19 Sep`) by `text/date_format.h` |
 | body | the verse / definition, **full panel width**, auto-sized by a ladder from 8pt down to 5.5pt |
 | footer row | status / warnings at the LEFT in red; weather as text at the RIGHT (`25°C Partly cloudy`) |
 

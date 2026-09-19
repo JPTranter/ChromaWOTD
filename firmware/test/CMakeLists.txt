@@ -56,6 +56,7 @@ add_library(chroma_canvas STATIC
     ${CC_SRC_DIR}/draw/weather_icon.cpp
     ${CC_SRC_DIR}/text/glyphs.cpp
     ${CC_SRC_DIR}/text/wrap.cpp
+    ${CC_SRC_DIR}/text/date_format.cpp
     ${CC_SRC_DIR}/net/net.cpp
     ${CC_SRC_DIR}/net/net_host_curl.cpp
     ${CC_SRC_DIR}/net/portal.cpp

@@ -10,6 +10,7 @@
 // what the panel will refresh to.
 #include "../harness/canvas.h"
 #include "net/net.h"
+#include "text/date_format.h"
 #include "verse_display.h"
 
 #include <cstdio>
@@ -47,10 +48,11 @@ const char* kUsage = "usage: layout_render [options]\n"
                      "  --condition \"Partly cloudy\"        condition label (optional)\n"
                      "  --alert \"Rain after 4 PM\"          alert banner text, drawn in red (optional)\n"
                      "  --icon sun|cloud|rain|partly|0..3  weather icon (default partly)\n"
-                     "  --date \"Fri, Sep 12\"              header date (optional)\n"
-                     "  --label \"FORECAST\"                 weather column caption (default FORECAST)\n"
-                     "  --header \"Verse of the Day\"        yellow-band title (default Verse of the Day)\n"
-                     "  --leftcap \"(bre-VIL-uh-kwuhnt)\"    black caption at the left of the bottom rule\n"
+                     "  --date \"Fri 12 Sep\"              header date, explicit string (optional)\n"
+                     "  --date-ymd 2026-09-12            header date from a real date, via the SHARED formatter\n"
+                     "  --label \"TOMORROW\"                footer marker before the temperature (default FORECAST = none)\n"
+                     "  --header \"Verse of the Day\"        header fallback when there is no citation (optional)\n"
+                     "  --leftcap \"(bre-VIL-uh-kwuhnt)\"    respelling, drawn beside the word in the header\n"
                      "  --out <path.png>                   output file (default preview.png)\n"
                      "  --help\n"
                      "  --live                         fetch weather + verse from the live network\n"
@@ -144,7 +146,25 @@ int main(int argc, char** argv) {
             a.alert = next("--alert");
             a.haveAlert = true;
         } else if (flag == "--date") {
-            a.date = next("--date");
+            a.date = next("--date"); // explicit string (tests, odd cases)
+            a.haveDate = true;
+        } else if (flag == "--date-ymd") {
+            // Preferred: format from a real date through the SAME helper the device uses, so
+            // a preview cannot show a date format the panel will never produce.
+            const std::string ymd = next("--date-ymd");
+            static char dateBuf[16];
+            int y = 0, m = 0, d = 0;
+            if (sscanf(ymd.c_str(), "%d-%d-%d", &y, &m, &d) == 3) {
+                // Sakamoto's day-of-week (0 = Sunday): deterministic, no <ctime> locale
+                // dependence in the harness either.
+                static const int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+                int yy = (m < 3) ? y - 1 : y;
+                const int wd = (yy + yy / 4 - yy / 100 + yy / 400 + t[m - 1] + d) % 7;
+                cc_formatHeaderDate(wd, d, m, dateBuf, sizeof(dateBuf));
+            } else {
+                snprintf(dateBuf, sizeof(dateBuf), "%s", ymd.c_str());
+            }
+            a.date = dateBuf;
             a.haveDate = true;
         } else if (flag == "--label") {
             a.label = next("--label");

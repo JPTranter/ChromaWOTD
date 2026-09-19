@@ -598,9 +598,10 @@ static void cc_fitText(const char* src, char* dst, size_t dstsz, int maxW) {
     snprintf(dst + n, dstsz - n, "...");
 }
 
-// Width of the header identity line. It is drawn ONE SIZE UP (6pt) on the device font
-// path, so the date-collision guard below must measure with that same font — measuring
-// with the 5.5pt body default would under-report and let a long word overprint the date.
+// Width of a header-band string (the identity line or the date). BOTH are drawn one size
+// up (7pt) on the device font path, so the collision guard must measure with that same
+// font — measuring with the 5.5pt body default would under-report and let a long word
+// overprint the date.
 static int cc_headWidth(const char* s) {
 #ifdef CHROMAWOTD_FONT_FREESANS
     return cc_measurePxF(&Roboto7pt7b, s, 1);
@@ -635,7 +636,7 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
     // The identity line must CLEAR the date, so degrade deliberately rather than let it
     // overprint: drop the respelling first, then truncate. BOTH margins come out of the
     // budget, so reserving 8px of clear space needs -12, not -6.
-    const int dateW = v.date ? dev_measureText(v.date, 1) : 0;
+    const int dateW = v.date ? cc_headWidth(v.date) : 0; // measured at the size it is DRAWN
     const int headRoom = kPanelW - kHeaderTextX - 6 - dateW - 8;
     if (v.reference && opts.leftCaption && opts.leftCaption[0] && cc_headWidth(head) > headRoom)
         snprintf(head, sizeof(head), "%s", v.reference); // respelling dropped
@@ -649,8 +650,15 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
 #else
     dev_drawString(kHeaderTextX, 2, head, CC_BLACK, 1);
 #endif
-    if (v.date)
+    if (v.date) {
+#ifdef CHROMAWOTD_FONT_FREESANS
+        // Same size as the identity line: the band reads as a single line rather than a
+        // large left item beside a small right one.
+        dev_drawStringF(&Roboto7pt7b, kPanelW - 6 - cc_headWidth(v.date), 1, v.date, CC_BLACK, 1);
+#else
         dev_drawStringRight(kPanelW - 6, 2, v.date, CC_BLACK, 1);
+#endif
+    }
     dev_drawFastHLine(0, kHeaderH - 1, kPanelW, CC_BLACK);
 
     // --- 2. Body: the verse at the whole panel width, auto-sized ------------------

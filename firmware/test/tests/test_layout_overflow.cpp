@@ -4,6 +4,7 @@
 // landscape layout.
 #include "../harness/canvas.h"
 #include "draw/weather_icon.h"
+#include "text/date_format.h"
 #include "verse_display.h"
 #include <cstdint>
 #include <gtest/gtest.h>
@@ -89,7 +90,12 @@ static bool hasOverflowMarker(int x0, int y0, int x1, int y1) {
 #endif
 
 static VerseData verse(const char* text, const char* highlight, const char* reference) {
-    return {"Fri, Sep 12", text, highlight, reference};
+    static char date[16];
+    // Through the SHARED formatter: the device builds its header date with
+    // cc_formatHeaderDate(), so a literal here could render a format the panel never
+    // produces (that is exactly how the ISO-vs-"Fri, Sep 12" mismatch slipped through).
+    cc_formatHeaderDate(5, 12, 9, date, sizeof(date)); // Friday 12 Sep
+    return {date, text, highlight, reference};
 }
 
 static const char* kLongVerse = "Trust in the Lord with all your heart, and do not lean on your own understanding. "

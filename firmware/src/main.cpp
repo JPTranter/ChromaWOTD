@@ -47,6 +47,7 @@ EPaper epaper;
 #include "sched/content_policy.h"
 #include "sched/factory_reset.h"
 #include "sched/wake_schedule.h"
+#include "text/date_format.h"
 #include "verse_display.h"
 
 #include "config/config.h"
@@ -150,7 +151,7 @@ static SemaphoreHandle_t g_syncDone = nullptr;
 static ContentMode g_mode = ContentMode::Verse;
 static bool g_tomorrow = false;
 static bool g_haveTime = false;
-static char g_date[32] = ""; // "YYYY-MM-DD" for the header
+static char g_date[32] = ""; // "DOW DD MMM" for the header (text/date_format.h)
 
 // Had this device been configured before? RTC memory survives DEEP SLEEP — the mode this
 // device spends its life in — so this catches a configuration wipe across a sleep (the
@@ -243,7 +244,10 @@ static void syncTask(void* /*arg*/) {
         struct tm tmv{};
         if (getLocalTime(&tmv, 6000)) {
             g_haveTime = true;
-            snprintf(g_date, sizeof(g_date), "%04d-%02d-%02d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
+            // Formatted through the SHARED helper: the render harness is given the same
+            // string, so a render can no longer look right while the panel says something
+            // else (the ISO "2026-09-19" this used to build was never what the previews showed).
+            cc_formatHeaderDate(tmv.tm_wday, tmv.tm_mday, tmv.tm_mon + 1, g_date, sizeof(g_date));
             Serial.printf("sync: time OK %s %02d:%02d:%02d\n", g_date, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
         } else {
             // Without wall time the clock sits at 1970 — BEFORE the notBefore of every

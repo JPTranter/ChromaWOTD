@@ -6,6 +6,7 @@
 // its respelling) plus the date; a footer row carries status/warnings on the left and the
 // weather as TEXT on the right.
 #include "../harness/canvas.h"
+#include "text/date_format.h"
 #include "verse_display.h"
 #include <gtest/gtest.h>
 
@@ -17,8 +18,13 @@ static const int kRightMarginX = 295; // the last column any content may touch
 static const int kOldDividerX  = 226;
 
 static VerseData sampleVerse() {
+    static char date[16];
+    // Through the SHARED formatter: the device builds its header date with
+    // cc_formatHeaderDate(), so a literal here could render a format the panel never
+    // produces (that is exactly how the ISO-vs-"Fri, Sep 12" mismatch slipped through).
+    cc_formatHeaderDate(5, 12, 9, date, sizeof(date)); // Friday 12 Sep
     return {
-        "Fri, Sep 12",
+        date,
         "Trust in the Lord with all your heart, and do not lean on your own understanding. In all your ways acknowledge him, and he will make straight your paths.",
         "he will make straight your paths",
         "Proverbs 3:5-6"

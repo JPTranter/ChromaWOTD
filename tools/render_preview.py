@@ -74,11 +74,16 @@ def fixture_args(path):
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     weather = data.get("weather", {})
+    # Prefer a REAL date: layout_render formats it with the same helper the device uses,
+    # so a preview cannot display a format the panel will never produce.
+    if data.get("date_ymd"):
+        date_args = ["--date-ymd", data["date_ymd"]]
+    else:
+        date_args = ["--date", data.get("date", "")]
     args = [
         "--verse",
         data.get("verse", ""),
-        "--date",
-        data.get("date", ""),
+        *date_args,
         "--reference",
         data.get("reference", ""),
         "--temp",
@@ -101,7 +106,8 @@ def main():
     parser.add_argument("--verse-file", help="file containing the verse body ('-' for stdin)")
     parser.add_argument("--highlight", help="phrase painted red")
     parser.add_argument("--reference", help="citation painted red")
-    parser.add_argument("--date", help="header date string")
+    parser.add_argument("--date", help='header date string (e.g. "Fri 12 Sep")')
+    parser.add_argument("--date-ymd", help="header date from YYYY-MM-DD, via the shared formatter")
     parser.add_argument("--temp", type=float, help="temperature in Celsius (negatives fine)")
     parser.add_argument("--condition", help="condition label")
     parser.add_argument("--alert", help="alert banner text (red)")
@@ -138,6 +144,7 @@ def main():
         ("--highlight", args.highlight),
         ("--reference", args.reference),
         ("--date", args.date),
+        ("--date-ymd", args.date_ymd),
         ("--condition", args.condition),
         ("--alert", args.alert),
         ("--icon", args.icon),

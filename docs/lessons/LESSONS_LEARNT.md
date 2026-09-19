@@ -1490,3 +1490,38 @@ vacuous), and `tools/measure_layout.py` — whose invariants are now band extent
 **footer baseline** (warning and weather must share an ink row) and the right edge.
 
 (2026-09-19)
+
+
+## 54. A render is only evidence if its inputs are produced the same way the device produces them (RESOLVED)
+
+The header date read **`2026-09-19` on the device** while every render — the ones the design was
+approved from — showed **`Fri, Sep 12`**. Not a formatting bug but a *provenance* bug: the device
+built the string with `snprintf("%04d-%02d-%02d")` in `main.cpp`, while the harness was handed a
+hand-written literal (`--date "Fri, Sep 12"`, and the test fixtures hard-coded the same text).
+Two producers, one field, no shared code — so the renders could look right while the panel was
+wrong, and **no test could ever have caught it**. The approval was based on an artifact that
+could not have been evidence for that field.
+
+Fix: one pure, host-tested `cc_formatHeaderDate()` (`text/date_format.{h,cpp}`) producing
+`DOW DD MMM` (`Sat 19 Sep`), called by **all four** consumers — the device (from the NTP
+`struct tm`), the layout tests (which generate the ledger), `layout_render` via `--date-ymd`, and
+therefore `render_preview` / the fixture (now `date_ymd`).
+
+Rules:
+- **A render proves the LAYOUT and nothing about the VALUES it is handed.** If a field is
+  formatted anywhere, the render path must obtain it through the same code as the device, or the
+  render is silent about it. Ask, for each field in an approved render: *where does this string
+  come from on the shipped device, and is it the same producer?*
+- **Format once, in a shared, tested function**; make every consumer call it. The tests now build
+  their date with the very function the panel uses, so the two cannot drift.
+- **Prefer explicit tables to `strftime("%a %b")`** here: those conversions are locale-dependent
+  and this device never sets a locale, so an identical build could render differently.
+- Tests pin the contract: the exact `DOW DD MMM` form, zero-padded day, every weekday/month
+  token, out-of-range input degrading to `---`, and a regression guard that the output contains
+  no `-` or `,` (i.e. never the ISO form the panel used to show).
+
+Same change: the date is drawn at the **same size as the identity line** (7pt), so the band reads
+as one line instead of a large left item beside a small right one — and the collision guard
+measures with that same font, so its reserve is honest rather than optimistic.
+
+(2026-09-19)

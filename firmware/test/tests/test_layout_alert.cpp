@@ -5,6 +5,7 @@
 // may spill off the panel, and an over-long warning must be VISIBLY truncated instead of
 // running off the edge — it used to be drawn unbounded.
 #include "../harness/canvas.h"
+#include "text/date_format.h"
 #include "verse_display.h"
 #include <gtest/gtest.h>
 
@@ -18,8 +19,13 @@ static int colorCount(int x0, int y0, int x1, int y1, uint32_t color) {
 }
 
 static VerseData sampleVerse() {
+    static char date[16];
+    // Through the SHARED formatter: the device builds its header date with
+    // cc_formatHeaderDate(), so a literal here could render a format the panel never
+    // produces (that is exactly how the ISO-vs-"Fri, Sep 12" mismatch slipped through).
+    cc_formatHeaderDate(5, 12, 9, date, sizeof(date)); // Friday 12 Sep
     return {
-        "Fri, Sep 12",
+        date,
         "Trust in the Lord with all your heart, and do not lean on your own understanding. In all your ways acknowledge him, and he will make straight your paths.",
         "he will make straight your paths",
         "Proverbs 3:5-6"
