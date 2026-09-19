@@ -1399,3 +1399,39 @@ so a by-design wipe is not misreported as a loss. An RTC-marked "was provisioned
 signal for state that survives sleep and an honest non-signal for anything else — say which.
 
 (2026-09-19)
+
+
+## 52. A green verify_all.py is NOT a green CI run — reproduce the lint gate locally (RESOLVED)
+
+Pushing this session's work failed CI **twice**, on the `lint` job alone — `build-and-test` and
+the secret scan were green both times:
+
+    firmware/src/main.cpp:174:49: error: code should be clang-formatted [-Wclang-format-violations]   (x15)
+    tools/bench_watch.py:172:101: E501 line too long (102 > 100 characters)
+    tools/flash_when_awake.py:91:101: E501 line too long (102 > 100 characters)
+
+`verify_all.py` covers build + tests + render ledger + alignment. It does **not** run
+clang-format, black or flake8 — so "ALL GREEN" locally said nothing at all about two of the three
+CI jobs. Worse, the failure CASCADED: the C++ step aborts the job, so black/flake8 never ran and
+their two violations stayed hidden. Fixing only what CI reported once would have failed again.
+
+Reproduce the gate exactly, then fix everything in one pass:
+
+    pip install "clang-format==23.1.1" black flake8     # the PINNED version; a different one
+                                                        # flags code that is already formatted
+    FILES=$(git ls-files ':(glob)firmware/src/*.cpp' ':(glob)firmware/src/*.h')
+    clang-format --dry-run --Werror -style=file $FILES
+    black --check --line-length 100 tools/
+    flake8 tools/ --max-line-length 100
+
+Details worth keeping:
+- Use `git ls-files ':(glob)...'`, never a shell glob. An untracked local header can match a
+  glob, and clang-format then PRINTS its offending lines — which is exactly how real credentials
+  were once echoed into a log. `:(glob)` also stops `*` recursing into `fonts/` and reformatting
+  the machine-generated tables.
+- The C++ gate covers only TOP-LEVEL `firmware/src`. Changes under `net/`, `config/`, `text/`
+  and `draw/` are not checked at all, so formatting there is invisible to CI.
+- Run these BEFORE pushing. A red gate on the remote costs a round trip and leaves failures in
+  the history; the local run costs seconds.
+
+(2026-09-19)
