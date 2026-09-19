@@ -122,6 +122,23 @@ reformat is silent).
    writes fail, reboots so the core's `nvs_flash_init()` sees a full partition, then
    reports whether the config survived. Run as a pair to *demonstrate* the fix.
 
+   **Bench run — 4 flashes, 1 re-provision (the device must be awake for each; use
+   `python tools/flash_when_awake.py --seconds 300`, since it sleeps between steps):**
+   1. `pio run -e nvsprobe_legacy -t upload` — the device is ALREADY provisioned with its
+      config in the shared `nvs`, so this is the "before" case with no setup needed. Expect
+      `VERDICT = our config was DESTROYED ... BUG-06 REPRODUCED`.
+   2. `pio run -e s3 -t upload` — installs the new table (`partitions.bin` @0x8000) plus the
+      fixed app. The config namespace is now empty, so expect the setup portal; re-run it
+      from a phone and confirm the normal boot reports `config: source=nvs`.
+   3. `pio run -e nvsprobe -t upload` — the "after" case. Expect
+      `VERDICT = shared partition REFORMATTED and our config SURVIVED => BUG-06 is FIXED`.
+   4. `pio run -e s3 -t upload` — back to production; the config in `nvs_cfg` survives.
+
+   Why the pair is a fair test: `pio run -t upload` writes bootloader @0x0 (0x0–0x3B00),
+   `partitions.bin` @0x8000 (0x8000–0x8C00), `boot_app0` @0xE000 and the app @0x10000 — it
+   never writes into `nvs` @0x9000, so in step 1 nothing but the probe's own fill can destroy
+   that config.
+
 ### Phase 3 — Weather, Dual Content Sources & Sync Indicators
 - [ ] **Syncing & Status Feedback**:
   - Hardware user LED (`LED_BUILTIN` / GPIO 21) active pulse during Wi-Fi connection and API fetch (avoiding unneeded 25s screen updates).
