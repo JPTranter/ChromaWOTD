@@ -3,7 +3,8 @@
 # (TrueType -> Adafruit GFX .h). Uses freetype-py (same FreeType engine).
 #
 # Usage: python tools/font_convert.py <font.ttf> <size> <first> <last> <fontName> > out.h
-#        e.g. python tools/font_convert.py Roboto-Regular.ttf 6 32 126 Roboto6 > firmware/src/fonts/Roboto6pt7b.h
+#        e.g. python tools/font_convert.py Roboto-Regular.ttf 6 32 126 Roboto6 \
+#             > firmware/src/fonts/Roboto6pt7b.h
 #
 # Matches Adafruit's fontconvert.c: DPI=141, FT_Set_Char_Size(size<<6), mono
 # raster, advance = advance.x>>6, xOffset=bitmap_left, yOffset=1-bitmap_top,
