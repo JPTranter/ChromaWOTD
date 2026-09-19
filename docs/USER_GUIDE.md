@@ -175,7 +175,8 @@ Wi-Fi network.
 
 - **No clock face.** The panel cannot refresh quickly enough (see the note at the top).
 - **No OTA updates.** Updating means plugging in USB-C and flashing the `-app.bin`.
-- **Drizzle and light rain** draw the plain cloud icon rather than a rain icon.
+- **Every WMO condition is spelled out in words**, so the panel is never ambiguous about
+  what the weather is doing.
 - **Settings can, rarely, be lost.** The stored configuration shares a small flash region
   with the Wi-Fi stack; if that region runs out of room the chip reformats it. The firmware
   now keeps its own settings in a separate region, but a device offered the setup wizard

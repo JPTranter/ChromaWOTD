@@ -305,7 +305,7 @@ Implemented 2026-09-12 (REVIEW D1):
 
 ```
 firmware/src/
-  verse_display.h           data structs + enums (VerseData, WeatherData, WeatherIcon, Theme, Orientation)
+  verse_display.h           data structs + enums (VerseData, WeatherData, Theme, Orientation)
   verse_display.cpp         font metrics + the layout view functions (header band, verse block, footer row)
   text/
     glyphs.{h,cpp}          cc_utf8ToAscii / cc_utf8ToAsciiN — one decoder, length-bounded

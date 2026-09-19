@@ -11,7 +11,7 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
 | **HTTPS Support** | Full HTTPS | Full HTTPS (AWS CloudFront / Akamai) | HTTP / HTTPS |
 | **Location Querying** | Exact Lat/Long (`?latitude=..&longitude=..`) | Requires 6-char geohash (e.g. `r3gx2f` for Sydney) | Requires station ID (e.g. `IDN60901.94768`) |
 | **Current Temperature** | Yes (`current=temperature_2m`) | Yes (`data.temp`) | Yes (`air_temp`) |
-| **Conditions & Icons** | WMO weather codes (0-99 standard) | Descriptive text + icon descriptors | Raw text / manual observation codes |
+| **Conditions** | WMO weather codes (0-99 standard) | Descriptive text + icon descriptors | Raw text / manual observation codes |
 | **Severe Weather Alerts** | Available via extra parameters | Dedicated `/warnings` endpoint | Separate warning feeds |
 | **ESP32 Parsing Overhead** | Extremely low (small JSON filter) | Moderate (requires handling Geohash lookup) | Unusable on MCU (120 KB payload) |
 | **Terms of Service & Stability** | Officially open for non-commercial & small devices | "Owned by BoM - do not copy/share" warning in header | Legacy infrastructure; subject to sudden block |
@@ -24,7 +24,7 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
 * **Endpoint**: `https://api.open-meteo.com/v1/forecast?latitude=-33.8688&longitude=151.2093&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2`
 * **Pros**:
   * Clean, minimal payload (< 500 bytes) specifically designed for microcontrollers and embedded devices.
-  * Standardized WMO weather codes (0=Clear, 1-3=Partly Cloudy, 51-67=Rain, etc.) which map directly to our 4-icon vector engine (`drawWeatherIcon`).
+  * Standardized WMO weather codes (0=Clear, 1-3=Partly Cloudy, 51-67=Rain, etc.) which map directly to our condition TEXT (`cc_wmoCondition`). The display is text-only — the 4-icon vector engine was removed 2026-09-19 (LESSONS §61).
   * Worldwide coverage using national meteorological agency models (including Australian ACCESS models!).
 * **Cons**:
   * Severe weather warning text requires an additional parameter or regional alert feed.
@@ -53,7 +53,7 @@ This document evaluates weather data sources for CHROMAWOTD's weather and alert 
    * If deployed in Australia and configured with a BoM geohash (or resolved from lat/long), query:
      1. `/locations/{geohash}/observations` for exact ambient temperature.
      2. `/locations/{geohash}/forecasts/daily` for condition text and rain likelihood.
-     3. `/locations/{geohash}/warnings` to trigger CHROMAWOTD's red alert indicator stripe and alert banner.
+     3. `/locations/{geohash}/warnings` to trigger CHROMAWOTD's red alert line in the footer row.
 
 ---
 
