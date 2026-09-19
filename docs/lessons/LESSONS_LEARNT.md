@@ -1805,3 +1805,51 @@ Rules:
   `body_path` here, not `body_file`.
 
 (2026-09-19)
+
+## 63. A flag's name is not evidence of what it guards (RESOLVED)
+
+`-DCHROMAWOTD_FONT_FREESANS` guards the **Roboto** set. `firmware/src/fonts/` contains only
+`Roboto{5,55,6,7,8,9,10}pt7b.h` and `RobotoT10pt7b.h`, and the ladder compiled inside that flag
+includes those headers. The FreeSans work that named the flag was superseded on 2026-09-12
+(8pt crowded the weather column, 6pt fitted but sat wrong on the baseline, mono-hinted Roboto
+5.5pt won the comparison).
+
+The name then propagated on its own. `firmware/platformio.ini` pointed at
+`firmware/src/fonts/FreeSans6pt7b.h` — **a file that does not exist** — and `target_seeed.cpp`,
+`target_canvas.cpp`, `target.h`, `font_types.h` and `test/CMakeLists.txt` all described the
+proportional path as "the FreeSans" one, while `verse_display.cpp`'s ladder comment still said
+"Roboto 6 / 5.5 / 5pt" long after the ladder became 10/9/8/7/6/5.5/5pt.
+
+Rules:
+- **Check the artefact, not the identifier.** Before trusting a name — flag, macro, enum, comment —
+  open what it actually loads or calls. Grepping `FreeSans6pt7b.h` finds comments and no file.
+- **A renamed thing leaves its old name in three places:** the identifier, the comments that
+  explain it, and the docs that cite it. All three were stale here; fixing only one looks like
+  progress and leaves the next reader misled.
+- When the name is too expensive to change (a build flag referenced by CI, docs and habit), say so
+  **at the definition** — the `platformio.ini` comment now states that the name is legacy and names
+  the fonts it guards.
+
+(2026-09-19)
+
+## 64. A headline figure in STATUS is a claim about one build (RESOLVED)
+
+`docs/STATUS.md` carried "Flash 9.6%, RAM 5.8%". By the time it was read as current, the
+proportional Roboto set and the 10pt-wide auto-size ladder were compiled in, and a clean build
+measures **Flash 30.8% (1,030,889 / 3,342,336 B), RAM 23.8% (78,004 / 327,680 B)** — a third of the
+quoted flash figure, in the number a reader uses to judge remaining headroom.
+
+The same sweep found the version line still reading 0.1.0 after `v0.1.1` had been tagged and
+published, and a BUG-06 row saying "deliberately still open" while the table above it and
+`PROJECT_PLAN.md` both recorded it fixed and verified on hardware.
+
+Rules:
+- **Re-measure, don't re-quote.** `python tools/verify_all.py --clean` prints both numbers; a figure
+  in a status doc should say what was measured and when, so it can be aged.
+- **Rows in a status doc must agree with each other.** The BUG-06 contradiction was inside one
+  file — the review-fix row said open, the feature row said verified — and survived because each row
+  was written on a different day and nothing compared them.
+- **Fix every copy.** `docs/ARCHITECTURE.md`'s header carried the same stale version and date, so a
+  correction that stopped at STATUS would have left half the drift in place.
+
+(2026-09-19)
