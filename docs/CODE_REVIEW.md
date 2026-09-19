@@ -39,7 +39,7 @@ However, our in-depth review identified **6 functional and UX bugs**, several **
 
 ---
 
-## Fix status (2026-09-18, applied against this review)
+## Fix status (2026-09-18, applied against this review; BUG-06 followed on 2026-09-19)
 
 Every finding was re-checked against the on-disk source before being acted on. All 24 were
 real and the `file:line` citations were accurate. `python tools/verify_all.py` is green
@@ -52,7 +52,7 @@ after the fixes. Four items are re-graded or extended — see the Notes column.
 | BUG-03 | P1 | **FIXED** | `cc_portalRun()` seeds `g_candidate = cc_configActive()`, so the form pre-fills real defaults instead of `(0,0)` (and pre-selects the current timezone/mode). Dead local in `handleRoot()` removed. |
 | BUG-04 | P2 | **FIXED** | `--tz` default is now `Australia/Melbourne`. Confirmed the old default really was rejected: `AEST-10AEDT,M10.1.0,M4.1.0/3` is neither an IANA name nor one of the legacy forms `tz_map.cpp` maps. |
 | BUG-05 | P2 | **FIXED** | A `putStr()` helper compares `putBytes()`'s returned length against the length requested — the `>= 0` test on an unsigned return could never fail — and deletes the key when the value is empty. Fixed **together with DES-03** (same lines, one fix). |
-| BUG-06 | P1 | **DEFERRED — deliberate** | Requires `firmware/partitions.csv` + `board_build.partitions` + `Preferences::begin("chromawotd", false, "nvs_cfg")`. That moves flash offsets, so it needs a FULL flash, hardware verification, and updates to the app-only-flash workflow and `tools/merge_firmware.py`. Shipping an unverified partition table that could brick the boot is worse than leaving a diagnosed bug in the backlog. |
+| BUG-06 | P1 | **FIXED — verified on hardware 2026-09-19** | Implemented as this review proposed, with two corrections found while doing it. (1) The config partition is 16 KB, not the 4 KB suggested below. (2) **`nvs` must stay the first `data, nvs` entry**: the core finds its erase target with `esp_partition_find_first(DATA, NVS, NULL)` — a NULL label, i.e. first match by subtype — so putting `nvs_cfg` above it would have moved the wipe onto the config instead of off it. Bench evidence from the paired envs: `env:nvsprobe` → **STRUCTURAL = SEPARATED**, **BEHAVIOURAL = the shared partition was reformatted and our config survived**; `env:nvsprobe_legacy` reproduces the original loss. Read-back-after-save and warn-on-unexpected-loss (§2/§3 of the plan) are implemented too. **Caveat:** flashing the new table re-provisions existing devices once, because the namespace moves to a new, empty partition (LESSONS §48/§50). |
 | DES-01 | P1 | **FIXED — host- and hardware-verified** | YR2/YE1 *intermediates* replaced by a root bundle — ISRG Root X1 + ISRG Root X2 + Amazon Root CA 1 — applied as one `ROOT_CA_BUNDLE` for every host. Verified against all three LIVE chains with `openssl verify -CAfile <bundle> -untrusted <chain> <leaf>`. This also exposed a defect this review did not list (see below). **Confirmed on the device 2026-09-19**: the post-flash boot log shows both HTTPS fetches succeeding (`sync: verse OK`, `sync: weather OK`), i.e. real TLS validating against the new roots. |
 | DES-02 | P2 | **FIXED** | The unset-clock case is now logged explicitly where it happens, and a failed fetch reports `PARTIAL: <api> failed (device clock not set)` instead of implying the servers are down. |
 | DES-03 | P3 | **FIXED** | Implemented as one change with BUG-05. |

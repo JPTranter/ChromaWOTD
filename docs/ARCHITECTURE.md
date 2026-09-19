@@ -1,7 +1,7 @@
 # ChromaWOTD — Architecture
 
-**Last updated:** 2026-09-18
-**Firmware version:** 0.1.0
+**Last updated:** 2026-09-19
+**Firmware version:** 0.1.1
 **Phase:** 5 — Buttons, time-based content, device configuration (NVS) & setup portal (complete)
 
 ---
@@ -332,7 +332,7 @@ firmware/src/
     wifi_qr.{h,cpp}         the Wi-Fi QR payload
   draw/
     target.h                DisplayTarget interface
-    target_seeed.cpp        Seeed GFX backend (colour mapping, FreeSans glyph draw)
+    target_seeed.cpp        Seeed GFX backend (colour mapping, proportional glyph draw)
     target_canvas.cpp       host canvas backend (mock + PNG)
     font_types.h            GFXglyph/GFXfont/PROGMEM — host shim or device gfxfont.h
   fonts/                    generated GFX font tables (tools/font_convert.py)

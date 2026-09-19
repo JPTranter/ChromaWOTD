@@ -1,13 +1,13 @@
 # ChromaWOTD — Status
 
-**Updated:** 2026-09-18
+**Updated:** 2026-09-19
 **Phase:** 5 — Buttons, time-based content, device configuration (NVS) & setup portal (complete)
-**Firmware version:** 0.1.0
+**Firmware version:** 0.1.1 (released as `v0.1.1`, 2026-09-19)
 
 | Item | State |
 |---|---|
 | Repo scaffold | ✅ done |
-| Firmware builds | ✅ `pio run -e s3` SUCCESS from a clean tree (Flash 9.6%, RAM 5.8%); only library-side warnings |
+| Firmware builds | ✅ `verify_all.py --clean` **ALL GREEN on a clean tree** (2026-09-19): `pio run -e s3` Flash **30.8%** (1,030,889 / 3,342,336 B), RAM **23.8%** (78,004 / 327,680 B); only library-side warnings. The 9.6% figure previously quoted here predated the proportional fonts being compiled in |
 | Display bring-up | ✅ 4-colour smoke pattern verified & flashed (hardware state as of this session's earlier work) |
 | Dual-target layout engine | ✅ `verse_display.cpp` runs on target (Seeed GFX) & host (CMake test harness) |
 | Layout orientations & themes | ✅ Single light landscape presentation only (portrait + inverted/dark dropped 2026-09-12) |
@@ -42,30 +42,33 @@
 | Setup-portal network picker | ✅ The form offers the networks the device can actually see — strongest first, deduped, current one pre-selected — instead of a free-text SSID field, plus a manual field for hidden networks that wins when filled. Removes the mistyped-SSID failure mode that cost a bench session (LESSONS §50/§51). Rendering is a pure, host-tested function; the escaping test was verified to FAIL with escaping disabled |
 | Bench diagnostics | ✅ `env:wifidiag` — prints the shared partition's per-namespace entry counts and whether the radio can see any AP (never a credential), which is what separated "AP out of range" from "RF broken" after a `wifi FAILED` line that could not. `tools/flash_when_awake.py` hardened: pre-flight artifact check (fails instantly instead of looping), retry on a mid-transfer port loss, and it prints the tool's REAL error rather than a guessed cause (LESSONS §50) |
 | Weather API timezone | ✅ Fixed: the URL sent a POSIX TZ string, which Open-Meteo rejects with HTTP 400, so **every** weather fetch had been failing silently. Now `timezone=auto`; the live tests fail (not skip) when the endpoint is reachable but the request is malformed |
-| Public repo & CI | ✅ Published at [github.com/JPTranter/ChromaWOTD](https://github.com/JPTranter/ChromaWOTD) (public, `master`). The workflow had **never run** before the push; the first run exposed four pre-existing breakages, all fixed — firmware could not build without `secrets.h` (now `__has_include` + defaults), `.clang-format` used pre-v18 enum spellings, the lint gate used an unpinned formatter version (now `clang-format==23.1.1`), and `weather_icon_sheet.png` was a ledger orphan. **All 3 CI jobs green** (see LESSONS §42) |
+| Public repo & CI | ✅ Published at [github.com/JPTranter/ChromaWOTD](https://github.com/JPTranter/ChromaWOTD) (public, `master`). The workflow had **never run** before the push; the first run exposed four pre-existing breakages, all fixed — firmware could not build without `secrets.h` (now `__has_include` + defaults), `.clang-format` used pre-v18 enum spellings, the lint gate used an unpinned formatter version (now `clang-format==23.1.1`), and `weather_icon_sheet.png` was a ledger orphan. **All 3 CI jobs green** (see LESSONS §42). `v0.1.0` and `v0.1.1` are tagged and published, each carrying the merged image (`0x0`), the app-only image (`0x10000`) and the `.elf` |
 | Flashed & verified on hardware | ✅ 2026-09-19: app-only upload at `0x10000` (NVS at `0x9000` untouched, so no factory reset). Boot log confirms the settings survived (`config: source=nvs ssid=(set) tz=Australia/Melbourne`), both HTTPS fetches validate against the **new root CAs** (`sync: verse OK (Philippians 2:3-4)`, `sync: weather OK (23.7 C, Partly cloudy)`), button wake works (`wake cause: 3 (button)`), all three pads armed as GPIO2/3/8, and the sleep arithmetic hit the 12:30 slot. One benign `spiAttachMISO(): HSPI Does not have default pins on ESP32S3!` ERROR line comes from the Seeed GFX/Arduino SPI attach path, not from our sources; everything after it works |
-| Phases 2–5 review fixes | ✅ `docs/CODE_REVIEW.md` findings addressed 2026-09-18: portal-timeout fall-through no longer wipes the setup screen (BUG-01), the portal's content mode is honoured (BUG-02), the setup form pre-fills real defaults instead of `(0,0)` and keeps the typed SSID (BUG-03/INC-04), the e2e portal tool's default timezone is an IANA name (BUG-04), NVS writes are actually checked and empty values delete their key (BUG-05/DES-03), TLS pins **roots** instead of Let's Encrypt intermediates (DES-01), an unset clock is reported as such rather than as an API outage (DES-02), plus the stale pin comment, duplicate macro, host coordinate source, SoftAP teardown, bench-tool port and the three documentation drifts. See LESSONS §46. **BUG-06 (NVS wipe) deliberately still open** — needs a bench session. *(The bench-tool port fix was reworked 2026-09-19: taken literally it broke `bench_watch.py` on a sleeping device — see LESSONS §47.)* |
+| Phases 2–5 review fixes | ✅ `docs/CODE_REVIEW.md` findings addressed 2026-09-18: portal-timeout fall-through no longer wipes the setup screen (BUG-01), the portal's content mode is honoured (BUG-02), the setup form pre-fills real defaults instead of `(0,0)` and keeps the typed SSID (BUG-03/INC-04), the e2e portal tool's default timezone is an IANA name (BUG-04), NVS writes are actually checked and empty values delete their key (BUG-05/DES-03), TLS pins **roots** instead of Let's Encrypt intermediates (DES-01), an unset clock is reported as such rather than as an API outage (DES-02), plus the stale pin comment, duplicate macro, host coordinate source, SoftAP teardown, bench-tool port and the three documentation drifts. See LESSONS §46. **BUG-06 (NVS wipe) fixed and verified on hardware 2026-09-19** — the config moved to its own `nvs_cfg` partition (LESSONS §48/§50). *(The bench-tool port fix was reworked 2026-09-19: taken literally it broke `bench_watch.py` on a sleeping device — see LESSONS §47.)* |
 
 ## Next steps
 
 > Two critical reviews exist: [`docs/REVIEW.md`](REVIEW.md) (Phase 1 — all findings
 > resolved) and [`docs/CODE_REVIEW.md`](CODE_REVIEW.md) (Phases 2–5). The Phases 2–5
-> findings were addressed on 2026-09-18 except BUG-06; see LESSONS §46 and the status
-> table above. The list below is the remaining product work.
+> findings were addressed on 2026-09-18, and **BUG-06 was fixed and verified on hardware the
+> next day**; see LESSONS §46–§50 and the status table above. The list below is the remaining
+> product work.
 >
 > The presentation's own chronology — every era with the render it was decided from —
 > is in [`docs/UI_HISTORY.md`](UI_HISTORY.md).
 
-1. **NVS wipe on a full partition (BUG-06 / LESSONS §45) — DIAGNOSED, not fixed.**
-   The 20 KB `nvs` partition is shared with the Wi-Fi/BLE/DHCP stack, and the Arduino core
-   reformats the whole partition when it runs out of room, silently destroying the stored
-   credentials (the device then just re-offers the setup portal). The fix is a dedicated
-   partition: `firmware/partitions.csv` + `board_build.partitions`, with
-   `Preferences::begin("chromawotd", false, "nvs_cfg")`.
-   **Deliberately not done here:** changing the partition table moves flash offsets, so it
-   needs a FULL flash and hardware verification, plus an update to the app-only-flash
-   workflow (`tools/merge_firmware.py` and the docs). It cannot be validated without a
-   board on the bench.
+1. **NVS wipe on a full partition — FIXED and verified on hardware 2026-09-19.** The 20 KB
+   `nvs` partition was shared with the Wi-Fi/BLE/DHCP stack, and the Arduino core reformats the
+   whole partition when it runs out of room, silently destroying the stored credentials (the
+   device then just re-offers the setup portal). The configuration now lives in its own 16 KB
+   `nvs_cfg` partition: `firmware/partitions.csv` + `board_build.partitions`, with
+   `Preferences::begin("chromawotd", false, "nvs_cfg")`. On the bench, `env:nvsprobe` reported
+   both verdicts — **STRUCTURAL = SEPARATED** (`nvs` @0x9000 vs `nvs_cfg` @0x670000) and
+   **BEHAVIOURAL = the shared partition was reformatted while our config survived**
+   (LESSONS §48/§50).
+   **Remaining one-off:** flashing the new table re-provisions every device already in the field
+   once, because its namespace moves to the new, empty partition. The old values stay in the old
+   partition, so re-flashing the old table restores them if a rollback is ever needed.
 2. **TLS trust roots (DES-01) — fixed 2026-09-18, verified on hardware 2026-09-19.** The pinned
    Let's Encrypt intermediates (YR2 / YE1) are replaced by a root bundle (ISRG Root X1 + ISRG
    Root X2 + Amazon Root CA 1), so a server may rotate its intermediate without breaking the
