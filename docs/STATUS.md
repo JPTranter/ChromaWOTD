@@ -40,6 +40,7 @@
 | Stored config can be wiped by the NVS stack | ⚠️ **DIAGNOSED, not fixed.** The 20 KB NVS partition is shared with WiFi/BLE/DHCP state; when it fills, the Arduino core's `nvs_flash_init()` erases and reformats the WHOLE partition, silently destroying the stored credentials (the device just re-offers the setup portal). Our entries were well formed and no code of ours erased them. Needs a dedicated NVS partition and/or a read-back check after save (see LESSONS §45) |
 | Weather API timezone | ✅ Fixed: the URL sent a POSIX TZ string, which Open-Meteo rejects with HTTP 400, so **every** weather fetch had been failing silently. Now `timezone=auto`; the live tests fail (not skip) when the endpoint is reachable but the request is malformed |
 | Public repo & CI | ✅ Published at [github.com/JPTranter/ChromaWOTD](https://github.com/JPTranter/ChromaWOTD) (public, `master`). The workflow had **never run** before the push; the first run exposed four pre-existing breakages, all fixed — firmware could not build without `secrets.h` (now `__has_include` + defaults), `.clang-format` used pre-v18 enum spellings, the lint gate used an unpinned formatter version (now `clang-format==23.1.1`), and `weather_icon_sheet.png` was a ledger orphan. **All 3 CI jobs green** (see LESSONS §42) |
+| Flashed & verified on hardware | ✅ 2026-09-19: app-only upload at `0x10000` (NVS at `0x9000` untouched, so no factory reset). Boot log confirms the settings survived (`config: source=nvs ssid=(set) tz=Australia/Melbourne`), both HTTPS fetches validate against the **new root CAs** (`sync: verse OK (Philippians 2:3-4)`, `sync: weather OK (23.7 C, Partly cloudy)`), button wake works (`wake cause: 3 (button)`), all three pads armed as GPIO2/3/8, and the sleep arithmetic hit the 12:30 slot. One benign `spiAttachMISO(): HSPI Does not have default pins on ESP32S3!` ERROR line comes from the Seeed GFX/Arduino SPI attach path, not from our sources; everything after it works |
 | Phases 2–5 review fixes | ✅ `docs/CODE_REVIEW.md` findings addressed 2026-09-18: portal-timeout fall-through no longer wipes the setup screen (BUG-01), the portal's content mode is honoured (BUG-02), the setup form pre-fills real defaults instead of `(0,0)` and keeps the typed SSID (BUG-03/INC-04), the e2e portal tool's default timezone is an IANA name (BUG-04), NVS writes are actually checked and empty values delete their key (BUG-05/DES-03), TLS pins **roots** instead of Let's Encrypt intermediates (DES-01), an unset clock is reported as such rather than as an API outage (DES-02), plus the stale pin comment, duplicate macro, host coordinate source, SoftAP teardown, bench-tool port and the three documentation drifts. See LESSONS §46. **BUG-06 (NVS wipe) deliberately still open** — needs a bench session. *(The bench-tool port fix was reworked 2026-09-19: taken literally it broke `bench_watch.py` on a sleeping device — see LESSONS §47.)* |
 
 ## Next steps
@@ -59,11 +60,12 @@
    needs a FULL flash and hardware verification, plus an update to the app-only-flash
    workflow (`tools/merge_firmware.py` and the docs). It cannot be validated without a
    board on the bench.
-2. **TLS trust roots (DES-01) — fixed 2026-09-18.** The pinned Let's Encrypt intermediates
-   (YR2 / YE1) are replaced by a root bundle (ISRG Root X1 + ISRG Root X2 + Amazon Root
-   CA 1), so a server may rotate its intermediate without breaking the fetches. Verified on
-   the host against the live chains of all three hosts; **not yet exercised on hardware**
-   in this session (no port attached).
+2. **TLS trust roots (DES-01) — fixed 2026-09-18, verified on hardware 2026-09-19.** The pinned
+   Let's Encrypt intermediates (YR2 / YE1) are replaced by a root bundle (ISRG Root X1 + ISRG
+   Root X2 + Amazon Root CA 1), so a server may rotate its intermediate without breaking the
+   fetches. Verified on the host against the live chains of all three hosts, and now **confirmed
+   on the device**: the post-flash boot log shows `sync: verse OK` and `sync: weather OK`, i.e.
+   both HTTPS fetches validating against the new roots over real TLS.
 3. **Cached last-good content** — show the previous verse/word with an "as of" note instead
    of the "unavailable" screen. Real data rather than invented data; still on PROJECT_PLAN.
 4. **Weather icon mapping for Drizzle / Rain 61–67** — accepted known limitation
