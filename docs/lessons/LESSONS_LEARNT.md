@@ -1614,9 +1614,14 @@ mid-cycle.
 `end-of-file-fixer` hook rewrote files lacking a trailing newline — and because the hook then
 conflicted with pre-commit's own stash/restore, it *rolled its fix back*, leaving the tree clean
 and the commit unmade. The log does say the hook failed; the trap is that the "nothing to commit"
-which follows reads like an ordinary no-op. **End generated files with a newline** (the font
-tables, anything produced by a tool), **and read the commit hash back** afterwards instead of
-assuming it landed. This project's font headers come from `tools/font_convert.py` and are exactly
-the files that trip it.
+which follows reads like an ordinary no-op. **End every file you create with a newline**, and
+**read the commit hash back** afterwards instead of assuming it landed.
+
+It happened a **third** time on a markdown document (`docs/UI_HISTORY.md`) written through the
+agent's own file-writing tool, which is the giveaway: the rule is not "generated files", it is
+**every file you create**. The font tables from `tools/font_convert.py` were fixed at the source
+(that tool now emits a trailing newline), but a hand-authored document trips the same hook, and
+the failure mode is identical — the hook rewrites the file, pre-commit's stash/restore conflicts
+with that rewrite, the fix rolls back, and the commit is simply not made.
 
 (2026-09-19)
