@@ -334,8 +334,10 @@ python tools/verify_all.py --skip-firmware   # fast host-only loop
 python tools/verify_all.py --fix        # resync docs/images after an intentional layout change
 ```
 
-Exit code is non-zero on any failure. Five stages run in order: firmware build, host tests,
-the device-font host tests, the render ledger, and layout alignment. The render ledger md5-compares
+Exit code is non-zero on any failure. Six stages run in order: firmware build, host tests,
+the device-font host tests, the render ledger, layout alignment, and the Python lint over `tools/`
+(the same `black --check` + `flake8` checks CI runs — that stage is where a green local run used to
+still turn a push red). The render ledger md5-compares
 `firmware/test/output/*.png` against `docs/images/*.png` and reports missing, stale or
 orphan files, so the archived renders can never silently drift from the code. The alignment
 stage (`tools/measure_layout.py --check`) measures the rendered PNGs and asserts the panel's
@@ -441,7 +443,7 @@ cmake --build firmware/test/build-device
 ctest --test-dir firmware/test/build-device --output-on-failure
 ```
 
-`tools/verify_all.py` runs this as stage 3/5 automatically. Always use a **separate build
+`tools/verify_all.py` runs this as stage 3/6 automatically. Always use a **separate build
 directory**: the layout tests write to fixed paths under `firmware/test/output/`, so a
 device-font run overwrites the 5x7 renders the ledger compares against `docs/images/`.
 

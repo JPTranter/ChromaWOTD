@@ -45,7 +45,10 @@ PYTHON = sys.executable
 REQUIRED_ARTIFACTS = ("bootloader.bin", "partitions.bin", "firmware.bin")
 
 # Failures that retrying cannot fix (the environment, not the device).
-PERMANENT_MARKERS = ("No module named platformio", "not recognized as an internal or external command")
+PERMANENT_MARKERS = (
+    "No module named platformio",
+    "not recognized as an internal or external command",
+)
 
 
 def pio_cmd():

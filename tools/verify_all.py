@@ -8,9 +8,13 @@ Runs, in order:
                          the font path the firmware actually ships (LESSONS 38/39)
   4. render ledger   — md5 comparison of firmware/test/output against docs/images
   5. alignment       — measures caption/rule/margin invariants in the archived renders
+  6. python lint     — black --check + flake8 over tools/, the same checks CI runs
+                       (skipped with a warning when the linters are not installed)
 
 Exit code is non-zero if any step fails, so this is CI-safe. `--fix` re-syncs the
 archived renders (same as tools/regenerate_screenshots.py) instead of only reporting.
+Stage 6 exists because stages 1-5 could all pass while CI's lint job went red: the
+Python formatters were enforced only on the runner (LESSONS §42).
 
 Examples
 --------
@@ -71,7 +75,7 @@ def pio_cmd():
 
 
 def build_firmware(clean):
-    step("1/5 firmware build")
+    step("1/6 firmware build")
     pio = pio_cmd()
     if clean:
         print("$ " + " ".join(pio + ["run", "-e", "s3", "-t", "clean"]))
@@ -102,7 +106,7 @@ def build_firmware(clean):
 
 
 def run_host_tests():
-    step("2/5 host layout tests (5x7 fallback font path)")
+    step("2/6 host layout tests (5x7 fallback font path)")
     if not os.path.exists(os.path.join(BUILD_DIR, "CMakeCache.txt")):
         print("$ cmake -S firmware/test -B firmware/test/build -G Ninja")
         if run(["cmake", "-S", TEST_DIR, "-B", BUILD_DIR, "-G", "Ninja"]).returncode != 0:
@@ -134,7 +138,7 @@ def run_device_font_tests():
     write to fixed paths under firmware/test/output/ and would otherwise overwrite
     the 5x7 renders the ledger then compares against docs/images.
     """
-    step("3/5 host layout tests (DEVICE font path, CHROMAWOTD_DEVICE_FONTS=ON)")
+    step("3/6 host layout tests (DEVICE font path, CHROMAWOTD_DEVICE_FONTS=ON)")
     build = os.path.join(TEST_DIR, "build-device")
     if not os.path.exists(os.path.join(build, "CMakeCache.txt")):
         print(
@@ -187,7 +191,7 @@ def restore_canonical_renders():
 
 
 def check_alignment():
-    step("5/5 layout alignment (tools/measure_layout.py --check)")
+    step("5/6 layout alignment (tools/measure_layout.py --check)")
     result = run(
         [sys.executable, os.path.join(ROOT, "tools", "measure_layout.py"), "--check", "--all"]
     )
@@ -208,7 +212,7 @@ def check_alignment():
 
 
 def check_ledger(fix):
-    step("4/5 render ledger (firmware/test/output vs docs/images)")
+    step("4/6 render ledger (firmware/test/output vs docs/images)")
     if not os.path.isdir(OUTPUT_DIR):
         print("  FAIL: no renders found - run the tests first")
         return False
@@ -247,6 +251,42 @@ def check_ledger(fix):
     return False
 
 
+def check_python_lint():
+    """Stage 6: the Python lint CI runs over tools/ (black --check, flake8).
+
+    This exists because the local suite did NOT run it: CI's lint job is the only
+    place `black --check --line-length 100 tools/` and `flake8 tools/ --max-line-length 100`
+    were enforced, so a green `verify_all.py` could still turn a push red (LESSONS §42,
+    re-learned 2026-09-22 when a reformat in tools/flash_when_awake.py did exactly that).
+    The linters are optional locally - when they are not importable the stage WARNS and
+    passes rather than blocking an offline run, but it never stays silent about it.
+    """
+    step("6/6 python lint (tools/: black + flake8, as CI does)")
+    checks = (
+        (["-m", "black", "--check", "--line-length", "100", "tools/"], "black"),
+        (["-m", "flake8", "tools/", "--max-line-length", "100"], "flake8"),
+    )
+    ok = True
+    ran = 0
+    for argv, name in checks:
+        result = run([sys.executable] + argv, cwd=ROOT)
+        output = (result.stdout + result.stderr).strip()
+        if "No module named" in output:
+            print(f"  WARN: {name} not installed here - CI's lint job WILL run it")
+            continue
+        ran += 1
+        if result.returncode != 0:
+            ok = False
+            print(f"  ! {name} would reject tools/:")
+            for line in output.splitlines()[-8:]:
+                print(f"    {line}")
+    if ran == 0:
+        print("  SKIP: python lint (neither black nor flake8 is installed locally)")
+        return True
+    print(f"  {'PASS' if ok else 'FAIL'}: python lint (tools/ is clean)")
+    return ok
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--clean", action="store_true", help="clean firmware rebuild")
@@ -268,6 +308,7 @@ def main():
         results["canonical_renders"] = restore_canonical_renders()
         results["renders"] = check_ledger(args.fix)
         results["alignment"] = check_alignment()
+        results["python_lint"] = check_python_lint()
 
     step("summary")
     for name, ok in results.items():
