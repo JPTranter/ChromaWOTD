@@ -1999,3 +1999,40 @@ Rules:
   agreed with the *old* rule; only the pixels disagreed.
 
 (2026-09-22)
+
+## 69. A retry loop retries permanent errors too (RESOLVED)
+
+Flashing the device after the WOTD fixes, `tools/flash_when_awake.py` burned a 7-minute window and
+then a 15-minute one on the same failure. The port **did** appear (COM13 — the operator's button
+presses worked) and the tool "uploaded" 144 times, each attempt ending in:
+
+```
+…\venv\Scripts\python.exe: No module named platformio
+```
+
+Root cause: the upload command was built as `sys.executable -m platformio`, and `sys.executable` is
+whatever interpreter launched the tool — here a venv with no PlatformIO, while PlatformIO Core 6.1.19
+lives under `C:\Python314` and is reached through the `pio` on PATH. `tools/verify_all.py` had been
+resolving exactly that with `shutil.which("pio")` all along. The retry loop then converted an
+environment error into 144 pointless attempts, each one consuming a wake window the operator had to
+produce by hand at the device.
+
+Rules:
+- **Retry only what a retry can fix.** Classify the failure text and abort on
+  "No module named…" / "not recognized as a command". A retry budget belongs to transient faults
+  (a port that vanished mid-transfer), never to a missing dependency.
+- **Pre-flight the ENVIRONMENT, not just the inputs.** This tool already checked its build artifacts
+  before waiting — an earlier lesson — and that check passed while the command it was about to run
+  could never work. `pio --version` costs one second and turns a silent 15-minute failure into an
+  immediate message.
+- **Never hardcode the interpreter for a subprocess that needs a toolchain.** Ask `shutil.which`
+  first; keep the module form as a fallback. Two tools in this repo now share that rule instead of
+  one of them having it.
+- **The evidence was in the log the whole time.** Every attempt printed the real error; the failure
+  survived because "uploading…" was taken as evidence. Print the real error *and* read it.
+
+Verified: with PATH stripped of both `pio` and the module, the tool exits 3 with the real message
+before it waits for a port; in the real environment it prints `platformio: PlatformIO Core, version
+6.1.19` and the flash then succeeded on the **first** attempt.
+
+(2026-09-22)
