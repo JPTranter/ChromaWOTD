@@ -1,18 +1,19 @@
 # ChromaWOTD — Status
 
-**Updated:** 2026-09-19
+**Updated:** 2026-09-22
 **Phase:** 5 — Buttons, time-based content, device configuration (NVS) & setup portal (complete)
 **Firmware version:** 0.1.1 (released as `v0.1.1`, 2026-09-19)
 
 | Item | State |
 |---|---|
 | Repo scaffold | ✅ done |
-| Firmware builds | ✅ `verify_all.py --clean` **ALL GREEN on a clean tree** (2026-09-19): `pio run -e s3` Flash **30.8%** (1,030,889 / 3,342,336 B), RAM **23.8%** (78,004 / 327,680 B); only library-side warnings. The 9.6% figure previously quoted here predated the proportional fonts being compiled in |
+| Firmware builds | ✅ `verify_all.py` **ALL GREEN on a clean tree** (2026-09-22): `pio run -e s3` Flash **30.9%** (1,031,861 / 3,342,336 B), RAM **24.6%** (80,548 / 327,680 B); only library-side warnings. The 30.8% / 23.8% figures before this session predate the WOTD body buffers added below |
+| Host suite | ✅ **133 tests across 9 suites**, all passing, on BOTH font paths (5x7 fallback and `CHROMAWOTD_DEVICE_FONTS=ON`) |
 | Display bring-up | ✅ 4-colour smoke pattern verified & flashed (hardware state as of this session's earlier work) |
 | Dual-target layout engine | ✅ `verse_display.cpp` runs on target (Seeed GFX) & host (CMake test harness) |
 | Layout orientations & themes | ✅ Single light landscape presentation only (portrait + inverted/dark dropped 2026-09-12) |
 | Weather text & wrapping | ✅ The weather is drawn as TEXT in the footer row (temperature + condition), replacing the old centred `FORECAST` header with its underline divider in the removed weather column. Warnings share that row, bottom-left (see the verse-first layout row below) |
-| Host layout tests & PNG exports | ✅ 26 tests across 4 suites, all passing (`test_layout_landscape/_alert/_overflow/_text`) |
+| Host layout tests & PNG exports | ✅ 133 tests across 9 suites, all passing (`test_layout_landscape/_alert/_overflow/_text`, `test_net`, `test_config`, `test_sched`, `test_verse_autosize`, `test_wifi_qr`); the layout suites also run on the device font path (verify_all stage 3) |
 | Degree symbol fix | ✅ Decoded `0xC2 0xB0` to vector circle for crisp `27°C` render |
 | UTF-8 → ASCII normalisation | ✅ Shared `cc_utf8ToAscii()` maps curly quotes, dashes, NBSP, ellipsis, `⚠`; host and device now agree |
 | Overflow handling | ✅ Blocks mark swallowed text with an inline `...` marker; region invariants prove nothing spills (archived: `docs/images/layout_overflow_*.png`) |
@@ -24,7 +25,10 @@
 | Wake schedule & deep sleep | ✅ Phase 4 (schedule): deep sleep between 06:00 / 12:30 / 18:00 slots, NTP re-sync each wake, 1 h fallback if the clock is invalid; entry verified on hardware (sleeps to next slot) |
 | User buttons | ✅ Phase 5: BUTTON1/2/3 = **GPIO2/GPIO3/GPIO8** (D1/D2/D9), active-low. Any press wakes the device via `ext1` and runs a full sync+refresh — **verified on hardware** (`wake cause: 3 (button)` → sync → refresh → sleep). Pin map probed, not guessed: the schematic reading was wrong (see LESSONS §34) |
 | Time-based content | ✅ Phase 5: Verse of the Day 00:00–11:59, Word of the Day 12:00–23:59 (header title switches); pure policy in `sched/content_policy` + tests |
-| Word of the Day source | ✅ Phase 5: A.Word.A.Day (`wordsmith.org/words/today.html`) — definition + example body, respelling pronunciation caption, headword caption; bundled fallback word if the fetch fails |
+| Word of the Day source | ✅ Phase 5: A.Word.A.Day (`wordsmith.org/words/today.html`) — definition + usage example body, respelling pronunciation in the header band, headword. **No bundled fallback word** (a canned word presented as today's made a broken fetch invisible): a failed fetch shows an explicit "Word unavailable" state and a red `PARTIAL` alert |
+| Pronunciation always shown (2026-09-22) | ✅ **FIXED (LESSONS §65).** The old rule dropped the respelling whenever `word (respelling)` did not fit beside the date — measured at the shipped 7pt size, that was **3 of the 18 most recent entries, including `soporiferous`, the word on the panel when it was reported**. The respelling now shrinks (7 → 6 → 5.5 → 5pt; all already compiled in) into the room left before the date and truncates visibly only as a last resort. Asserted as a relation between two renders, verified to fail with the old rule restored (device font path) |
+| Whole usage example reaches the renderer (2026-09-22) | ✅ **FIXED (LESSONS §66).** The example is a whole paragraph (measured 855 chars for `misgiving`) but was cut to 230 bytes twice — by the parser's `NET_TEXT_MAX` field cap and again by `main.cpp`'s body buffer — so the panel got ~272 chars, cut mid-sentence. Worse, the shortened text then FIT the block, so `cc_wrappedLineCount() > cc_lineCapacity()` stayed false and **no `...` marker was drawn**: it read as a complete example that stopped. Fields are now `WORD_FIELD_MAX` (1024, static BSS), the body is composed by the shared `cc_composeWordBody()` (which `layout_render` also uses, so a preview can no longer assemble different text from the device), and the block marks its own cut |
+| Source day boundary (2026-09-22) | ✅ **FIXED (LESSONS §67).** A.Word.A.Day publishes at **00:01 US Eastern** = 14:01 AEST / 15:01 AEDT, i.e. after the 12:30 slot, so that refresh re-showed the previous evening's word (measured: `soporiferous` at both 18:00 on 21 Sep and 12:30 on 22 Sep). The page's own edition date is now parsed into `WordData.editionDate` and, when it is not the device's local date, the refresh renders the **verse** instead; the word appears fresh at the next slot past the source's day boundary |
 | Weather policy & outlook | ✅ Daytime (< 18:00) shows today's expected maximum + condition (unlabelled); evening (18:00–23:59) shows tomorrow's expected maximum + condition with a red **TOMORROW** marker before it — without that marker the number is indistinguishable from today's |
 | Buttons & content toggle | ✅ A **tap** = sync + refresh; a **hold ~0.5-10 s** = show the other content for that refresh (an `RTC_DATA_ATTR` invert flag, cleared at the next scheduled wake, so the clock is always back in charge at the next slot); a **hold 10 s+** = factory reset. Classified by hold length in `sched/hold_gesture` (7 tests). A **double click was measured and ruled out**: every button wake — tap or double click — shows the pad still low at the first sample, so the two are indistinguishable (LESSONS §58) |
 | Weather icons | ✅ **N/A — the icon was removed (2026-09-19).** The weather is TEXT (`25°C Partly cloudy`), so the old "only WMO ≥ 80 gets a Rain icon" limitation no longer exists: the condition words are always correct. The `WeatherIcon` enum, the WMO→icon mapping, `draw/weather_icon.*`, the `--icon` preview flag and the sprite-sheet generator were all deleted (LESSONS §61) |

@@ -22,7 +22,7 @@ ChromaWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow
 
 | zone | contents |
 |---|---|
-| header band (18 px, yellow) | **what** you are reading: the citation (`Proverbs 3:5-6`), or the word with its respelling (`breviloquent (bre-VIL-uh-kwuhnt)`), drawn one size up at 7pt; the date sits at the right at the **same size**, formatted `DOW DD MMM` (`Sat 19 Sep`) by `text/date_format.h` |
+| header band (18 px, yellow) | **what** you are reading: the citation (`Proverbs 3:5-6`), or the word with its respelling (`breviloquent (bre-VIL-uh-kwuhnt)`), drawn one size up at 7pt; the date sits at the right at the **same size**, formatted `DOW DD MMM` (`Sat 19 Sep`) by `text/date_format.h`. The respelling is never dropped — it shrinks (7 → 6 → 5.5 → 5pt) into the room left before the date and is truncated only as a last resort (LESSONS §65) |
 | body | the verse / definition, **full panel width**, auto-sized by a ladder from 10pt down to 5.5pt |
 | footer row | status / warnings at the LEFT in red; weather as text at the RIGHT (`25°C Partly cloudy`) |
 
@@ -100,11 +100,18 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
    - Bounded NTP sync (6000 ms timeout) to retrieve local wall time
    - Evaluate time-based policies:
      - 00:00–11:59: Verse of the Day (BibleGateway VOTD)
-     - 12:00–23:59: Word of the Day (A.Word.A.Day)
+     - 12:00–23:59: Word of the Day (A.Word.A.Day) — **unless the page's own edition
+       date is not today's local date.** A.Word.A.Day publishes at 00:01 US Eastern
+       (14:01 AEST / 15:01 AEDT), so the 12:30 slot would otherwise re-show the word
+       the previous evening already displayed; that refresh renders the verse instead
+       (LESSONS §67)
      - 00:00–17:59: Today's expected maximum + condition (footer row, unlabelled)
      - 18:00–23:59: Tomorrow's expected maximum + condition (footer row, prefixed `TOMORROW`)
    - Fetch content and weather over CA-validated HTTPS on a dedicated 16 KB FreeRTOS task (`cc_sync`)
-   - Parse JSON/HTML into `VerseData` and `WeatherData` structs
+   - Parse JSON/HTML into `VerseData` / `WordData` / `WeatherData` structs. The
+     Word-of-the-Day fields are bounded by `WORD_FIELD_MAX` (1024) because the usage
+     example is a whole paragraph; the body is composed by `cc_composeWordBody` so the
+     host preview renders exactly the device's string (LESSONS §66)
 
 3. **Render**:
    - Assemble `LayoutOptions` (header title, weather label, pronunciation caption)

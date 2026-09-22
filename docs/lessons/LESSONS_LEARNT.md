@@ -614,6 +614,11 @@ it, so a long word + long respelling degrades by dropping the pronunciation inst
 overprinting. Presentation strings moved into a `LayoutOptions` struct (headerTitle /
 weatherLabel / leftCaption) so adding a label is one field, not another positional argument.
 
+> **Superseded 2026-09-22 (§65):** dropping the pronunciation was the wrong degrade — it fired for
+> 3 of the 18 most recent words, and the respelling is the only reason this source was chosen. The
+> respelling now shrinks (7 → 5pt) to fit and is truncated visibly as a last resort. (The dual
+> caption itself also moved into the header band in the 2026-09-19 verse-first layout.)
+
 (2026-09-12)
 
 ## 34. Button wake: GPIO5/D4 was not a button — arming it caused a deep-sleep wake storm (RESOLVED)
@@ -1853,3 +1858,101 @@ Rules:
   correction that stopped at STATUS would have left half the drift in place.
 
 (2026-09-19)
+
+## 65. The field that justifies a source is the first thing a degrade rule drops (RESOLVED)
+
+Reported: *"not seeing the pronunciation"* on the Word-of-the-Day panel.
+
+A.Word.A.Day was chosen for exactly ONE property — it publishes a **respelling** and not IPA (§33,
+`docs/research/WORD_APIS.md`). The identity line was then assembled as a single string
+(`word (res-pell-ing)`) and, when the pair did not fit beside the date, the old rule degraded by
+**dropping the respelling altogether** and drawing the headword alone.
+
+Measured at the shipped 7pt identity size (room = 208 px once the date and both margins are
+reserved), over the 18 most recent A.Word.A.Day entries:
+
+| Headword | word + respelling @7pt | Result |
+| :--- | :--- | :--- |
+| `soporiferous (sop-uh-RIF-uhr-uhs)` | 212 px | **dropped** |
+| `dataveillance (day-tuh-VAY-luhns)` | 211 px | **dropped** |
+| `despotocracy (des-puh-TAH-kruh-see)` | 236 px | **dropped** |
+| the other 15 | 105–207 px | shown |
+
+`soporiferous` — the word that was on the panel when this was reported — is one of the three.
+
+Rules:
+- **Degrade the cheap field, never the informative one.** The respelling now SHRINKS through
+  7 → 6 → 5.5 → 5pt (every one of those fonts is already compiled in for the body ladder, so it
+  costs no flash) into the room that is left, and is truncated with a visible `...` only when even
+  5pt cannot hold it. The headword keeps its size and is truncated first, as before.
+- **A deliberate degrade is still a bug if it fires often.** This one was documented here (§33), in
+  the layout comment and in `ARCHITECTURE.md` — which is exactly how it survived. What was never
+  measured was how OFTEN it fired: one word in six is not an edge case. Measure the rate before
+  calling a fallback acceptable.
+- **Test the RELATION, not a pixel.** The test renders the same panel with and without the
+  respelling and requires the header band to differ (and the body to be byte-identical). Verified
+  to FAIL with the old drop rule restored. Note it only reproduces on the **device font path**
+  (7pt): on the 5x7 fallback the pair fits, the old rule never fired, and the test would have
+  passed for the wrong reason — the decisive run is `verify_all.py` stage 3.
+
+(2026-09-22)
+
+## 66. A cap applied before the renderer makes the renderer's honest truncation unreachable (RESOLVED)
+
+Reported: *"text is incomplete for the usage of the word, but there is still space for another 1.5
+lines of text."*
+
+Two 230-byte caps cut the A.Word.A.Day usage example before the layout ever saw it: `cc_parseAwad`
+copied every field into `NET_TEXT_MAX` buffers, and `main.cpp` then assembled definition + example
+into a third 230-byte buffer. The example is a whole paragraph — measured **855 chars** for
+`misgiving` (2026-09-22), 223 for `abjective` — so the panel received ~272 chars, cut mid-sentence.
+
+The visible consequence is subtler than "text is missing": because the shortened string then FIT
+the block, `cc_wrappedLineCount() > cc_lineCapacity()` was **false**, so the overflow marker the
+block reserves space for was never drawn. The panel looked like a complete example that simply
+stopped, and the free lines were identified as a layout problem rather than a data one.
+
+Rules:
+- **The renderer owns truncation, and it can only mark a cut it can see.** Never pre-cut remote text
+  with `snprintf`: keep the field whole (`WORD_FIELD_MAX` = 1024, static BSS) and let the block
+  decide *and mark*. A cap in front of the marker logic converts a visible cut into an invisible one
+  — the worst of both.
+- **A preview must compose text exactly as the device does.** `layout_render --word-live` built this
+  body from `std::string` with no cap, so every preview looked right while the panel was cut. The
+  composition now lives in ONE shared function (`cc_composeWordBody`), and `--word-file <saved.html>`
+  renders a specific day's page through it — which is how this was reproduced and fixed.
+- Regression tests assert the FIELD survives (`strlen(example) > 230`, body > 230) and were verified
+  to fail against the old caps.
+
+(2026-09-22)
+
+## 67. A source's day boundary is not your day boundary (RESOLVED)
+
+Reported: *"seeing the same word of the day as yesterday."*
+
+A.Word.A.Day publishes its next edition at **00:01 US Eastern** — the page stamps itself
+(`Sep 22, 2026`, `?date=2026-09-22`; the RSS `pubDate` reads `Tue, 22 Sep 2026 00:01:03 EDT`).
+That instant is **14:01 AEST / 15:01 AEDT**, i.e. AFTER the device's 12:30 local slot. So the
+afternoon refresh was reading the PREVIOUS edition — the same word the previous evening's 18:00
+slot had already shown.
+
+Measured on the bench: the 18:00 AEST refresh on 21 Sep and the 12:30 AEST refresh on 22 Sep
+rendered the same word (`soporiferous`), while `misgiving` had been published at 00:01 EDT on the
+22nd. Without an edition stamp anywhere on the panel, that is indistinguishable from a device
+that never refreshed.
+
+Rules:
+- **Read the SOURCE's own edition stamp; never infer freshness from the local clock.** The page
+  carries its date twice (a `?date=YYYY-MM-DD` link and a sidebar `Sep 22, 2026`), and
+  `cc_parseAwad` returns it as `WordData.editionDate`. No date found → `nullptr` → behave exactly
+  as before; never assume "today".
+- **"The newest published" and "today's" are different claims, and the panel must pick one.** When
+  the edition is not the device's local date, the word slot now renders the VERSE and the word
+  appears (fresh) at the next slot past the source's day boundary. Repeating content reads as a
+  broken device; there is nothing else it can look like.
+- **This project has now lost a refresh to a time assumption twice, in opposite directions**:
+  Open-Meteo rejected a POSIX TZ string so every weather fetch failed silently (§44), and a US
+  Eastern publish time made the word look stale. Today/zone assumptions belong in tested code or in
+  the source's own data — never in a comment.
+
+(2026-09-22)

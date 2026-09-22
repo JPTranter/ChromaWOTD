@@ -117,10 +117,16 @@ screen instead of content:
 | Time | Content | Weather column |
 | :--- | :--- | :--- |
 | 06:00 – 11:59 | **Verse of the Day** | today's high + condition |
-| 12:00 – 23:59 | **Word of the Day** | today's high |
+| 12:00 – 23:59 | **Word of the Day** (or the verse, if the word source has not published today's edition yet — see below) | today's high |
 | 18:00 – 23:59 | **Word of the Day** | **tomorrow's** high, labelled `TOMORROW` |
 
 Nothing is downloaded on a button press — the device wakes on its own at those three times.
+
+> **Why the 12:30 refresh can show a verse:** A.Word.A.Day publishes its next word at 00:01 US
+> Eastern time, which is 14:01 in Melbourne (15:01 in daylight saving) — *after* the 12:30
+> refresh. The device reads the edition date printed on the page and, when it is not today's
+> date, shows the verse instead of repeating the word you already saw the previous evening. The
+> word then appears, fresh, at the 18:00 refresh.
 
 ### The buttons
 

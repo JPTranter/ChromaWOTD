@@ -158,18 +158,22 @@ non-button pad for wake caused a deep-sleep wake storm — see `LESSONS_LEARNT.m
 | Window | Content | Source |
 | :--- | :--- | :--- |
 | 00:00–11:59 | **Verse of the Day** | BibleGateway VOTD (`docs/research/SCRIPTURE_APIS.md`) |
-| 12:00–23:59 | **Word of the Day** | A.Word.A.Day (`docs/research/WORD_APIS.md`) |
+| 12:00–23:59 | **Word of the Day** | A.Word.A.Day (`docs/research/WORD_APIS.md`) — **unless the page's own edition date is not today's local date**, in which case the verse is shown: A.Word.A.Day publishes at 00:01 US Eastern (14:01 AEST), *after* the 12:30 refresh, so that slot would otherwise repeat the previous evening's word |
 
 The header title follows the mode, and the policy lives in pure, unit-tested
 `sched/content_policy.{h,cpp}`. If NTP fails, the device falls back to the verse rather than
 showing the wrong content.
 
-The Word-of-the-Day presentation puts the definition plus a quoted usage example in the body,
-with the **respelling pronunciation** as a black caption at the left of the bottom rule and
-the **headword** in red at the right.
+The Word-of-the-Day presentation puts the definition plus the usage example in the body, with
+the **respelling pronunciation** beside the headword in the header band. The respelling is never
+dropped to make room — it shrinks (7 → 5pt) and only truncates visibly as a last resort. The body
+auto-sizes to the panel and marks any cut with `...`; the example is a whole paragraph, so it is
+kept intact in the parser (1 KB field) and the *renderer* decides how much of it the panel holds.
 
-> **Not yet implemented** (tracked in `docs/PROJECT_PLAN.md`): NVS persistence of credentials
-> and state, and the refresh lockout during the ~25 s panel sweep.
+> **Not yet implemented** (tracked in `docs/PROJECT_PLAN.md`): cached last-good content (show the
+> previous verse/word with an "as of" note instead of the unavailable screen), and the refresh
+> lockout during the ~25 s panel sweep. Credentials and device state ARE persisted in NVS — see
+> `docs/STATUS.md` (Phase 5).
 
 ### 4. Network Layer & Data Sources
 `firmware/src/net/` splits the network path so parsing and mapping are testable on the host:
@@ -379,6 +383,19 @@ Renders land in `firmware/test/output/previews/` (gitignored, outside the ledger
 use the same draw calls the device executes. The tool also prints whether the highlight
 phrase was found, so a silently dropped red accent is obvious. Under the hood it drives
 `layout_render`, built by the same CMake project.
+
+The Word-of-the-Day presentation can also be rendered from a **saved** page, which is how a
+past day's panel is reproduced after the source has moved on (and how the pronunciation and
+body-truncation defects were diagnosed):
+
+```powershell
+./firmware/test/build-device/layout_render.exe --word-file "$env:TEMP\wordsmith_today.html" `
+    --date-ymd 2026-09-21 --out out.png     # parses + composes the body exactly as the device does
+./firmware/test/build-device/layout_render.exe --word-live --out out.png   # today's page, live
+```
+
+Build the device font path with `-DCHROMAWOTD_DEVICE_FONTS=ON`: the default host build renders the
+5×7 fallback font, so a preview of one run must not be compared with a render of the other.
 
 ### Host Test Harness & Image Previews
 
