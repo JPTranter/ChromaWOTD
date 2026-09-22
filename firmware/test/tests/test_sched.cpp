@@ -55,19 +55,26 @@ TEST(WakeSchedule, AlwaysPositive_EvenAtLastSecondOfDay) {
 // ---------------------------------------------------------------------------
 // Content policy (time-of-day presentation) ---------------------------------
 // ---------------------------------------------------------------------------
-TEST(ContentPolicy, VerseInTheMorning) {
-    for (int h = 0; h < 12; h++)
+TEST(ContentPolicy, VerseBeforeTheWordWindowOpens) {
+    for (int h = 0; h < kCcWordOfDayStartHour; h++)
         EXPECT_EQ(cc_contentModeForHour(h), ContentMode::Verse) << "hour " << h;
 }
 
-TEST(ContentPolicy, WordInTheAfternoonAndEvening) {
-    for (int h = 12; h < 24; h++)
+TEST(ContentPolicy, WordFromTheWindowStartToMidnight) {
+    for (int h = kCcWordOfDayStartHour; h < 24; h++)
         EXPECT_EQ(cc_contentModeForHour(h), ContentMode::Word) << "hour " << h;
 }
 
-TEST(ContentPolicy, ModeFlipsExactlyAtNoon) {
-    EXPECT_EQ(cc_contentModeForHour(11), ContentMode::Verse);
-    EXPECT_EQ(cc_contentModeForHour(12), ContentMode::Word);
+TEST(ContentPolicy, ModeFlipsExactlyAtTheWordWindowStart) {
+    // 15:00, not noon: A.Word.A.Day publishes at 00:01 US Eastern, which is 14:01 AEST /
+    // 15:01 AEDT, so a midday refresh would read the PREVIOUS edition (LESSONS §67). The
+    // page's own edition date is still checked against the local date as the backstop.
+    EXPECT_EQ(kCcWordOfDayStartHour, 15);
+    EXPECT_EQ(cc_contentModeForHour(14), ContentMode::Verse);
+    EXPECT_EQ(cc_contentModeForHour(15), ContentMode::Word);
+    // The 12:30 scheduled slot is now a VERSE refresh, and the word is the 18:00 slot's.
+    EXPECT_EQ(cc_contentModeForHour(12), ContentMode::Verse);
+    EXPECT_EQ(cc_contentModeForHour(18), ContentMode::Word);
 }
 
 TEST(ContentPolicy, TodayForecastBefore18) {

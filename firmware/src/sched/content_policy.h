@@ -10,7 +10,16 @@
 
 enum class ContentMode { Verse, Word };
 
-// 00:00–11:59 -> Verse of the Day; 12:00–23:59 -> Word of the Day.
+// The local hour the Word of the Day window opens (15:00). Chosen against the SOURCE's
+// publish instant rather than the local calendar: A.Word.A.Day publishes at 00:01 US
+// Eastern, which is 14:01 AEST / 15:01 AEDT / 16:01 AEDT-with-US-standard-time. 15:00 is
+// therefore past the flip for the common case and within an hour of it at worst — and the
+// page's own edition date is still compared against the local date (main.cpp), so a word
+// that is not yet today's falls back to the verse instead of repeating yesterday's.
+// Single source of truth: the tests and tools/font_size_probe.py cite this constant.
+constexpr int kCcWordOfDayStartHour = 15;
+
+// 00:00–14:59 -> Verse of the Day; 15:00–23:59 -> Word of the Day.
 ContentMode cc_contentModeForHour(int hour24);
 
 // Resolve which content to show, honouring the portal's forced-mode setting:

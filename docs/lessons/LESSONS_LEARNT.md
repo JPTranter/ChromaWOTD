@@ -1954,6 +1954,44 @@ Rules:
   Open-Meteo rejected a POSIX TZ string so every weather fetch failed silently (§44), and a US
   Eastern publish time made the word look stale. Today/zone assumptions belong in tested code or in
   the source's own data — never in a comment.
+- **Follow-up (§70):** the window itself was then moved to 15:00 local, and 15:00 turns out to be a
+  boundary rather than a guarantee — the table in §70 is the reason the edition-date check stays.
+
+(2026-09-22)
+
+## 70. A window that opens before the source publishes guarantees nothing (RESOLVED)
+
+After §67 the device compared the page's edition date with its own and fell back to the verse when
+they differed — correct, but the reader still *saw* a verse at 12:30, an hour that had shown a word
+for weeks. The request was to move the Word-of-the-Day window so the word is "definitely already
+out": **15:00** local (`kCcWordOfDayStartHour`).
+
+The arithmetic, because "3pm" is a local answer to a foreign clock (the source publishes at
+**00:01 US Eastern**):
+
+| Melbourne | US Eastern | A.Word.A.Day flip, local time | 15:00 window opens… |
+| :--- | :--- | :--- | :--- |
+| AEST (UTC+10) | EDT (UTC-4) | 14:01 | 59 min after ✓ |
+| AEDT (UTC+11) | EDT (UTC-4) | 15:01 | 1 min **before** ✗ |
+| AEDT (UTC+11) | EST (UTC-5) | 16:01 | 61 min **before** ✗ |
+
+Those are not hypothetical rows: AEDT+EDT happens in October and March, AEDT+EST from November to
+March. 15:00 is therefore a *good* boundary, not a guaranteed one — which is exactly why the
+edition-date check stays. The two mechanisms divide the work: the window keeps the **scheduled**
+refreshes honest (06:00 and 12:30 are verses, 18:00 is the word), and the check covers the boundary
+hour and any button tap inside it.
+
+Rules:
+- **Convert the source's clock before choosing a local boundary, and write the table down.** "00:01
+  ET = 14:01 local" was true for eight months of the year and wrong for four; the single-line version
+  of that fact is what made 15:00 feel safe.
+- **A clock rule and a data check are not alternatives.** The clock decides *when to look*; the data
+  decides *whether what came back is today's*. Keep the data check for correctness and the clock for
+  predictability — they cover different failures, and deleting either on the grounds that the other
+  exists is how a boundary hour becomes a repeat.
+- **Say what a change does NOT cover.** 15:00 removes the scheduled midday repeat; it does not make
+  a 15:30 refresh in December safe. The docs state the boundary hour explicitly so nobody reads the
+  window's name as a guarantee.
 
 (2026-09-22)
 

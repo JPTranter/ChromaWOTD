@@ -5,7 +5,7 @@
 //   * Sleeps between scheduled refreshes (06:00 / 12:30 / 18:00) and wakes on
 //     the RTC timer OR any of the three user buttons (BUTTON1/2/3 = GPIO2/3/8,
 //     active-low) — a button press runs exactly the same sync+render cycle.
-//   * Content by local time: 00:00–11:59 Verse of the Day, 12:00–23:59 Word of
+//   * Content by local time: 00:00–14:59 Verse of the Day, 15:00–23:59 Word of
 //     the Day (Word from A.Word.A.Day, with the respelling pronunciation).
 //   * Weather column by local time: 18:00–23:59 shows TOMORROW's outlook and
 //     captions it "TOMORROW", otherwise today's under "FORECAST".
@@ -193,9 +193,10 @@ static bool g_haveTime = false;
 static char g_date[32] = "";    // "DOW DD MMM" for the header (text/date_format.h)
 static char g_isoDate[11] = ""; // "YYYY-MM-DD" local date, for comparing against a source's edition
 // True when the Word-of-the-Day page's own edition date is NOT the device's local date.
-// A.Word.A.Day publishes at 00:01 US Eastern (14:01 AEST / 15:01 AEDT), so the 12:30 local
-// slot reads the PREVIOUS edition — the same word shown at the previous 18:00 slot. Without
-// this the panel looks like it is repeating itself for no reason.
+// The word window opens at 15:00 local (kCcWordOfDayStartHour) because A.Word.A.Day publishes
+// at 00:01 US Eastern = 14:01 AEST / 15:01 AEDT / 16:01 AEDT-with-US-standard-time. That
+// covers the common case by clock, and this flag is the backstop for the edges: a word that
+// is not yet today's is not shown as today's.
 static bool g_wordStaleEdition = false;
 
 // Had this device been configured before? RTC memory survives DEEP SLEEP — the mode this
@@ -340,18 +341,17 @@ static void syncTask(void* /*arg*/) {
             if (cc_fetchWord(&wd) && wd.definition) {
                 g_word = wd;
                 // Is this TODAY's edition by the device's own calendar? The source stamps
-                // each page with its edition date (00:01 US Eastern). A mismatch means the
-                // 12:30 slot is holding yesterday's word — the one the previous 18:00 slot
-                // already showed.
+                // each page with its edition date (00:01 US Eastern).
                 g_wordStaleEdition = (g_isoDate[0] && wd.editionDate && strcmp(wd.editionDate, g_isoDate) != 0);
                 Serial.printf("sync: word OK (%s) edition=%s local=%s\n", wd.word ? wd.word : "?",
                               wd.editionDate ? wd.editionDate : "?", g_isoDate[0] ? g_isoDate : "?");
                 if (g_wordStaleEdition) {
-                    // The source has not published today's edition yet (it publishes at
-                    // 00:01 US Eastern = 14:01 AEST / 15:01 AEDT, after the 12:30 slot).
-                    // Showing it again would read as a broken device: the reader saw this
-                    // exact word at the previous evening's refresh. Show the verse instead;
-                    // the word appears fresh at the next slot past the source's day boundary.
+                    // The source has not published today's edition yet. The 15:00 window start
+                    // covers the usual case, but the publish instant is 14:01 AEST / 15:01 AEDT
+                    // / 16:01 AEDT-with-US-standard-time, so an early refresh (or a button tap
+                    // near the boundary) can still find yesterday's word. Showing it again
+                    // would read as a broken device: the reader saw this exact word at the
+                    // previous evening's refresh. Show the verse instead.
                     Serial.println("sync: word edition is YESTERDAY's -> showing the verse this refresh");
                     g_mode = ContentMode::Verse;
                     syncVerseFallback();

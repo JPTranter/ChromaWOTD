@@ -2,7 +2,7 @@
 #include "sched/content_policy.h"
 
 ContentMode cc_contentModeForHour(int hour24) {
-    return (hour24 < 12) ? ContentMode::Verse : ContentMode::Word;
+    return (hour24 < kCcWordOfDayStartHour) ? ContentMode::Verse : ContentMode::Word;
 }
 
 ContentMode cc_resolveContentMode(uint8_t configuredMode, bool haveTime, int hour24) {
