@@ -73,15 +73,15 @@ def main():
     cmd = [EXE]
     if args.live:
         # --live is the VOTD path; --word-live the afternoon path. Pick by the same
-        # clock rule the device uses (before 15:00 verse, from 15:00 word) — see
-        # kCcWordOfDayStartHour in firmware/src/sched/content_policy.h.
+        # clock rule the device uses (before 16:30 verse, from 16:30 word) — see
+        # kCcWordOfDayStartMinutes in firmware/src/sched/content_policy.h.
         import datetime
 
-        hour = datetime.datetime.now().hour
-        word_window = hour >= 15  # kCcWordOfDayStartHour
+        now = datetime.datetime.now()
+        word_window = (now.hour, now.minute) >= (16, 30)  # kCcWordOfDayStartMinutes
         cmd.append("--word-live" if word_window else "--live")
         which = "Word of the Day" if word_window else "Verse of the Day"
-        print(f"content mode: {which} (local hour {hour})")
+        print(f"content mode: {which} (local time {now.hour:02d}:{now.minute:02d})")
     elif args.verse_file:
         cmd += ["--verse-file", args.verse_file]
     else:

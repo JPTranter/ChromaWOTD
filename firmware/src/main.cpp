@@ -5,7 +5,7 @@
 //   * Sleeps between scheduled refreshes (06:00 / 12:30 / 18:00) and wakes on
 //     the RTC timer OR any of the three user buttons (BUTTON1/2/3 = GPIO2/3/8,
 //     active-low) — a button press runs exactly the same sync+render cycle.
-//   * Content by local time: 00:00–14:59 Verse of the Day, 15:00–23:59 Word of
+//   * Content by local time: 00:00–16:29 Verse of the Day, 16:30–23:59 Word of
 //     the Day (Word from A.Word.A.Day, with the respelling pronunciation).
 //   * Weather column by local time: 18:00–23:59 shows TOMORROW's outlook and
 //     captions it "TOMORROW", otherwise today's under "FORECAST".
@@ -193,10 +193,10 @@ static bool g_haveTime = false;
 static char g_date[32] = "";    // "DOW DD MMM" for the header (text/date_format.h)
 static char g_isoDate[11] = ""; // "YYYY-MM-DD" local date, for comparing against a source's edition
 // True when the Word-of-the-Day page's own edition date is NOT the device's local date.
-// The word window opens at 15:00 local (kCcWordOfDayStartHour) because A.Word.A.Day publishes
-// at 00:01 US Eastern = 14:01 AEST / 15:01 AEDT / 16:01 AEDT-with-US-standard-time. That
-// covers the common case by clock, and this flag is the backstop for the edges: a word that
-// is not yet today's is not shown as today's.
+// The word window opens at 16:30 local (kCcWordOfDayStartMinutes) because A.Word.A.Day publishes at
+// 00:01 US Eastern = 14:01 AEST / 15:01 AEDT / 16:01 AEDT-with-US-standard-time; 16:30 clears the
+// worst of those in every month. This flag is still the correctness backstop: a word that is not
+// yet today's is not shown as today's.
 static bool g_wordStaleEdition = false;
 
 // Had this device been configured before? RTC memory survives DEEP SLEEP — the mode this
@@ -326,7 +326,7 @@ static void syncTask(void* /*arg*/) {
         // (contentMode 1 = verse only, 2 = word only); see cc_resolveContentMode.
         // Without a clock the time-based rule cannot run, so it falls back to the
         // verse rather than showing the wrong half of the day's content.
-        g_mode = cc_resolveContentMode(g_cfg.contentMode, g_haveTime, g_haveTime ? tmv.tm_hour : 0);
+        g_mode = cc_resolveContentMode(g_cfg.contentMode, g_haveTime, g_haveTime ? tmv.tm_hour * 60 + tmv.tm_min : 0);
         // A short-hold gesture inverts that decision for this refresh, so the user can see
         // the other content without changing any setting.
         if (g_contentInvertValid && g_contentInvert)
@@ -346,12 +346,11 @@ static void syncTask(void* /*arg*/) {
                 Serial.printf("sync: word OK (%s) edition=%s local=%s\n", wd.word ? wd.word : "?",
                               wd.editionDate ? wd.editionDate : "?", g_isoDate[0] ? g_isoDate : "?");
                 if (g_wordStaleEdition) {
-                    // The source has not published today's edition yet. The 15:00 window start
-                    // covers the usual case, but the publish instant is 14:01 AEST / 15:01 AEDT
-                    // / 16:01 AEDT-with-US-standard-time, so an early refresh (or a button tap
-                    // near the boundary) can still find yesterday's word. Showing it again
-                    // would read as a broken device: the reader saw this exact word at the
-                    // previous evening's refresh. Show the verse instead.
+                    // The source has not published today's edition yet. The 16:30 window start
+                    // clears the publish instant in every month, but a forced word mode from the
+                    // portal, or a clock that has drifted, can still catch yesterday's word.
+                    // Showing it again would read as a broken device: the reader saw this exact
+                    // word at the previous evening's refresh. Show the verse instead.
                     Serial.println("sync: word edition is YESTERDAY's -> showing the verse this refresh");
                     g_mode = ContentMode::Verse;
                     syncVerseFallback();

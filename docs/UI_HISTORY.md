@@ -257,7 +257,8 @@ data-shaped — a drop rule, two caps, and a timezone — not typography.
 
 - **Same word as yesterday** — A.Word.A.Day publishes at 00:01 US Eastern, i.e. 14:01 AEST, *after*
   the 12:30 slot. The 12:30 refresh was reading yesterday's edition and showing it as today's word.
-  Two changes: the word window now opens at **15:00** (`kCcWordOfDayStartHour`), and the page's own
+  Two changes: the word window now opens at **16:30** (`kCcWordOfDayStartMinutes`, after 15:00 was
+  measured to be an hour short in the AEDT months), and the page's own
   edition date is compared with the device's local date, so a word that is not yet today's renders
   the verse instead of repeating. (LESSONS §67, §70)
 - **No pronunciation** — the identity line degraded by dropping the respelling when it did not fit

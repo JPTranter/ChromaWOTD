@@ -1993,6 +1993,24 @@ Rules:
   a 15:30 refresh in December safe. The docs state the boundary hour explicitly so nobody reads the
   window's name as a guarantee.
 
+**Revised the same day (shipped in 0.1.2): moved to 16:30.** The table above was written *after*
+15:00 had already been chosen, and it says plainly that 15:00 is one minute short in AEDT+EDT months
+and 61 minutes short in AEDT+EST months — i.e. the guarantee the owner asked for ("so definitely
+already out") did not hold for four months of the year. The window is now **16:30**, the earliest
+boundary that clears the worst case with margin (29 minutes).
+
+That revision forced an API change: the policy worked in whole local **hours**, and no hour boundary
+can express "after 16:01" except 17:00. `cc_contentModeForMinutes(minutesOfDay)` replaced
+`cc_contentModeForHour(hour24)`, and `main.cpp` passes `tm_hour * 60 + tm_min`.
+
+- **When the answer is not a whole hour, the API is wrong, not the answer.** The hour-only signature
+  was fine while noon was the boundary and became a constraint the moment the requirement was "29
+  minutes after a foreign clock's flip". Widening the unit is a five-line change; rounding the
+  requirement to the next hour is a behaviour the owner did not ask for.
+- **Write the table before choosing the boundary, not after.** Here the ordering was the other way
+  round and it cost a second commit, a second flash and a second set of doc edits — cheap, but
+  avoidable, and the same table was already the reason the check existed.
+
 (2026-09-22)
 
 ## 68. A box that reserves a fixed pixel inset holds the wrong number of lines (RESOLVED)

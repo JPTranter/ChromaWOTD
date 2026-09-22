@@ -76,13 +76,13 @@ by a value div — with these labels:
 5. **The source's edition date is on the page — use it.** A.Word.A.Day publishes
    at **00:01 US Eastern** (verified: RSS `pubDate` = `Tue, 22 Sep 2026 00:01:03
    EDT`), which is **14:01 AEST / 15:01 AEDT / 16:01 AEDT-with-US-standard-time**.
-   The Word-of-the-Day window therefore opens at **15:00 local**
-   (`kCcWordOfDayStartHour`), so a scheduled refresh is not reading the previous
-   edition. The page also stamps itself twice (`?date=YYYY-MM-DD` on the
+   The Word-of-the-Day window therefore opens at **16:30 local**
+   (`kCcWordOfDayStartMinutes`), 29 minutes past the worst of those, so no
+   scheduled refresh reads the previous edition. The page also stamps itself twice (`?date=YYYY-MM-DD` on the
    daily-game links, and a sidebar `Sep 22, 2026`), and `cc_parseAwad` returns it as
    `WordData.editionDate`; the device compares that against its own local date and
-   renders the verse when they differ, which is the backstop for the months when the
-   flip lands after 15:00 (LESSONS §67, §70).
+   renders the verse when they differ — the backstop for a forced word mode or a
+   drifted clock (LESSONS §67, §70).
 6. **Licensing / attribution**: A.Word.A.Day content is © Wordsmith.org. It is
    displayed on a personal device and is **not** redistributed in this repository;
    only the parser and its tests live here.

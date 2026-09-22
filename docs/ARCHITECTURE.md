@@ -1,7 +1,7 @@
 # ChromaWOTD — Architecture
 
 **Last updated:** 2026-09-19
-**Firmware version:** 0.1.1
+**Firmware version:** 0.1.2
 **Phase:** 5 — Buttons, time-based content, device configuration (NVS) & setup portal (complete)
 
 ---
@@ -10,7 +10,7 @@
 
 ChromaWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow) showing:
 - **Verse of the Day** (scripture) or **Word of the Day** (vocabulary) — chosen by TIME OF DAY
-  (00:00–14:59 verse, 15:00–23:59 word — see `kCcWordOfDayStartHour`), or pinned to one of the two
+  (00:00–16:29 verse, 16:30–23:59 word — see `kCcWordOfDayStartMinutes`), or pinned to one of the two
   from the setup portal.
   A tap runs a refresh; a **hold of ~0.5-10 s inverts the content mode for that refresh**
   (and the next scheduled wake returns to time-based); a hold of 10 s+ is the factory reset.
@@ -100,13 +100,13 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
    - Connect to Wi-Fi
    - Bounded NTP sync (6000 ms timeout) to retrieve local wall time
    - Evaluate time-based policies:
-     - 00:00–14:59: Verse of the Day (BibleGateway VOTD)
-     - 15:00–23:59: Word of the Day (A.Word.A.Day) — the window opens at 15:00, after the
-       source's publish instant (00:01 US Eastern = 14:01 AEST / 15:01 AEDT), so the midday
-       refresh no longer reads the previous edition (LESSONS §67). The page's own edition
-       date is STILL compared with the device's local date as a backstop, because the flip
-       lands at 16:01 local in the AEDT-with-US-standard-time months: a word that is not yet
-       today's renders the verse instead of repeating yesterday's (LESSONS §70)
+     - 00:00–16:29: Verse of the Day (BibleGateway VOTD)
+     - 16:30–23:59: Word of the Day (A.Word.A.Day) — the window opens at 16:30, which clears
+       the source's publish instant (00:01 US Eastern = 14:01 AEST / 15:01 AEDT / 16:01 AEDT
+       with US standard time) by 29 minutes in the worst month, so no scheduled refresh reads
+       the previous edition (LESSONS §67, §70). The page's own edition date is STILL compared
+       with the device's local date: the clock decides when to look, the data decides whether
+       what came back is today's
      - 00:00–17:59: Today's expected maximum + condition (footer row, unlabelled)
      - 18:00–23:59: Tomorrow's expected maximum + condition (footer row, prefixed `TOMORROW`)
    - Fetch content and weather over CA-validated HTTPS on a dedicated 16 KB FreeRTOS task (`cc_sync`)
@@ -138,7 +138,7 @@ Boot → FirstBoot/Setup → Sync → Render → Sleep → (wake on button) → 
 ### 1. Refresh Frequency & Timing (How often)
 - **Scheduled RTC Timer Slots**: The device wakes at three fixed local times daily:
   - **06:00** (Morning wake — Verse of the Day)
-  - **12:30** (Midday update — Verse of the Day, since the word window opens at 15:00)
+  - **12:30** (Midday update — Verse of the Day, since the word window opens at 16:30)
   - **18:00** (Evening forecast — Word of the Day + tomorrow's outlook)
   The arithmetic (`cc_secondsUntilNextWake` in `sched/wake_schedule.cpp`) rolls over midnight and enforces a strict > 0 progression.
 - **On-Demand User Button Wake**: Any press of BUTTON1 (GPIO2), BUTTON2 (GPIO3), or BUTTON3 (GPIO8) immediately wakes the chip from deep sleep and runs a full sync cycle.

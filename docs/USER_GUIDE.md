@@ -116,18 +116,18 @@ screen instead of content:
 
 | Time | Content | Weather column |
 | :--- | :--- | :--- |
-| 00:00 – 14:59 | **Verse of the Day** | today's high + condition |
-| 15:00 – 23:59 | **Word of the Day** (or the verse, if the source has not published today's edition yet — see below) | today's high or tomorrow's |
+| 00:00 – 16:29 | **Verse of the Day** | today's high + condition |
+| 16:30 – 23:59 | **Word of the Day** (or the verse, if the source has not published today's edition yet — see below) | today's high or tomorrow's |
 | 18:00 – 23:59 | **Word of the Day** | **tomorrow's** high, labelled `TOMORROW` |
 
 Nothing is downloaded on a button press — the device wakes on its own at those three times.
 
-> **Why the word only appears from 15:00:** A.Word.A.Day publishes its next word at 00:01 US
-> Eastern time, which is 14:01 in Melbourne (15:01 in daylight saving, and 16:01 when Melbourne is
-> on daylight saving while the US is not) — so a midday refresh would still be showing yesterday's
-> word. The word window therefore opens at 15:00: the 06:00 and 12:30 refreshes show the verse, and
-> the word appears at 18:00. If a refresh ever does catch a word the source has not yet replaced,
-> the device reads the edition date printed on the page and shows the verse rather than repeating
+> **Why the word only appears from 16:30:** A.Word.A.Day publishes its next word at 00:01 US
+> Eastern time, which is 14:01 in Melbourne — but 15:01 in daylight saving, and **16:01** when
+> Melbourne is on daylight saving while the US is not (November to March). 16:30 is the earliest
+> start that clears the worst of those, so the 06:00 and 12:30 refreshes show the verse and the
+> word appears at 18:00. If a refresh ever does catch a word the source has not yet replaced, the
+> device reads the edition date printed on the page and shows the verse rather than repeating
 > yesterday's word.
 
 ### The buttons

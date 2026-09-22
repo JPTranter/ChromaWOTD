@@ -157,8 +157,8 @@ non-button pad for wake caused a deep-sleep wake storm — see `LESSONS_LEARNT.m
 
 | Window | Content | Source |
 | :--- | :--- | :--- |
-| 00:00–14:59 | **Verse of the Day** | BibleGateway VOTD (`docs/research/SCRIPTURE_APIS.md`) |
-| 15:00–23:59 | **Word of the Day** | A.Word.A.Day (`docs/research/WORD_APIS.md`) — the window opens at 15:00, after the source publishes (00:01 US Eastern = 14:01 AEST / 15:01 AEDT), so the 12:30 refresh is a verse and the word is always the new day's. The page's own edition date is still checked against the local date as a backstop for the AEDT months (the flip can land at 16:01 local), in which case the verse is shown rather than yesterday's word |
+| 00:00–16:29 | **Verse of the Day** | BibleGateway VOTD (`docs/research/SCRIPTURE_APIS.md`) |
+| 16:30–23:59 | **Word of the Day** | A.Word.A.Day (`docs/research/WORD_APIS.md`) — the window opens at 16:30, which clears the source's publish instant (00:01 US Eastern = 14:01 AEST / **16:01 AEDT with US standard time**, the worst case) by 29 minutes in every month. The 06:00 and 12:30 refreshes are therefore verses. The page's own edition date is still checked against the local date, so a word that is not yet today's shows the verse rather than yesterday's word |
 
 The header title follows the mode, and the policy lives in pure, unit-tested
 `sched/content_policy.{h,cpp}`. If NTP fails, the device falls back to the verse rather than

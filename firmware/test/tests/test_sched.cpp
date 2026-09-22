@@ -55,26 +55,34 @@ TEST(WakeSchedule, AlwaysPositive_EvenAtLastSecondOfDay) {
 // ---------------------------------------------------------------------------
 // Content policy (time-of-day presentation) ---------------------------------
 // ---------------------------------------------------------------------------
+namespace {
+// Local time as minutes-of-day, the unit the content policy now works in (a 16:30 boundary
+// cannot be expressed in hours).
+int mins(int h, int m) { return h * 60 + m; }
+} // namespace
+
 TEST(ContentPolicy, VerseBeforeTheWordWindowOpens) {
-    for (int h = 0; h < kCcWordOfDayStartHour; h++)
-        EXPECT_EQ(cc_contentModeForHour(h), ContentMode::Verse) << "hour " << h;
+    for (int t = mins(0, 0); t < kCcWordOfDayStartMinutes; t++)
+        EXPECT_EQ(cc_contentModeForMinutes(t), ContentMode::Verse) << "minute-of-day " << t;
 }
 
 TEST(ContentPolicy, WordFromTheWindowStartToMidnight) {
-    for (int h = kCcWordOfDayStartHour; h < 24; h++)
-        EXPECT_EQ(cc_contentModeForHour(h), ContentMode::Word) << "hour " << h;
+    for (int t = kCcWordOfDayStartMinutes; t < 24 * 60; t++)
+        EXPECT_EQ(cc_contentModeForMinutes(t), ContentMode::Word) << "minute-of-day " << t;
 }
 
 TEST(ContentPolicy, ModeFlipsExactlyAtTheWordWindowStart) {
-    // 15:00, not noon: A.Word.A.Day publishes at 00:01 US Eastern, which is 14:01 AEST /
-    // 15:01 AEDT, so a midday refresh would read the PREVIOUS edition (LESSONS §67). The
-    // page's own edition date is still checked against the local date as the backstop.
-    EXPECT_EQ(kCcWordOfDayStartHour, 15);
-    EXPECT_EQ(cc_contentModeForHour(14), ContentMode::Verse);
-    EXPECT_EQ(cc_contentModeForHour(15), ContentMode::Word);
-    // The 12:30 scheduled slot is now a VERSE refresh, and the word is the 18:00 slot's.
-    EXPECT_EQ(cc_contentModeForHour(12), ContentMode::Verse);
-    EXPECT_EQ(cc_contentModeForHour(18), ContentMode::Word);
+    // 16:30, not noon and not 15:00. A.Word.A.Day publishes at 00:01 US Eastern, which is
+    // 14:01 AEST / 15:01 AEDT / 16:01 AEDT-with-US-standard-time — so 15:00 was up to an hour
+    // too early in the AEDT months, and the boundary has to be a half-hour to clear the worst
+    // case with margin (LESSONS §67, §70). The page's own edition date remains the backstop.
+    EXPECT_EQ(kCcWordOfDayStartMinutes, mins(16, 30));
+    EXPECT_EQ(cc_contentModeForMinutes(mins(16, 29)), ContentMode::Verse);
+    EXPECT_EQ(cc_contentModeForMinutes(mins(16, 30)), ContentMode::Word);
+    // The scheduled slots: 06:00 and 12:30 are verse refreshes, 18:00 is the word.
+    EXPECT_EQ(cc_contentModeForMinutes(mins(6, 0)), ContentMode::Verse);
+    EXPECT_EQ(cc_contentModeForMinutes(mins(12, 30)), ContentMode::Verse);
+    EXPECT_EQ(cc_contentModeForMinutes(mins(18, 0)), ContentMode::Word);
 }
 
 TEST(ContentPolicy, TodayForecastBefore18) {
@@ -92,29 +100,30 @@ TEST(ContentPolicy, TomorrowForecastFrom18) {
 // resolution rule so the stored setting cannot silently be ignored again (it was:
 // main.cpp read only the clock and never looked at cfg.contentMode).
 TEST(ContentPolicy, ForcedVerseOverridesTheClock) {
-    for (int h = 0; h < 24; h++)
-        EXPECT_EQ(cc_resolveContentMode(1, true, h), ContentMode::Verse) << "hour " << h;
+    for (int t = 0; t < 24 * 60; t += 30)
+        EXPECT_EQ(cc_resolveContentMode(1, true, t), ContentMode::Verse) << "minute-of-day " << t;
     EXPECT_EQ(cc_resolveContentMode(1, false, 0), ContentMode::Verse); // holds with no clock
 }
 
 TEST(ContentPolicy, ForcedWordOverridesTheClock) {
-    for (int h = 0; h < 24; h++)
-        EXPECT_EQ(cc_resolveContentMode(2, true, h), ContentMode::Word) << "hour " << h;
+    for (int t = 0; t < 24 * 60; t += 30)
+        EXPECT_EQ(cc_resolveContentMode(2, true, t), ContentMode::Word) << "minute-of-day " << t;
     EXPECT_EQ(cc_resolveContentMode(2, false, 0), ContentMode::Word);
 }
 
-TEST(ContentPolicy, TimeBasedModeFollowsTheHour) {
-    for (int h = 0; h < 24; h++)
-        EXPECT_EQ(cc_resolveContentMode(0, true, h), cc_contentModeForHour(h)) << "hour " << h;
+TEST(ContentPolicy, TimeBasedModeFollowsTheClock) {
+    for (int t = 0; t < 24 * 60; t += 30)
+        EXPECT_EQ(cc_resolveContentMode(0, true, t), cc_contentModeForMinutes(t))
+            << "minute-of-day " << t;
     // Any out-of-range value is treated as time-based (validation allows 0..2, but
     // NVS is not trusted to hold only what validation accepted).
-    EXPECT_EQ(cc_resolveContentMode(7, true, 9), ContentMode::Verse);
-    EXPECT_EQ(cc_resolveContentMode(255, true, 20), ContentMode::Word);
+    EXPECT_EQ(cc_resolveContentMode(7, true, mins(9, 0)), ContentMode::Verse);
+    EXPECT_EQ(cc_resolveContentMode(255, true, mins(20, 0)), ContentMode::Word);
 }
 
 TEST(ContentPolicy, WithoutAClockTimeBasedModeFallsBackToVerse) {
-    for (int h = 0; h < 24; h++)
-        EXPECT_EQ(cc_resolveContentMode(0, false, h), ContentMode::Verse) << "hour " << h;
+    for (int t = 0; t < 24 * 60; t += 30)
+        EXPECT_EQ(cc_resolveContentMode(0, false, t), ContentMode::Verse) << "minute-of-day " << t;
 }
 
 TEST(ContentPolicy, TheGestureOverrideInvertsTheDecision) {
