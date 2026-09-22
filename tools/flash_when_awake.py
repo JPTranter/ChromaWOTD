@@ -11,16 +11,26 @@ fails. The port returns on every wake — a button press or the next scheduled s
 Exit 0 when an upload succeeds, 2 if no port appeared / all attempts failed inside
 the window, 3 if the build artifacts are missing (run a build first).
 
-Why the pre-flight check and the retry both exist (each learned the hard way):
+Why the pre-flight checks and the retry all exist (each learned the hard way):
   * A 30-minute retry loop once burned every attempt against a MISSING
     `.pio/build/<env>/` directory — while the loop's own hardcoded message blamed
     the serial port. Two fixes: verify the artifacts BEFORE waiting, and always
     print the tool's REAL error rather than a guessed cause.
   * One failed attempt is not a reason to give up. A flash can fail simply because
     the port vanished mid-transfer, and the next wake is seconds to minutes away.
+  * The retry loop also retried a PERMANENT error: the upload command used
+    `sys.executable -m platformio`, and the interpreter running this tool is not
+    necessarily the one PlatformIO is installed under (on this host PlatformIO is
+    Core 6.1.19 under C:\\Python314 and reached through the `pio` on PATH). 144
+    attempts died on "No module named platformio" while the operator pressed the
+    button over and over, and the wake window was spent. Hence `pio_cmd()` below —
+    the same resolution `verify_all.py` uses — plus a --version pre-flight that
+    fails before the port wait, and an abort on an environment error that no
+    number of retries can fix.
 """
 
 import argparse
+import shutil
 import subprocess
 import sys
 import time
@@ -33,6 +43,33 @@ PYTHON = sys.executable
 # The pieces PlatformIO's uploader writes. Checked up front so a missing build is
 # reported as a missing build, not as a port problem.
 REQUIRED_ARTIFACTS = ("bootloader.bin", "partitions.bin", "firmware.bin")
+
+# Failures that retrying cannot fix (the environment, not the device).
+PERMANENT_MARKERS = ("No module named platformio", "not recognized as an internal or external command")
+
+
+def pio_cmd():
+    """PlatformIO invocation, resolved the same way tools/verify_all.py does it.
+
+    `pio` is not guaranteed to be on PATH, and sys.executable is only correct if the
+    interpreter running THIS tool is the one PlatformIO lives under — which it is not
+    when the tool is started from a venv. Prefer a real `pio` executable; fall back to
+    the module form only when there is none.
+    """
+    if shutil.which("pio"):
+        return ["pio"]
+    return [PYTHON, "-m", "platformio"]
+
+
+def pio_works(cmd):
+    """(ok, message) from `pio --version`, so an unusable environment is reported before
+    the port wait instead of after it."""
+    try:
+        r = subprocess.run(cmd + ["--version"], capture_output=True, text=True)
+    except OSError as exc:
+        return False, str(exc)
+    lines = (r.stdout + r.stderr).strip().splitlines()
+    return r.returncode == 0, (lines[-1] if lines else "no output")
 
 
 def ports():
@@ -71,6 +108,18 @@ def main():
     deadline = time.time() + args.seconds
     attempts = 0
 
+    # Environment pre-flight: an unusable PlatformIO makes every attempt fail instantly, so
+    # say so BEFORE the operator starts pressing buttons at the device.
+    pio = pio_cmd()
+    ok, version = pio_works(pio)
+    if not ok:
+        print(f"ERROR: PlatformIO is not usable as {' '.join(pio)}:")
+        print(f"   {version}")
+        print("Nothing will be uploaded. Install/resolve PlatformIO first (on this host")
+        print("`pio` lives in the Python314 user Scripts directory and IS on PATH).")
+        return 3
+    print(f"platformio: {version}")
+
     if args.port:
         chosen = args.port
         print(f"using --port {chosen}")
@@ -88,10 +137,7 @@ def main():
             print("no serial port appeared in the window (device still asleep)")
             return 2
 
-    cmd = [
-        PYTHON,
-        "-m",
-        "platformio",
+    cmd = pio + [
         "run",
         "-e",
         args.env,
@@ -115,8 +161,15 @@ def main():
         print(f"  attempt {attempts} failed. Last lines of the real output:")
         for line in combined[-6:]:
             print(f"    {line}")
-        if "port is busy or doesn't exist" in "\n".join(combined):
+        joined = "\n".join(combined)
+        if "port is busy or doesn't exist" in joined:
             print("  (the port went away mid-transfer - waiting for the next wake)")
+        # A missing/broken PlatformIO will fail identically forever: stop rather than
+        # burn the wake window that the operator is spending button presses on.
+        if any(marker in joined for marker in PERMANENT_MARKERS):
+            print("  ABORT: this is an environment error, not a transient upload failure.")
+            print(f"  resolved PlatformIO as: {' '.join(pio)}")
+            return 3
         time.sleep(1)
 
     print(f"gave up after {attempts} attempt(s) in {args.seconds}s")
