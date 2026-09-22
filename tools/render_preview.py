@@ -14,10 +14,24 @@ Examples
     # Render a verse body kept in a file, and open the PNG when done
     python tools/render_preview.py --verse-file myverse.txt --open
 
+    # Word of the Day, without the network: render a SAVED wordsmith.org page through
+    # the same parser + body composer the device uses (how the 2026-09-22 WOTD defects
+    # were reproduced after the source had moved on), or fetch today's live
+    python tools/render_preview.py --word-file "$TEMP/wordsmith_today.html"
+    python tools/render_preview.py --word-live
+    # A hand-made Word-of-the-Day look, including the respelling caption
+    python tools/render_preview.py --verse "noun: A feeling of doubt." \
+        --reference "misgiving" --leftcap "(mis-GIV-ing)" --header "Word of the Day"
+
 The device has a single presentation (landscape, light theme); the 296x128 render
 uses the same draw calls the firmware runs, so the PNG is what the panel refreshes to.
 Renders land in `firmware/test/output/previews/` (gitignored, outside the docs/images
 ledger).
+
+NOTE the build directory: this tool drives `layout_render` from `firmware/test/build`,
+which is the 5x7 fallback font path. To preview the font the panel actually ships,
+build `firmware/test/build-device` with -DCHROMAWOTD_DEVICE_FONTS=ON and call
+`layout_render.exe` there directly (see README).
 """
 
 import argparse
@@ -110,8 +124,20 @@ def main():
     parser.add_argument("--condition", help="condition label")
     parser.add_argument("--alert", help="alert banner text (red)")
     parser.add_argument(
-        choices=["sun", "cloud", "rain", "partly", "0", "1", "2", "3"],
-        help="weather icon",
+        "--leftcap", help="respelling caption drawn beside the headword (red-band line)"
+    )
+    parser.add_argument("--header", help='header title fallback, e.g. "Word of the Day"')
+    parser.add_argument(
+        "--no-weather",
+        action="store_true",
+        help="render the 'no reading' state (the fetch failed) instead of a temperature",
+    )
+    parser.add_argument(
+        "--word-live", action="store_true", help="fetch today's A.Word.A.Day page and render it"
+    )
+    parser.add_argument(
+        "--word-file",
+        help="render a SAVED A.Word.A.Day page (device parser + body composer; no network)",
     )
     parser.add_argument(
         "--out", help="output PNG path (default firmware/test/output/previews/preview.png)"
@@ -129,6 +155,10 @@ def main():
     exe = ensure_built(args.rebuild)
 
     cmd = [exe]
+    if args.word_live:
+        cmd += ["--word-live"]
+    if args.word_file:
+        cmd += ["--word-file", args.word_file]
     if args.fixture:
         cmd += fixture_args(args.fixture)
     else:
@@ -145,9 +175,13 @@ def main():
         ("--condition", args.condition),
         ("--alert", args.alert),
         ("--temp", args.temp),
+        ("--leftcap", args.leftcap),
+        ("--header", args.header),
     ):
         if value is not None:
             cmd += [flag, str(value)]
+    if args.no_weather:
+        cmd += ["--no-weather"]
 
     out = args.out
     if not out:

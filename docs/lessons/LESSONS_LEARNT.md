@@ -2092,3 +2092,35 @@ before it waits for a port; in the real environment it prints `platformio: Platf
 6.1.19` and the flash then succeeded on the **first** attempt.
 
 (2026-09-22)
+
+## 71. A check that only runs on the server is not a check (RESOLVED)
+
+Pushing `v0.1.2` turned CI **red** on the `lint` job while every stage of `verify_all.py` was green.
+The offending line was a 103-character `PERMANENT_MARKERS` tuple added to `tools/flash_when_awake.py`
+one commit earlier — `black --check --line-length 100` rejected it, `flake8` flagged `E501` on it,
+and neither ran locally.
+
+This was not a surprise: §42 recorded it ("`verify_all.py` does NOT run the lint job") and the note
+had been carried in the working skill ever since. It still happened, which is the point — a warning
+in a document is not a gate.
+
+Fixes:
+- `verify_all.py` gained **stage 6**: `black --check --line-length 100 tools/` and
+  `flake8 tools/ --max-line-length 100`, run with `sys.executable` exactly as CI runs them. The
+  linters are optional locally, so when they are not importable the stage says so and passes — it
+  never stays silent, which is what made the gap invisible.
+- The linters were run locally in a scratch `uv venv` to fix the file with the SAME versions CI
+  installs (`black 26.5.1`, `flake8 7.3.0`) rather than by hand-formatting to a guessed style.
+
+Rules:
+- **If CI enforces it, either run it locally or stop calling the local suite "the gate".** The
+  cheapest correct option was 30 lines in the existing tool: same two commands, same interpreter.
+- **A tool that can only be exercised on the runner cannot be trusted by the person pushing.**
+  `verify_all.py` claimed to check everything; now it does, and the claim is testable.
+- **Verify the new check fails when it should.** Stage 6 was proved by planting an over-long line in
+  `tools/` (it failed and printed `E501`), not by observing that a clean tree passes — a check that
+  never fires proves nothing.
+- **Carry the fix into the skill the moment it exists.** The stale note ("does NOT run the lint job")
+  was updated in the same session; a skill that contradicts the tool is worse than no note.
+
+(2026-09-22)

@@ -256,7 +256,7 @@ ChromaWOTD/
 │       ├── CMakeLists.txt       CMake configuration for native desktop tests
 │       ├── harness/             Mock canvas, font engine, and drawing primitives
 │       ├── tests/               GoogleTest suites: landscape, alert, overflow, text, net, sched
-│       ├── tools/               layout_render.cpp — CLI preview renderer (incl. --word-live)
+│       ├── tools/               layout_render.cpp — CLI preview renderer (--word-live / --word-file)
 │       └── output/              Generated PNG renders from ctest (gitignored)
 └── tools/
     ├── verify_all.py            One-command check: build + tests + render ledger + alignment
@@ -379,6 +379,19 @@ python tools/render_preview.py --fixture
 python tools/render_preview.py --temp -2.5 --condition "Partly cloudy" \
     --alert "Rain likely after 4 PM" --verse "Trust in the Lord with all your heart." \
     --highlight "Lord" --reference "Proverbs 3:5-6" --open
+
+# Word of the Day: today's page live, or a SAVED page with the same parser + body
+# composer the device uses (this is how a PAST day's panel is reproduced after the
+# source has moved on)
+python tools/render_preview.py --word-live
+python tools/render_preview.py --word-file "$env:TEMP\wordsmith_today.html" --date-ymd 2026-09-21
+
+# Hand-made Word-of-the-Day look, including the respelling in the header band
+python tools/render_preview.py --verse "noun: A feeling of doubt." --reference "misgiving" \
+    --leftcap "(mis-GIV-ing)" --header "Word of the Day"
+
+# The "no reading" state (a failed weather fetch), instead of a temperature
+python tools/render_preview.py --fixture --no-weather
 ```
 
 Renders land in `firmware/test/output/previews/` (gitignored, outside the ledger) and
@@ -386,18 +399,19 @@ use the same draw calls the device executes. The tool also prints whether the hi
 phrase was found, so a silently dropped red accent is obvious. Under the hood it drives
 `layout_render`, built by the same CMake project.
 
-The Word-of-the-Day presentation can also be rendered from a **saved** page, which is how a
-past day's panel is reproduced after the source has moved on (and how the pronunciation and
-body-truncation defects were diagnosed):
+**Which font are you looking at?** `render_preview.py` uses `firmware/test/build`, which is the
+5×7 **fallback** path. For the font the panel actually ships, build the device path once and call
+its binary directly:
 
 ```powershell
+cmake -S firmware/test -B firmware/test/build-device -G Ninja -DCHROMAWOTD_DEVICE_FONTS=ON
+cmake --build firmware/test/build-device --target layout_render
 ./firmware/test/build-device/layout_render.exe --word-file "$env:TEMP\wordsmith_today.html" `
-    --date-ymd 2026-09-21 --out out.png     # parses + composes the body exactly as the device does
-./firmware/test/build-device/layout_render.exe --word-live --out out.png   # today's page, live
+    --date-ymd 2026-09-21 --out out.png
 ```
 
-Build the device font path with `-DCHROMAWOTD_DEVICE_FONTS=ON`: the default host build renders the
-5×7 fallback font, so a preview of one run must not be compared with a render of the other.
+A preview of one path must never be compared with a render of the other: the proportional Roboto set
+is what the device draws, and the 5×7 fallback has no descenders.
 
 ### Host Test Harness & Image Previews
 

@@ -249,7 +249,8 @@ python tools/render_preview.py --verse "Trust in the Lord..." --highlight "Lord"
 
 - **Formatter:** `black` (100 character line length)
 - **Linter:** `flake8` (config in `pyproject.toml` or `.flake8`)
-- **Type hints:** Use `mypy` for static type checking (optional but recommended)
+- **Type hints:** `mypy` is not run by CI (no config in the repo); type hints are welcome but
+  unenforced
 
 ### Markdown Style
 
@@ -274,11 +275,17 @@ python tools/render_preview.py --verse "Trust in the Lord..." --highlight "Lord"
 
 ### CI/CD
 
-CI runs on every PR and merge to `master`:
+CI runs on every PR and merge to `master` (jobs: secrets / build-and-test / lint):
 - Build firmware (`pio run -e s3`)
 - Run host tests (`ctest`)
 - Verify render ledger (`verify_all.py --skip-firmware`)
-- Lint code (`clang-format --dry-run`, `flake8`)
+- Lint code: `clang-format --dry-run` over tracked top-level `firmware/src/*.{cpp,h}`,
+  `black --check --line-length 100 tools/` and `flake8 tools/ --max-line-length 100`
+
+Run `python tools/verify_all.py` before pushing: **stage 6 runs those same two Python lint
+commands locally**, and stages 1–5 cover the build, both font paths, the render ledger and the
+layout invariants. Note the C++ half of the lint job is *only* covered by clang-format — run
+`clang-format --dry-run -Werror` over `git ls-files ':(glob)firmware/src/*.{cpp,h}'` yourself.
 
 **CI is green** = PR can be merged. **CI is red** = fix the issues before merging.
 
