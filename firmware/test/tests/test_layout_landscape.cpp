@@ -120,3 +120,26 @@ TEST(LayoutLandscape, RespellingIsNeverDroppedFromTheHeader) {
     // ...and it must be the ONLY difference: the body is unaffected by a presentation label.
     EXPECT_EQ(bodyA, bodyB) << "the respelling must not change the body";
 }
+
+// The verse box must stop SHORT of the footer row (kRowY = 115). Long text makes the block fill
+// every line it is allowed, so this is the worst case: if the box is grown naively, the largest
+// rungs put a line's ink into the footer (a 10pt 4th line reaches y=126; a 6pt 6th line reaches
+// y=113 and would sit under the weather text). The 2026-09-22 box came within one pixel of the
+// footer's top row, so the guard is the 5 rows above it.
+TEST(LayoutLandscape, BodyInkNeverReachesTheFooterRow) {
+    static std::string longText;
+    for (int i = 0; i < 60; i++)
+        longText += "line " + std::to_string(i) + " of a body long enough to fill every line the block allows. ";
+
+    static char date[16];
+    cc_formatHeaderDate(2, 22, 9, date, sizeof(date)); // Tuesday 22 Sep
+    VerseData v{date, longText.c_str(), nullptr, nullptr};
+
+    g_canvas.init(296, 128);
+    drawLayout(v, sampleWeather());
+
+    for (int y = 110; y < 115; y++)
+        for (int x = 0; x < 296; x++)
+            EXPECT_EQ(g_canvas.getPixel(x, y), CC_WHITE)
+                << "body ink reached the footer row: x=" << x << " y=" << y;
+}
