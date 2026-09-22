@@ -34,6 +34,15 @@ extern bool cc_fetchJsonThrottled(const char* url, char* out, size_t outsz);
 
 static constexpr int NET_TEXT_MAX = 230; // char-buffer cap for fetched text/condition
 
+// Char cap for the Word-of-the-Day fields. Deliberately NOT NET_TEXT_MAX: an A.Word.A.Day
+// usage example is a whole paragraph — measured 855 bytes for `misgiving` (2026-09-22),
+// 223 for `abjective` — so the 230-byte field cap was cutting the example off mid-sentence
+// with no marker anywhere (the renderer only marks a cut it can see). The whole field is
+// kept now; what the panel can hold is the RENDERER's decision, and it marks its own cut
+// with a visible "...". These live in static buffers (BSS), not on the 16 KB sync stack.
+static constexpr int WORD_FIELD_MAX = 1024; // word / pronunciation / definition / example
+static constexpr int WORD_BODY_MAX = WORD_FIELD_MAX + 128; // composed definition + example
+
 // --- Weather (Open-Meteo) ---
 struct ProofWeather {
     float temp;
@@ -75,7 +84,21 @@ struct WordData {
     const char* pronunciation; // respelling incl. parens: "(bre-VIL-uh-kwuhnt)"
     const char* definition;    // "adjective: Using few words."
     const char* example;       // quoted usage sentence, or nullptr
+    // The SOURCE's edition date, "YYYY-MM-DD", or nullptr when the page does not carry one.
+    // A.Word.A.Day publishes at 00:01 US Eastern — 14:01 AEST / 15:01 AEDT — so a local
+    // afternoon refresh can be reading YESTERDAY's edition, and without this the panel
+    // looks like it is repeating itself (see docs/research/WORD_APIS.md).
+    const char* editionDate;
 };
+
+// Compose the Word-of-the-Day body exactly as the panel presents it: the definition,
+// then the usage example. Shared by the device (main.cpp) and the host preview
+// (layout_render) so a preview can never assemble different text from the device — the
+// old preview built this with std::string and no cap, which is why the device's silent
+// 230-byte cut was invisible during development.
+// Never truncates the source text itself: outsz must be >= WORD_BODY_MAX. Returns the
+// number of chars written (excluding NUL).
+int cc_composeWordBody(const WordData& w, char* out, size_t outsz);
 
 // Parse an A.Word.A.Day page (wordsmith.org/words/today.html) into a WordData.
 // Pure: operates on the fetched HTML buffer, so it is shared by host and device.

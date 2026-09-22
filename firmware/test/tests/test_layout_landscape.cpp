@@ -75,3 +75,48 @@ TEST(LayoutLandscape, NoDivider_FullWidthVerse_PngDump) {
 
     ASSERT_TRUE(g_canvas.dumpPng("output/layout_landscape.png"));
 }
+
+// The identity line must NEVER lose the respelling. The previous rule dropped it whenever
+// the word + respelling did not fit beside the date — 3 of the 18 most recent
+// A.Word.A.Day entries, including the word that was on the panel when the user reported
+// "not seeing the pronunciation". Asserted as the RELATION between two renders (with and
+// without the respelling) rather than as a glyph position, so it holds on both font paths.
+// NOTE: the case only REPRODUCES on the device font path (the 7pt identity line measures
+// this pair 212px against 208px of room); on the 5x7 fallback path the pair fits and the
+// old rule never fired. Verified to FAIL here with the old drop rule restored — the
+// decisive run is `verify_all.py` stage 3 (CHROMAWOTD_DEVICE_FONTS=ON).
+TEST(LayoutLandscape, RespellingIsNeverDroppedFromTheHeader) {
+    static char date[16];
+    cc_formatHeaderDate(1, 21, 9, date, sizeof(date)); // Monday 21 Sep
+    // 33 chars on one line: this pair does NOT fit at the 7pt identity size beside the date
+    // (measured 212px of the 208px available), which is exactly the case the old code
+    // handled by dropping the pronunciation.
+    VerseData v{date, "adjective: Inducing sleep. The visiting preacher was a grey-haired woman.", nullptr,
+                "soporiferous"};
+
+    LayoutOptions withResp;
+    withResp.leftCaption = "(sop-uh-RIF-uhr-uhs)";
+
+    auto snapshot = [&](const LayoutOptions& opts, std::vector<uint32_t>* band, std::vector<uint32_t>* body) {
+        g_canvas.init(296, 128);
+        drawLayout(v, sampleWeather(), opts);
+        band->clear();
+        body->clear();
+        for (int y = 0; y < 128; y++)
+            for (int x = 0; x < 296; x++)
+                ((y < kHeaderH) ? *band : *body).push_back(g_canvas.getPixel(x, y));
+    };
+
+    std::vector<uint32_t> bandA, bodyA, bandB, bodyB;
+    snapshot(withResp, &bandA, &bodyA);
+    snapshot(LayoutOptions{}, &bandB, &bodyB);
+
+    size_t bandDiff = 0;
+    for (size_t i = 0; i < bandA.size(); i++)
+        if (bandA[i] != bandB[i])
+            bandDiff++;
+    EXPECT_GT(bandDiff, 0u) << "the respelling must be drawn in the header band, not dropped";
+
+    // ...and it must be the ONLY difference: the body is unaffected by a presentation label.
+    EXPECT_EQ(bodyA, bodyB) << "the respelling must not change the body";
+}

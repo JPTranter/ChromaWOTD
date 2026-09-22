@@ -603,6 +603,14 @@ static void cc_fitText(const char* src, char* dst, size_t dstsz, int maxW) {
     snprintf(dst + n, dstsz - n, "...");
 }
 
+#ifdef CHROMAWOTD_FONT_FREESANS
+// Sizes the identity line's RESPELLING may take, largest first. Every one of these
+// fonts is already compiled in for the body ladder (10/9/8/7/6/5.5/5pt), so
+// shrinking the respelling adds no font data.
+static const GFXfont* const kHeadFonts[] = {&Roboto7pt7b, &Roboto6pt7b, &Roboto55pt7b, &Roboto5pt7b};
+static constexpr int kHeadFontCount = 4;
+#endif
+
 // Width of a header-band string (the identity line or the date). BOTH are drawn one size
 // up (7pt) on the device font path, so the collision guard must measure with that same
 // font — measuring with the 5.5pt body default would under-report and let a long word
@@ -614,6 +622,27 @@ static int cc_headWidth(const char* s) {
     return dev_measureText(s, 1);
 #endif
 }
+
+// Truncate `src` to fit maxW when measured in font `f`, marking the cut with a visible
+// "...". Used for the respelling, which is NEVER allowed to be dropped silently.
+#ifdef CHROMAWOTD_FONT_FREESANS
+static void cc_fitTextF(const GFXfont* f, const char* src, char* dst, size_t dstsz, int maxW) {
+    if (!dst || dstsz == 0)
+        return;
+    snprintf(dst, dstsz, "%s", src ? src : "");
+    const int ellipsisW = cc_measurePxF(f, "...", 1);
+    if (maxW < ellipsisW) { // no room to say anything honestly
+        dst[0] = '\0';
+        return;
+    }
+    if (cc_measurePxF(f, dst, 1) <= maxW)
+        return;
+    size_t n = strlen(dst);
+    while (n > 0 && cc_measurePxF(f, dst, 1) > maxW - ellipsisW)
+        dst[--n] = '\0';
+    snprintf(dst + n, dstsz - n, "...");
+}
+#endif
 
 void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& opts) {
     // Layout constants — single source of truth for geometry. Each has a one-line rationale.
@@ -630,21 +659,27 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
     // --- 1. Header band: WHAT you are reading -------------------------------------
     // The word with its respelling, or the verse's citation. The mode name ("Verse of the
     // Day") was the least informative text on the panel; this is the line you glance at.
+    //
+    // The respelling is NEVER dropped to make room for the date. It is the reason
+    // A.Word.A.Day was chosen as the source (docs/research/WORD_APIS.md), and the old
+    // rule — "if the pair does not fit the band, drop the respelling" — removed the
+    // pronunciation silently for 3 of the 18 most recent entries (soporiferous,
+    // dataveillance, despotocracy; the first of those was the word on the panel when the
+    // user reported "not seeing the pronunciation"). Instead the respelling SHRINKS into
+    // whatever room is left (7 -> 6 -> 5.5 -> 5pt, all already compiled in) and only ever
+    // truncates VISIBLY. The headword keeps its size and is truncated first.
     char head[96];
-    if (opts.leftCaption && opts.leftCaption[0] && v.reference)
-        snprintf(head, sizeof(head), "%s %s", v.reference, opts.leftCaption);
-    else if (v.reference)
+    const bool haveResp = (v.reference && opts.leftCaption && opts.leftCaption[0]);
+    if (v.reference)
         snprintf(head, sizeof(head), "%s", v.reference);
     else
         snprintf(head, sizeof(head), "%s", opts.headerTitle ? opts.headerTitle : "");
 
     // The identity line must CLEAR the date, so degrade deliberately rather than let it
-    // overprint: drop the respelling first, then truncate. BOTH margins come out of the
-    // budget, so reserving 8px of clear space needs -12, not -6.
+    // overprint. BOTH margins come out of the budget, so reserving 8px of clear space
+    // needs -12, not -6.
     const int dateW = v.date ? cc_headWidth(v.date) : 0; // measured at the size it is DRAWN
     const int headRoom = kPanelW - kHeaderTextX - 6 - dateW - 8;
-    if (v.reference && opts.leftCaption && opts.leftCaption[0] && cc_headWidth(head) > headRoom)
-        snprintf(head, sizeof(head), "%s", v.reference); // respelling dropped
     for (size_t n = strlen(head); n > 1 && cc_headWidth(head) > headRoom; n--)
         head[n - 1] = '\0';
 
@@ -652,8 +687,43 @@ void drawLayout(const VerseData& v, const WeatherData& w, const LayoutOptions& o
 #ifdef CHROMAWOTD_FONT_FREESANS
     // One size up from the 5.5pt body default: this is the line you scan first.
     dev_drawStringF(&Roboto7pt7b, kHeaderTextX, 1, head, CC_BLACK, 1);
+    if (haveResp) {
+        // Shrink the respelling into the room left over before the date. Every head font
+        // is aligned on the 7pt line's BASELINE (not its top) so the pair still reads as
+        // one line rather than two different-sized runs.
+        const int base = 1 + cc_glyphAscentF(&Roboto7pt7b, 1);
+        const int gap = cc_advanceF(&Roboto7pt7b, ' ', 1);
+        const int x = kHeaderTextX + cc_measurePxF(&Roboto7pt7b, head, 1) + gap;
+        const int room = kPanelW - 6 - dateW - 8 - x;
+        for (int i = 0; i < kHeadFontCount; i++) {
+            const GFXfont* f = kHeadFonts[i];
+            const int y = base - cc_glyphAscentF(f, 1);
+            if (cc_measurePxF(f, opts.leftCaption, 1) <= room) {
+                dev_drawStringF(f, x, y, opts.leftCaption, CC_BLACK, 1);
+                break;
+            }
+            if (i == kHeadFontCount - 1) {
+                // Even the smallest size cannot hold it: truncate VISIBLY rather than
+                // lose the pronunciation entirely.
+                char pron[64];
+                cc_fitTextF(f, opts.leftCaption, pron, sizeof(pron), room);
+                if (pron[0])
+                    dev_drawStringF(f, x, y, pron, CC_BLACK, 1);
+            }
+        }
+    }
 #else
     dev_drawString(kHeaderTextX, 2, head, CC_BLACK, 1);
+    if (haveResp) {
+        // Fixed-advance path: one size only, so the respelling is truncated (with a
+        // visible "...") rather than dropped when it cannot follow the headword.
+        char pron[64];
+        const int gap = dev_measureText(" ", 1);
+        const int x = kHeaderTextX + dev_measureText(head, 1) + gap;
+        cc_fitText(opts.leftCaption, pron, sizeof(pron), kPanelW - 6 - dateW - 8 - x);
+        if (pron[0])
+            dev_drawString(x, 2, pron, CC_BLACK, 1);
+    }
 #endif
     if (v.date) {
 #ifdef CHROMAWOTD_FONT_FREESANS

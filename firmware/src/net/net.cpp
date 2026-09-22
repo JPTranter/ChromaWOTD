@@ -257,14 +257,67 @@ static bool cc_sectionValue(const char* html, const char* label, char* out, size
     return true;
 }
 
+// The edition date the SOURCE is publishing, as "YYYY-MM-DD", or nullptr. Two shapes are
+// accepted because the page carries the date twice in different formats and either could
+// disappear on a redesign: the Word-of-the-Day page links its daily games with
+// `?date=YYYY-MM-DD`, and the sidebar prints "Sep 22, 2026". Never invented: no date
+// found means nullptr, and the caller then simply does not know the edition.
+static const char* cc_awadEditionDate(const char* html, char* buf, size_t bufsz) {
+    if (!html || !buf || bufsz < 11)
+        return nullptr;
+    // 1. ?date=YYYY-MM-DD (the daily-games links)
+    for (const char* p = html; (p = strstr(p, "?date=")) != nullptr; p += 6) {
+        const char* d = p + 6;
+        bool ok = true;
+        for (int i = 0; i < 10 && ok; i++) {
+            const char c = d[i];
+            ok = (i == 4 || i == 7) ? (c == '-') : (c >= '0' && c <= '9');
+        }
+        if (ok) {
+            memcpy(buf, d, 10);
+            buf[10] = '\0';
+            return buf;
+        }
+    }
+    // 2. "Mon DD, YYYY" in the sidebar (month names differ in length, so this is a scan
+    //    rather than a fixed offset).
+    static const char* kMonths[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    for (const char* p = html; *p; p++) {
+        for (int m = 0; m < 12; m++) {
+            if (strncmp(p, kMonths[m], 3) != 0)
+                continue;
+            const char* d = p + 3;
+            if (*d != ' ')
+                continue;
+            d++;
+            if (d[0] < '0' || d[0] > '9')
+                continue;
+            const int day = (d[0] - '0') * 10 + (d[1] - '0');
+            if (d[2] != ',' || d[3] != ' ')
+                continue;
+            const char* y = d + 4;
+            bool yr = true;
+            for (int i = 0; i < 4 && yr; i++)
+                yr = (y[i] >= '0' && y[i] <= '9');
+            if (!yr || day < 1 || day > 31)
+                continue;
+            snprintf(buf, bufsz, "%.4s-%02d-%02d", y, m + 1, day);
+            return buf;
+        }
+    }
+    return nullptr;
+}
+
 bool cc_parseAwad(const char* html, WordData* out) {
     if (!html || !out)
         return false;
 
     static char wbuf[64];
     static char pbuf[64];
-    static char dbuf[NET_TEXT_MAX];
-    static char ebuf[NET_TEXT_MAX];
+    static char dbuf[WORD_FIELD_MAX];
+    static char ebuf[WORD_FIELD_MAX];
+    static char datebuf[16];
 
     // --- word: <h3>\nbreviloquent\n</h3>
     const char* h3 = cc_findFrom(html, "<h3>");
@@ -316,7 +369,24 @@ bool cc_parseAwad(const char* html, WordData* out) {
     out->pronunciation = pbuf[0] ? pbuf : nullptr;
     out->definition = dbuf[0] ? dbuf : nullptr;
     out->example = ebuf[0] ? ebuf : nullptr;
+    out->editionDate = cc_awadEditionDate(html, datebuf, sizeof(datebuf));
     return out->definition != nullptr;
+}
+
+// The body the panel presents for the Word of the Day: the definition, then the usage
+// example. Kept here (not in main.cpp) so the preview tool renders the SAME string the
+// device does — the previous preview assembled it with std::string and no cap, which is
+// exactly why the device's silent 230-byte cut of the example went unnoticed.
+int cc_composeWordBody(const WordData& w, char* out, size_t outsz) {
+    if (!out || outsz == 0)
+        return 0;
+    const char* def = w.definition ? w.definition : "";
+    const char* ex = (w.example && w.example[0]) ? w.example : nullptr;
+    // Bound the fields to what the buffer can hold, and (per the contract in net.h) the
+    // caller sizes it so this never actually cuts the source text.
+    const int n = ex ? snprintf(out, outsz, "%.*s  %.*s", WORD_FIELD_MAX, def, WORD_FIELD_MAX, ex)
+                     : snprintf(out, outsz, "%.*s", WORD_FIELD_MAX, def);
+    return n > 0 ? n : 0;
 }
 
 // ---------------------------------------------------------------------------

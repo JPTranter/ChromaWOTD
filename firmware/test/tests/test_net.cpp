@@ -307,6 +307,105 @@ TEST(AwadParse, MalformedPageFails) {
     EXPECT_FALSE(cc_parseAwad("<html><body>no sections here</body></html>", &w));
 }
 
+// The source stamps each page with its OWN edition date, and that is the only way to tell
+// "today's word" from "yesterday's edition, still the newest one published" (A.Word.A.Day
+// publishes at 00:01 US Eastern, which is 14:01 AEST — AFTER the device's 12:30 slot).
+TEST(AwadParse, EditionDateComesFromThePage_NotFromTheDeviceClock) {
+    static const char kPage[] = R"HTML(
+<h3>
+testword
+</h3>
+<div style="color:#AAAAAA; text-align:right; font-size:11px;">Sep 22, 2026</div>
+<a href="https://wordsmith.org/jigsaw/?date=2026-09-22">Jigsaw Riddle</a>
+<div style="x">MEANING:</div>
+<div>noun: A test.</div><br>
+)HTML";
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(kPage, &w));
+    ASSERT_NE(w.editionDate, nullptr);
+    EXPECT_STREQ(w.editionDate, "2026-09-22");
+}
+
+TEST(AwadParse, EditionDateIsNullWhenThePageCarriesNone) {
+    // Never invented: a page with no date means the caller does not know the edition, and
+    // must behave as it did before rather than assume "today".
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(kAwadPage, &w));
+    EXPECT_EQ(w.editionDate, nullptr);
+}
+
+// The usage example is a WHOLE PARAGRAPH, not one sentence: measured 855 chars for
+// `misgiving` (2026-09-22). The 230-byte field cap used to cut it mid-sentence and, because
+// the shortened text then FIT the panel, no overflow marker was drawn either — the panel
+// looked like a complete example that simply stopped. This test fails on that cap.
+TEST(AwadParse, LongUsageExampleIsKeptWhole) {
+    static char page[4096];
+    std::string usage;
+    for (int i = 0; i < 10; i++)
+        usage += "sentence number " + std::to_string(i) + " of a long usage example. ";
+    snprintf(page, sizeof(page),
+             "<h3>testword</h3>\n"
+             "<div style=\"x\">MEANING:</div>\n<div>noun: A test.</div><br>\n"
+             "<div style=\"x\">USAGE:</div>\n<div>&#8220;%s&#8221;<br>Someone; Somewhere; 2026.</div><br>\n",
+             usage.c_str());
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(page, &w));
+    ASSERT_NE(w.example, nullptr);
+    EXPECT_GT(strlen(w.example), 230u) << "the example must not be cut at the network text cap";
+    EXPECT_NE(strstr(w.example, "sentence number 9"), nullptr) << "the whole example must survive";
+    EXPECT_EQ(strstr(w.example, "Someone; Somewhere; 2026."), nullptr) << "attribution is still dropped";
+}
+
+// The example is bounded by WORD_FIELD_MAX, not NET_TEXT_MAX. The bound is deliberate (it
+// lives in a static BSS buffer, and the panel cannot show 4 KB of text anyway) — what
+// matters is that it is an ORDER OF MAGNITUDE larger than the old cap, so the renderer, not
+// snprintf, decides what the panel shows and marks its own cut.
+TEST(AwadParse, UsageExampleIsBoundedByTheWordFieldCapNotTheNetworkCap) {
+    static std::string page;
+    std::string usage;
+    for (int i = 0; i < 80; i++)
+        usage += std::string("this is filler sentence number ") + std::to_string(i) + ". ";
+    page = "<h3>testword</h3>\n<div style=\"x\">MEANING:</div>\n<div>noun: A test.</div><br>\n"
+           "<div style=\"x\">USAGE:</div>\n<div>&#8220;" + usage + "&#8221;<br>A; B; 2026.</div><br>\n";
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(page.c_str(), &w));
+    ASSERT_NE(w.example, nullptr);
+    EXPECT_LT(strlen(w.example), (size_t)WORD_FIELD_MAX);
+    // The tail of the source text is beyond the cap, so it must NOT be present...
+    EXPECT_EQ(strstr(w.example, "sentence number 79"), nullptr);
+    // ...but the field still holds far more than the old 230-byte cap ever did.
+    EXPECT_GT(strlen(w.example), 900u);
+}
+
+TEST(AwadParse, ComposedBodyKeepsDefinitionAndExampleWhole) {
+    static char page[4096];
+    std::string usage;
+    for (int i = 0; i < 40; i++)
+        usage += "word" + std::to_string(i) + " ";
+    snprintf(page, sizeof(page),
+             "<h3>testword</h3>\n"
+             "<div style=\"x\">MEANING:</div>\n<div>noun: A test.</div><br>\n"
+             "<div style=\"x\">USAGE:</div>\n<div>&#8220;%s&#8221;<br>Someone; Somewhere; 2026.</div><br>\n",
+             usage.c_str());
+    WordData w{};
+    ASSERT_TRUE(cc_parseAwad(page, &w));
+    static char body[WORD_BODY_MAX];
+    const int n = cc_composeWordBody(w, body, sizeof(body));
+    EXPECT_EQ(n, (int)strlen(body));
+    EXPECT_EQ(strstr(body, "noun: A test."), body) << "the definition leads the body";
+    EXPECT_GT(strlen(body), 230u);
+    EXPECT_NE(strstr(body, "word39"), nullptr) << "the example reaches the body in full";
+}
+
+TEST(AwadParse, ComposedBodyWithoutExampleIsJustTheDefinition) {
+    WordData w{};
+    w.definition = "noun: A test.";
+    w.example = nullptr;
+    char body[64];
+    cc_composeWordBody(w, body, sizeof(body));
+    EXPECT_STREQ(body, "noun: A test.");
+}
+
 TEST(Fetch, Word_Live) {
     WordData w{};
     if (!cc_fetchWord(&w)) {

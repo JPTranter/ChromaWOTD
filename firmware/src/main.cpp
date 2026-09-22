@@ -190,7 +190,13 @@ static SemaphoreHandle_t g_syncDone = nullptr;
 static ContentMode g_mode = ContentMode::Verse;
 static bool g_tomorrow = false;
 static bool g_haveTime = false;
-static char g_date[32] = ""; // "DOW DD MMM" for the header (text/date_format.h)
+static char g_date[32] = "";    // "DOW DD MMM" for the header (text/date_format.h)
+static char g_isoDate[11] = ""; // "YYYY-MM-DD" local date, for comparing against a source's edition
+// True when the Word-of-the-Day page's own edition date is NOT the device's local date.
+// A.Word.A.Day publishes at 00:01 US Eastern (14:01 AEST / 15:01 AEDT), so the 12:30 local
+// slot reads the PREVIOUS edition — the same word shown at the previous 18:00 slot. Without
+// this the panel looks like it is repeating itself for no reason.
+static bool g_wordStaleEdition = false;
 
 // Had this device been configured before? RTC memory survives DEEP SLEEP — the mode this
 // device spends its life in — so this catches a configuration wipe across a sleep (the
@@ -259,6 +265,21 @@ static void runWifiDiag() {
 }
 #endif
 
+// Fetch the Verse of the Day into g_verse. Called both for a genuine verse refresh and for
+// a Word refresh whose edition is stale (see g_wordStaleEdition) — the panel then shows the
+// verse rather than repeating a word the reader has already seen.
+static void syncVerseFallback() {
+    static VerseData fv;
+    Serial.println("sync: fetching verse...");
+    if (cc_fetchVerse(&fv) && fv.verse) {
+        g_verse = fv;
+        Serial.printf("sync: verse OK (%s)\n", fv.reference ? fv.reference : "?");
+    } else {
+        g_partialReason = g_partialReason ? g_partialReason : "verse API";
+        Serial.println("sync: verse FAILED (no content to show)");
+    }
+}
+
 // Runs the whole network Sync phase on its own task/stack (see STACK NOTE
 // above), then signals g_syncDone and deletes itself.
 static void syncTask(void* /*arg*/) {
@@ -286,6 +307,9 @@ static void syncTask(void* /*arg*/) {
             // string, so a render can no longer look right while the panel says something
             // else (the ISO "2026-09-19" this used to build was never what the previews showed).
             cc_formatHeaderDate(tmv.tm_wday, tmv.tm_mday, tmv.tm_mon + 1, g_date, sizeof(g_date));
+            // The local date as ISO, used only to decide whether a fetched word is TODAY's
+            // edition (the source stamps each page with its own edition date).
+            snprintf(g_isoDate, sizeof(g_isoDate), "%04d-%02d-%02d", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday);
             Serial.printf("sync: time OK %s %02d:%02d:%02d\n", g_date, tmv.tm_hour, tmv.tm_min, tmv.tm_sec);
         } else {
             // Without wall time the clock sits at 1970 — BEFORE the notBefore of every
@@ -315,7 +339,23 @@ static void syncTask(void* /*arg*/) {
             Serial.println("sync: fetching word of the day...");
             if (cc_fetchWord(&wd) && wd.definition) {
                 g_word = wd;
-                Serial.printf("sync: word OK (%s)\n", wd.word ? wd.word : "?");
+                // Is this TODAY's edition by the device's own calendar? The source stamps
+                // each page with its edition date (00:01 US Eastern). A mismatch means the
+                // 12:30 slot is holding yesterday's word — the one the previous 18:00 slot
+                // already showed.
+                g_wordStaleEdition = (g_isoDate[0] && wd.editionDate && strcmp(wd.editionDate, g_isoDate) != 0);
+                Serial.printf("sync: word OK (%s) edition=%s local=%s\n", wd.word ? wd.word : "?",
+                              wd.editionDate ? wd.editionDate : "?", g_isoDate[0] ? g_isoDate : "?");
+                if (g_wordStaleEdition) {
+                    // The source has not published today's edition yet (it publishes at
+                    // 00:01 US Eastern = 14:01 AEST / 15:01 AEDT, after the 12:30 slot).
+                    // Showing it again would read as a broken device: the reader saw this
+                    // exact word at the previous evening's refresh. Show the verse instead;
+                    // the word appears fresh at the next slot past the source's day boundary.
+                    Serial.println("sync: word edition is YESTERDAY's -> showing the verse this refresh");
+                    g_mode = ContentMode::Verse;
+                    syncVerseFallback();
+                }
             } else {
                 // Online but this API failed -> partial, not offline. NO invented word:
                 // g_word.definition stays null and the render path shows an explicit
@@ -324,15 +364,7 @@ static void syncTask(void* /*arg*/) {
                 Serial.println("sync: word FAILED (no content to show)");
             }
         } else {
-            static VerseData fv;
-            Serial.println("sync: fetching verse...");
-            if (cc_fetchVerse(&fv) && fv.verse) {
-                g_verse = fv;
-                Serial.printf("sync: verse OK (%s)\n", fv.reference ? fv.reference : "?");
-            } else {
-                g_partialReason = g_partialReason ? g_partialReason : "verse API";
-                Serial.println("sync: verse FAILED (no content to show)");
-            }
+            syncVerseFallback();
         }
 
         Serial.println("sync: fetching weather...");
@@ -933,12 +965,13 @@ void setup() {
         // pronunciation as the black left caption, the headword as the red right
         // caption. Notes: the IPA-style pronunciation is pre-respelled by the
         // source, so it is plain ASCII and safe for the panel font.
-        static char body[NET_TEXT_MAX];
-        const char* ex = g_word.example;
-        if (ex && ex[0])
-            snprintf(body, sizeof(body), "%s  %s", g_word.definition, ex);
-        else
-            snprintf(body, sizeof(body), "%s", g_word.definition);
+        static char body[WORD_BODY_MAX];
+        // Composed by the SHARED helper so the preview tool renders the same string this
+        // device does. The old local assembly capped the body at NET_TEXT_MAX (230 bytes)
+        // with snprintf, which cut the usage example off mid-sentence — and because the
+        // shortened text then FIT the block, the renderer drew no overflow marker, so the
+        // panel looked like a complete example that simply ended (LESSONS §65).
+        cc_composeWordBody(g_word, body, sizeof(body));
 
         v.verse = body;
         v.highlight = nullptr;

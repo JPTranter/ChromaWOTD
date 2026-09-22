@@ -14,6 +14,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -59,6 +60,8 @@ const char* kUsage = "usage: layout_render [options]\n"
                      "  --help\n"
                      "  --live                         fetch weather + verse from the live network\n"
                      "  --word-live                    fetch Word of the Day + weather and render it\n"
+                     "  --word-file <path.html>        render a SAVED A.Word.A.Day page (same parser + body\n"
+                     "                                 composer as the device; no network)\n"
                      "  --tomorrow                     with --live/--word-live: use tomorrow's forecast\n"
                      "                                 (curl hook) instead of fixtures; ignore others\n";
 
@@ -74,6 +77,7 @@ struct Args {
     std::string header = "Verse of the Day"; // yellow-band title
     std::string leftcap;                     // black caption at the left of the bottom rule
     std::string out = "preview.png";
+    std::string wordFile; // a saved A.Word.A.Day page to render (--word-file)
     float temp = 21.0f;
     bool haveHighlight = false, haveReference = false, haveAlert = false, haveCondition = false, haveDate = false;
     bool live = false;
@@ -115,6 +119,9 @@ int main(int argc, char** argv) {
         } else if (flag == "--live") { /* handled above */
         } else if (flag == "--word-live") {
             a.wordLive = true;
+        } else if (flag == "--word-file") {
+            // Render a saved A.Word.A.Day page (e.g. the day a problem was reported).
+            a.wordFile = next("--word-file");
         } else if (flag == "--tomorrow") {
             a.tomorrow = true;
         } else if (flag == "--verse") {
@@ -188,7 +195,7 @@ int main(int argc, char** argv) {
             a.verse = readAll(f);
         }
     }
-    if (!a.live && !a.wordLive && a.verse.empty()) {
+    if (!a.live && !a.wordLive && a.wordFile.empty() && a.verse.empty()) {
         std::cerr << "layout_render: no verse text (use --verse or --verse-file)\n\n" << kUsage;
         return 2;
     }
@@ -225,24 +232,37 @@ int main(int argc, char** argv) {
         printf("live: weather%s verse%s\n", wok ? " OK" : " FAIL(fallback)", vok ? " OK" : " FAIL(fallback)");
     }
 
-    // --word-live: fetch the real Word of the Day and render the Word-of-the-Day
-    // presentation (definition + example body, pronunciation left caption,
-    // headword right caption).
-    std::string wordBody;
-    if (a.wordLive) {
+    static char wordBody[WORD_BODY_MAX];
+    if (a.wordLive || !a.wordFile.empty()) {
         WordData wd{};
-        bool wok = cc_fetchWeather(&w, a.tomorrow);
-        bool dok = cc_fetchWord(&wd) && wd.definition;
+        std::string html;
+        bool dok = false;
+        if (!a.wordFile.empty()) {
+            // Render a SPECIFIC A.Word.A.Day page (e.g. a saved copy of a past day's, or the
+            // exact page the panel reported a problem with) through the same parser + body
+            // composer the device uses.
+            std::ifstream f(a.wordFile);
+            if (!f) {
+                std::cerr << "layout_render: cannot open " << a.wordFile << "\n";
+                return 1;
+            }
+            html.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            dok = cc_parseAwad(html.c_str(), &wd) && wd.definition;
+        } else {
+            bool wok = cc_fetchWeather(&w, a.tomorrow);
+            printf("word-live: weather=%s\n", wok ? "OK" : "FAIL");
+            dok = cc_fetchWord(&wd) && wd.definition;
+        }
         if (dok) {
-            wordBody = std::string(wd.definition ? wd.definition : "");
-            if (wd.example && wd.example[0])
-                wordBody += std::string("  ") + wd.example;
-            v.verse = wordBody.c_str();
+            cc_composeWordBody(wd, wordBody, sizeof(wordBody));
+            v.verse = wordBody;
             v.reference = wd.word;
             opts.headerTitle = "Word of the Day";
             opts.leftCaption = wd.pronunciation;
         }
-        printf("word-live: weather=%s word=%s (%s)\n", wok ? "OK" : "FAIL", dok ? "OK" : "FAIL", dok ? wd.word : "-");
+        printf("word: %s (%s) edition=%s body=%d chars src=%s\n", dok ? "OK" : "FAIL", dok ? wd.word : "-",
+               dok && wd.editionDate ? wd.editionDate : "?", dok ? (int)strlen(wordBody) : 0,
+               a.wordFile.empty() ? "live" : a.wordFile.c_str());
     }
 
     drawLayout(v, w, opts);
