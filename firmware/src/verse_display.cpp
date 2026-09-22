@@ -351,7 +351,7 @@ static const GFXfont* cc_pickVerseFont(const char* verse, int maxW, int maxH) {
     const GFXfont* pick = &Roboto5pt7b; // nothing fit: smallest font
     for (int i = 0; i < 7; i++) {
         g_bodyFont = candidates[i];
-        const int cap = cc_lineCapacity(maxH, 1, candidates[i]->yAdvance);
+        const int cap = cc_lineCapacity(maxH, candidates[i]->yAdvance);
         if (cc_wrappedLineCount(verse, maxW, 1) <= cap) {
             pick = candidates[i];
             break;
@@ -416,7 +416,7 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
 
     const int charWidth = cc_advance(' ', size); // reference advance for slack/budget
     const int lh = cc_lineHeight(size, lineHeight);
-    const int capacity = cc_lineCapacity(maxH, size, lh);
+    const int capacity = cc_lineCapacity(maxH, lh);
     const bool truncated = cc_wrappedLineCount(text, maxW, size) > capacity;
 
     int curY = startY;
@@ -431,7 +431,11 @@ static int drawWrappedTextCentered(int centerX, int startY, int maxW, int maxH, 
         if (!*lineStart)
             break;
 
-        if (curY + 8 * size > startY + maxH)
+        // ONE rule for counting and drawing: capacity is the number of WHOLE lines the box
+        // holds, and this is the only place that can stop the loop. Keeping two different
+        // bounds (a count for the truncation decision, a pixel test for the loop) is what let
+        // text be cut with no marker drawn at all (LESSONS §66).
+        if (lineIdx >= capacity)
             break;
 
         int budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
@@ -522,7 +526,7 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
     bool drewAny = false;
     int lineHeight = cc_lineHeight(1, 12);
     int charWidth = cc_advance(' ', 1);
-    const int capacity = cc_lineCapacity(maxH, 1, lineHeight);
+    const int capacity = cc_lineCapacity(maxH, lineHeight);
     const bool truncated = cc_wrappedLineCount(vd.verse, maxW, 1) > capacity;
 
     const char* ptr = vd.verse;
@@ -532,7 +536,8 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
         if (!*ptr)
             break;
 
-        if (curY + 8 > startY + maxH)
+        // The same single bound the count above used — see the note in drawWrappedTextCentered.
+        if (lineIdx >= capacity)
             break;
 
         const char* wordStart = ptr;
@@ -547,7 +552,7 @@ static void drawVerseBlock(int startX, int startY, int maxW, int maxH, const Ver
             curX = startX;
             curY += lineHeight;
             lineIdx++;
-            if (curY + 8 > startY + maxH)
+            if (lineIdx >= capacity)
                 break;
             budget = cc_lineBudget(maxW, charWidth, truncated, lineIdx, capacity);
         }
@@ -877,7 +882,9 @@ void cc_portalDrawScreen(const PortalInfo& info, PortalNotice notice, const char
         // labelling the second one "Could not save:" would be plainly wrong.
         const char* heading = (notice == PortalNotice::SettingsLost) ? "Settings lost:" : "Could not save:";
         dev_drawString(6, 24, heading, CC_RED, 1);
-        drawWrappedTextCentered(kW / 2, 36, kW - 12, 84, statusLine, CC_RED, 1, 10);
+        // 90 px = 9 lines of 10 px at y=36..126: the same capacity the old maxH=84 gave this box
+        // under the removed 8px-inset rule, so a long portal error loses no line to the geometry fix.
+        drawWrappedTextCentered(kW / 2, 36, kW - 12, 90, statusLine, CC_RED, 1, 10);
         return;
     }
 

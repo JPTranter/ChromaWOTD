@@ -70,7 +70,15 @@ VerseFontSize cc_verseFontSize(const char* verse, int maxW, int maxH);
 
 // Verse text-block geometry — single source of truth shared by drawLayout()
 // and the auto-size tests. The verse owns the whole panel width now that the
-// weather column is gone: 296 - 2 * kVerseMargin 4 = 288 wide; 82 px tall holds
-// 4 lines at the largest ladder step (8pt, yAdvance 21) and 5 at 6pt.
+// weather column is gone: 296 - 2 * kVerseMargin 4 = 288 wide.
+//
+// The height is the space BETWEEN the two fixed rows, not a figure of its own: the block
+// starts at kHeaderH + kVerseMargin (18 + 4 = 22) and may reach the footer row's top
+// (kRowY = 115), so 115 - 22 = 93 px. It was 82 (i.e. stopping at y=104) until 2026-09-22,
+// when the panel came back as "the misgiving word should allow for another line, as there is
+// space": the 5pt rung's lines are 13 px, and the old box held 6 of them while 18 px - a
+// whole line - sat unused above the footer (LESSONS §68). 93 px holds 7 lines at 5pt, 6 at
+// 5.5pt, 5 at 6/7pt, 4 at 8/9pt and 3 at 10pt; the deepest of those ends at y=114, one pixel
+// clear of the footer.
 constexpr int kVerseMaxW = 288;
-constexpr int kVerseMaxH = 82;
+constexpr int kVerseMaxH = 93;

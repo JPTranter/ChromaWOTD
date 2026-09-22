@@ -15,7 +15,7 @@ namespace {
 // and the ladder above it tops out at 10pt — the 9/10pt rungs exist so short content (a brief
 // verse, a Word-of-the-Day definition) can use the space it was leaving empty.
 const int kW = kVerseMaxW;   // 288
-const int kH = kVerseMaxH;   // 82
+const int kH = kVerseMaxH;   // 93 (startY 22 to the footer row at 115)
 
 // 2026-09-13 BibleGateway VOTD (NIV), after cc_stripLeadingBracket removes the
 // "[Final Exhortations] " heading and cc_htmlDecode maps the curly quotes.

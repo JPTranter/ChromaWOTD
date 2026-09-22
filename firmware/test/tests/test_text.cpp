@@ -10,27 +10,35 @@
 // ----------------------------------------------------------- cc_lineCapacity --
 
 TEST(LineCapacity, ZeroAndNegativeHeightsYieldNoLines) {
-    EXPECT_EQ(cc_lineCapacity(0, 1, 10), 0);
-    EXPECT_EQ(cc_lineCapacity(-5, 1, 10), 0);
+    EXPECT_EQ(cc_lineCapacity(0, 10), 0);
+    EXPECT_EQ(cc_lineCapacity(-5, 10), 0);
 }
 
-TEST(LineCapacity, TinyHeightsBelowGlyphYieldNoLines) {
-    // maxH < 8*size -> no line fits (the 8px inset is the glyph's own footprint).
-    EXPECT_EQ(cc_lineCapacity(7, 1, 10), 0);
-    EXPECT_EQ(cc_lineCapacity(8, 1, 10), 1);   // exactly the threshold
+TEST(LineCapacity, ALineMustFitWhole) {
+    // The box holds only WHOLE lines: maxH / lineHeight, with nothing reserved separately.
+    EXPECT_EQ(cc_lineCapacity(9, 10), 0);   // 9 < one 10px line
+    EXPECT_EQ(cc_lineCapacity(10, 10), 1);
+    EXPECT_EQ(cc_lineCapacity(19, 10), 1);
+    EXPECT_EQ(cc_lineCapacity(20, 10), 2);
 }
 
 TEST(LineCapacity, NormalHeightsCountLines) {
-    // (maxH - 8*size) / lineHeight + 1
-    EXPECT_EQ(cc_lineCapacity(18, 1, 10), 2);  // (18-8)/10 + 1 = 2
-    EXPECT_EQ(cc_lineCapacity(28, 1, 10), 3);  // (28-8)/10 + 1 = 3
-    EXPECT_EQ(cc_lineCapacity(82, 1, 12), 7);  // (82-8)/12 + 1 = 7 (verse block)
+    EXPECT_EQ(cc_lineCapacity(30, 10), 3);
+    // The verse block as of 2026-09-22: 93 px of box (startY 22 to the footer row at 115).
+    // The old 8px-inset rule gave 7 lines here at the 5x7 fallback's 12px, but only 6 at the
+    // 5pt rung's 13px — and the panel came back as "space for another line" with 18 px free
+    // below the text (LESSONS §68).
+    EXPECT_EQ(cc_lineCapacity(93, 12), 7); // 5x7 fallback line height
+    EXPECT_EQ(cc_lineCapacity(93, 13), 7); // 5pt rung — the line that was being dropped
+    EXPECT_EQ(cc_lineCapacity(93, 14), 6); // 5.5pt rung
+    EXPECT_EQ(cc_lineCapacity(93, 26), 3); // 10pt rung; 4 lines would need 104 > 93
 }
 
 TEST(LineCapacity, TinyLineHeightDoesNotDivideByZero) {
     // lineHeight is always >= 1 in practice (yAdvance), but the function must not
     // divide by zero if handed 0.
-    EXPECT_GE(cc_lineCapacity(100, 1, 1), 1);
+    EXPECT_GE(cc_lineCapacity(100, 1), 1);
+    EXPECT_EQ(cc_lineCapacity(100, 0), 0);
 }
 
 // ------------------------------------------------------------- cc_lineBudget --

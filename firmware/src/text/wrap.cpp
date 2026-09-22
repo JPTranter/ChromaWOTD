@@ -2,9 +2,9 @@
 
 #include "wrap.h"
 
-int cc_lineCapacity(int maxH, int size, int lineHeight) {
-    if (maxH < 8 * size) return 0;
-    return (maxH - 8 * size) / lineHeight + 1;
+int cc_lineCapacity(int maxH, int lineHeight) {
+    if (maxH <= 0 || lineHeight <= 0) return 0;
+    return maxH / lineHeight;
 }
 
 int cc_lineBudget(int maxW, int charWidth, bool truncated, int lineIdx, int capacity) {
