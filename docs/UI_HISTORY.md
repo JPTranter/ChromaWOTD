@@ -243,7 +243,17 @@ data-shaped — a drop rule, two caps, and a timezone — not typography.
 | the paragraph-length example, filled and marked | the sentence-bounded alternative (recorded, not adopted) |
 |---|---|
 | ![misgiving: full example at 5pt with an ellipsis](images/history/wotd_after_misgiving_full_body_ellipsis.png) | ![misgiving: definition + first sentence at 7pt](images/history/wotd_variant_misgiving_first_sentence.png) |
-| `misgiving`, 874-char body (the real example is 855 chars) → the ladder picks **5pt** and the block ends with a visible `...` | definition + the usage's first sentence → the ladder picks **7pt**. Kept in the history as the size/coverage trade-off that was available when the fill-the-box behaviour was chosen |
+| `misgiving`, 874-char body (the real example is 855 chars) → the ladder picks **5pt** and the block ends with a visible `...` — but the block stopped at y=96 with the footer row at 115: **one whole line left unused** | definition + the usage's first sentence → the ladder picks **7pt**. Kept in the history as the size/coverage trade-off that was available when the fill-the-box behaviour was chosen |
+
+| the same word, box grown to the footer row (7 lines) |
+|---|
+| ![misgiving: seven lines in the 93px box](images/history/wotd_after_misgiving_seven_lines_taller_box.png) |
+| Reported from the panel as "should allow for another line, as there is space": the box reserved a fixed 8px inset and stopped at y=104, not at the footer row. `kVerseMaxH` 82 → 93 (22 → 115) and `cc_lineCapacity = maxH / lineHeight` now hold **7 lines at 5pt**, ink ending at y=109 instead of 96 — the last line is `...collegiate entrance…` |
+
+- **Space left unused under text** — the block reserved a fixed 8px inset for a line whose height
+  depends on the font, so it dropped a 13px line at the 5pt rung while (at 10pt) it would have allowed
+  a line to reach 11px *into* the footer row. The count is now derived from the line height and the
+  box is defined by the two fixed rows. (LESSONS §68)
 
 - **Same word as yesterday** — A.Word.A.Day publishes at 00:01 US Eastern, i.e. 14:01 AEST, *after*
   the 12:30 slot. The 12:30 refresh was reading yesterday's edition and showing it as today's word.

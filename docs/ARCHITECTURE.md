@@ -23,7 +23,7 @@ ChromaWOTD is a 2.9" quad-colour ePaper display (BWRY: black, white, red, yellow
 | zone | contents |
 |---|---|
 | header band (18 px, yellow) | **what** you are reading: the citation (`Proverbs 3:5-6`), or the word with its respelling (`breviloquent (bre-VIL-uh-kwuhnt)`), drawn one size up at 7pt; the date sits at the right at the **same size**, formatted `DOW DD MMM` (`Sat 19 Sep`) by `text/date_format.h`. The respelling is never dropped — it shrinks (7 → 6 → 5.5 → 5pt) into the room left before the date and is truncated only as a last resort (LESSONS §65) |
-| body | the verse / definition, **full panel width**, auto-sized by a ladder from 10pt down to 5.5pt |
+| body | the verse / definition, **full panel width**, auto-sized by a ladder from 10pt down to 5pt (the 5pt rung is what a paragraph-length Word-of-the-Day example needs). The block is the space between the header rule and the footer row — 22 → 115 px — and holds only whole lines (`cc_lineCapacity = maxH / lineHeight`) |
 | footer row | status / warnings at the LEFT in red; weather as text at the RIGHT (`25°C Partly cloudy`) |
 
 There is deliberately **no weather column and no mode title**: the mode name was the least

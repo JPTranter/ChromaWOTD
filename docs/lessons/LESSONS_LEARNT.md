@@ -1956,3 +1956,46 @@ Rules:
   the source's own data — never in a comment.
 
 (2026-09-22)
+
+## 68. A box that reserves a fixed pixel inset holds the wrong number of lines (RESOLVED)
+
+Reported *after* §66 was fixed and the whole example finally reached the renderer: *"the misgiving
+word should allow for another line, as there is space."*
+
+Measured on that render (5pt rung, 13 px lines, footer row at y=115): six body lines with ink from
+y=22 to y=96 and **18 px — a whole line — unused**.
+
+Two causes, both of the same shape:
+
+1. `cc_lineCapacity(maxH, size, lineHeight)` returned `(maxH - 8*size)/lineHeight + 1`: the box
+   reserved a fixed **8 pixels** for "the line's footprint", whatever the font. 8 px is 62% of a 5pt
+   line and 31% of a 10pt line, so it over-reserved at the small rung and under-reserved at the large
+   one.
+2. The draw loops stopped on a *different* bound again (`curY + 8 > startY + maxH`) — the same class
+   of mismatch that produced §66's invisible cut.
+
+The cheap fix — "just make the box taller" — is a trap: at 10pt a 4th line would finish at y=126,
+straight through the footer row at y=115.
+
+Fixes:
+- `cc_lineCapacity(maxH, lineHeight) = maxH / lineHeight` — a line fits WHOLE, and the `size`
+  parameter is gone. There is no reserve left to get wrong.
+- The box is now defined by the two fixed rows rather than a figure of its own: top = `kHeaderH` +
+  `kVerseMargin` = 22, bottom = the footer row's top (`kRowY` = 115) → **`kVerseMaxH` 82 → 93**. That
+  is 7 lines at 5pt, 6 at 5.5pt, 5 at 6/7pt, 4 at 8/9pt, 3 at 10pt; the deepest ink lands at y=114.
+- Both draw loops stop on `lineIdx >= capacity` — the *same* bound the truncation decision uses, so a
+  count and a draw can no longer disagree about how many lines exist.
+- The captive portal's wrapped error text keeps its 9 lines by moving its box 84 → 90, so the change
+  is not allowed to cost a line somewhere the report did not mention.
+
+Rules:
+- **A reserve expressed in pixels does not scale with the thing it reserves for.** Derive line counts
+  from the line height; a constant standing in for it will be simultaneously too big and too small in
+  one layout.
+- **Check both ends of the range before resizing a box.** The request was at the smallest rung; the
+  risk it added was at the largest. The 93px box is only safe because `93/26 = 3` still holds 10pt.
+- **Measure the ink, not the intent.** The real free space was visible in one command — the rendered
+  PNG's ink bands (`y` ranges) showed 22–96 with the footer at 115. The layout code and the tests both
+  agreed with the *old* rule; only the pixels disagreed.
+
+(2026-09-22)
